@@ -14,24 +14,26 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Z.ai Code Scaffold - AI-Powered Development",
-  description: "Modern Next.js scaffold optimized for AI-powered development with Z.ai. Built with TypeScript, Tailwind CSS, and shadcn/ui.",
-  keywords: ["Z.ai", "Next.js", "TypeScript", "Tailwind CSS", "shadcn/ui", "AI development", "React"],
-  authors: [{ name: "Z.ai Team" }],
+  title: "BIHARI AI — Engineering Documentation",
+  description:
+    "BIHARI AI engineering documentation hub. India's Trusted AI Employee Company. Locked, versioned, audit-first engineering specs for Version 1.",
+  keywords: [
+    "BIHARI AI",
+    "AI Employee",
+    "Engineering Documentation",
+    "Audit-First",
+    "Trust Architecture",
+  ],
+  authors: [{ name: "BIHARI AI" }],
   icons: {
     icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
   },
   openGraph: {
-    title: "Z.ai Code Scaffold",
-    description: "AI-powered development with modern React stack",
-    url: "https://chat.z.ai",
-    siteName: "Z.ai",
+    title: "BIHARI AI — Engineering Documentation",
+    description:
+      "India's Trusted AI Employee Company. Locked, versioned, audit-first engineering specs.",
+    siteName: "BIHARI AI",
     type: "website",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "Z.ai Code Scaffold",
-    description: "AI-powered development with modern React stack",
   },
 };
 
