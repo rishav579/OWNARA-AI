@@ -1,8 +1,9 @@
 "use client";
 
 import { useRouter, formatINR, formatNumber } from "@/lib/app/router";
-import { DASHBOARD_STATS } from "@/lib/app/data";
-import { PageHeader, ProgressBar } from "@/components/app/ui";
+import { api } from "@/lib/app/api-client";
+import { useQuery } from "@tanstack/react-query";
+import { PageHeader, ProgressBar, ErrorState, ListSkeleton } from "@/components/app/ui";
 import {
   Zap,
   Check,
@@ -14,42 +15,19 @@ import {
 
 export function BillingPage() {
   const { navigate } = useRouter();
-  const tokenPct = (DASHBOARD_STATS.tokens.usedThisMonth / 10000000) * 100;
-  const costPct = (DASHBOARD_STATS.tokens.costCentsThisMonth / DASHBOARD_STATS.tokens.budgetCentsThisMonth) * 100;
 
-  const invoices = [
-    { id: "inv_jan28", date: "Jan 28, 2025", amount: 2596, status: "pending" },
-    { id: "inv_jan15", date: "Jan 15, 2025", amount: 3120, status: "paid" },
-    { id: "inv_jan01", date: "Jan 1, 2025", amount: 2890, status: "paid" },
-    { id: "inv_dec15", date: "Dec 15, 2024", amount: 2450, status: "paid" },
-  ];
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ["billing"],
+    queryFn: () => api.billing.get(),
+  });
 
-  const plans = [
-    {
-      name: "Starter",
-      price: "₹0",
-      period: "/mo",
-      desc: "For trying out AI Employees",
-      features: ["1 AI Employee", "500K tokens / mo", "3 knowledge documents", "Community support"],
-      current: false,
-    },
-    {
-      name: "Pro",
-      price: "₹4,999",
-      period: "/mo",
-      desc: "For small teams delegating real work",
-      features: ["5 AI Employees", "10M tokens / mo", "Unlimited documents", "Email + chat support", "Audit trail export", "Priority approvals"],
-      current: true,
-    },
-    {
-      name: "Business",
-      price: "₹19,999",
-      period: "/mo",
-      desc: "For growing operations",
-      features: ["25 AI Employees", "50M tokens / mo", "Unlimited documents", "Priority support", "SSO (coming soon)", "Custom roles"],
-      current: false,
-    },
-  ];
+  if (isLoading) return <ListSkeleton rows={6} />;
+  if (isError || !data) return <ErrorState message="Failed to load billing" onRetry={() => refetch()} />;
+
+  const tokenPct = (data.usage.tokensUsed / data.usage.tokensCap) * 100;
+  const costPct = (data.usage.costCents / data.usage.budgetCents) * 100;
+  const invoices = data.invoices;
+  const plans = data.plans;
 
   return (
     <div>
@@ -76,7 +54,7 @@ export function BillingPage() {
             <p className="mt-1 text-xs text-zinc-400">₹4,999 / month · renews on Feb 15, 2025</p>
           </div>
           <div className="text-right">
-            <div className="text-2xl font-bold text-zinc-50">{formatINR(DASHBOARD_STATS.tokens.costCentsThisMonth)}</div>
+            <div className="text-2xl font-bold text-zinc-50">{formatINR(data.usage.costCents)}</div>
             <div className="text-xs text-zinc-500">spent this month</div>
           </div>
         </div>
@@ -93,10 +71,10 @@ export function BillingPage() {
             <span className="text-xs text-zinc-500">This month</span>
           </div>
           <div className="mt-3 mb-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-zinc-50">{formatNumber(DASHBOARD_STATS.tokens.usedThisMonth)}</span>
+            <span className="text-2xl font-bold text-zinc-50">{formatNumber(data.usage.tokensUsed)}</span>
             <span className="text-sm text-zinc-500">/ 10M tokens</span>
           </div>
-          <ProgressBar value={DASHBOARD_STATS.tokens.usedThisMonth} max={10000000} color="#10b981" />
+          <ProgressBar value={data.usage.tokensUsed} max={data.usage.tokensCap} color="#10b981" />
           <div className="mt-2 flex items-center justify-between text-xs">
             <span className="text-zinc-500">{tokenPct.toFixed(1)}% used</span>
             <span className="text-zinc-500">{(100 - tokenPct).toFixed(1)}% remaining</span>
@@ -109,13 +87,13 @@ export function BillingPage() {
               <TrendingUp className="h-4 w-4 text-sky-400" />
               <span className="text-sm font-semibold text-zinc-100">Spend</span>
             </div>
-            <span className="text-xs text-zinc-500">vs ₹{DASHBOARD_STATS.tokens.budgetCentsThisMonth / 100} budget</span>
+            <span className="text-xs text-zinc-500">vs ₹{data.usage.budgetCents / 100} budget</span>
           </div>
           <div className="mt-3 mb-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-zinc-50">{formatINR(DASHBOARD_STATS.tokens.costCentsThisMonth)}</span>
-            <span className="text-sm text-zinc-500">/ {formatINR(DASHBOARD_STATS.tokens.budgetCentsThisMonth)}</span>
+            <span className="text-2xl font-bold text-zinc-50">{formatINR(data.usage.costCents)}</span>
+            <span className="text-sm text-zinc-500">/ {formatINR(data.usage.budgetCents)}</span>
           </div>
-          <ProgressBar value={DASHBOARD_STATS.tokens.costCentsThisMonth} max={DASHBOARD_STATS.tokens.budgetCentsThisMonth} color="#0ea5e9" />
+          <ProgressBar value={data.usage.costCents} max={data.usage.budgetCents} color="#0ea5e9" />
           <div className="mt-2 flex items-center justify-between text-xs">
             <span className="text-zinc-500">{costPct.toFixed(0)}% of budget</span>
             <span className="text-emerald-400">Under budget</span>

@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "@/lib/app/router";
-import { CURRENT_USER } from "@/lib/app/data";
+import { useRouter, useAuth } from "@/lib/app/router";
 import { PageHeader, Avatar } from "@/components/app/ui";
 import { cn } from "@/lib/utils";
 import {
@@ -27,6 +26,7 @@ const TABS = [
 ] as const;
 
 export function SettingsPage() {
+  const { user } = useAuth();
   const [tab, setTab] = useState<(typeof TABS)[number]["id"]>("profile");
   const [theme, setTheme] = useState<"dark" | "light" | "system">("dark");
   const [notifPrefs, setNotifPrefs] = useState({
@@ -71,7 +71,7 @@ export function SettingsPage() {
               <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
                 <h3 className="mb-4 text-sm font-semibold text-zinc-100">Profile</h3>
                 <div className="flex items-center gap-4">
-                  <Avatar name={CURRENT_USER.name} color={CURRENT_USER.avatarColor} size="lg" />
+                  <Avatar name={user?.name || "U"} color={user?.avatarColor || "#10b981"} size="lg" />
                   <button className="rounded-lg border border-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:border-zinc-700">
                     Change avatar
                   </button>
@@ -80,14 +80,14 @@ export function SettingsPage() {
                   <div>
                     <label className="mb-1.5 block text-xs font-medium text-zinc-400">Full name</label>
                     <input
-                      defaultValue={CURRENT_USER.name}
+                      defaultValue={user?.name}
                       className="h-10 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-emerald-500"
                     />
                   </div>
                   <div>
                     <label className="mb-1.5 block text-xs font-medium text-zinc-400">Email</label>
                     <input
-                      defaultValue={CURRENT_USER.email}
+                      defaultValue={user?.email}
                       className="h-10 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-emerald-500"
                     />
                   </div>
@@ -107,7 +107,7 @@ export function SettingsPage() {
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-zinc-400">Workspace name</label>
                   <input
-                    defaultValue={CURRENT_USER.workspace}
+                    defaultValue={user?.workspaceName}
                     className="h-10 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-emerald-500"
                   />
                 </div>
@@ -116,7 +116,7 @@ export function SettingsPage() {
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-zinc-500">app.bihari-ai.in/</span>
                     <input
-                      defaultValue={CURRENT_USER.workspaceSlug}
+                      defaultValue={user?.workspaceSlug}
                       className="h-10 flex-1 rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-emerald-500"
                     />
                   </div>

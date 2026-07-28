@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { useRouter, formatNumber, formatDate, formatDateTime } from "@/lib/app/router";
-import { EMPLOYEES, TASKS, KNOWLEDGE_DOCS, TOOL_LABELS } from "@/lib/app/data";
+import { api } from "@/lib/app/api-client";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { TOOL_LABELS } from "@/lib/app/data";
 import {
   Avatar,
   EmployeeStatusBadge,
@@ -11,6 +13,8 @@ import {
   CriticalityBadge,
   ProgressBar,
   EmptyState,
+  ErrorState,
+  ListSkeleton,
 } from "@/components/app/ui";
 import { cn } from "@/lib/utils";
 import {
@@ -39,19 +43,31 @@ const TABS = [
 export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
   const { navigate } = useRouter();
   const [tab, setTab] = useState<(typeof TABS)[number]["id"]>("overview");
+  const queryClient = useQueryClient();
 
-  const employee = EMPLOYEES.find((e) => e.id === employeeId);
-  if (!employee) {
+  const { data: employee, isLoading, isError, refetch } = useQuery({
+    queryKey: ["employee", employeeId],
+    queryFn: () => api.employees.get(employeeId),
+  });
+
+  const pauseMutation = useMutation({
+    mutationFn: () => api.employees.pause(employeeId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["employee", employeeId] }),
+  });
+  const resumeMutation = useMutation({
+    mutationFn: () => api.employees.resume(employeeId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["employee", employeeId] }),
+  });
+
+  if (isLoading) return <ListSkeleton rows={6} />;
+  if (isError || !employee) {
     return (
       <EmptyState
         icon={Bot}
         title="Employee not found"
         description="This employee may have been retired or does not exist."
         action={
-          <button
-            onClick={() => navigate("employees")}
-            className="rounded-lg bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-emerald-950 hover:bg-emerald-400"
-          >
+          <button onClick={() => navigate("employees")} className="rounded-lg bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-emerald-950 hover:bg-emerald-400">
             Back to employees
           </button>
         }
@@ -59,8 +75,8 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
     );
   }
 
-  const employeeTasks = TASKS.filter((t) => t.employeeId === employee.id);
-  const employeeDocs = KNOWLEDGE_DOCS.filter((d) => d.employeeId === employee.id);
+  const employeeTasks = employee.tasks || [];
+  const employeeDocs = employee.documents || [];
   const tokenPct = (employee.tokenUsage / employee.tokenCap) * 100;
 
   return (
@@ -93,11 +109,19 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
         </div>
         <div className="flex shrink-0 gap-2">
           {employee.status === "active" ? (
-            <button className="flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-sm font-medium text-zinc-200 transition-colors hover:border-zinc-700">
+            <button
+              onClick={() => pauseMutation.mutate()}
+              disabled={pauseMutation.isPending}
+              className="flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-sm font-medium text-zinc-200 transition-colors hover:border-zinc-700 disabled:opacity-50"
+            >
               <Pause className="h-3.5 w-3.5" /> Pause
             </button>
           ) : employee.status === "paused" ? (
-            <button className="flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-sm font-medium text-zinc-200 transition-colors hover:border-zinc-700">
+            <button
+              onClick={() => resumeMutation.mutate()}
+              disabled={resumeMutation.isPending}
+              className="flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-sm font-medium text-zinc-200 transition-colors hover:border-zinc-700 disabled:opacity-50"
+            >
               <Play className="h-3.5 w-3.5" /> Resume
             </button>
           ) : null}

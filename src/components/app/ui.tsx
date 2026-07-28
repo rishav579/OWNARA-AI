@@ -458,3 +458,6 @@ export function HashDisplay({ hash }: { hash: string }) {
     </span>
   );
 }
+
+// Re-export loading/skeleton components for convenience
+export { ErrorState, ListSkeleton, TableSkeleton, EmployeeGridSkeleton, StatCardSkeleton, CardSkeleton, ChartSkeleton, PageSkeleton, LoadingScreen } from './loading-states';

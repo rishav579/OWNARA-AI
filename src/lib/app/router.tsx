@@ -1,12 +1,13 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { api, setAccessToken, setCurrentUser, setAuthFailureHandler } from "./api-client";
 
 // ─── Router ──────────────────────────────────────────────────────────────────
 
 export interface Route {
-  path: string;       // e.g. "dashboard", "employees", "employees/e_018f9a50"
-  segments: string[]; // e.g. ["employees", "e_018f9a50"]
+  path: string;
+  segments: string[];
   params: Record<string, string>;
 }
 
@@ -27,17 +28,70 @@ function parseHash(): Route {
   return { path, segments, params: {} };
 }
 
-export function RouterProvider({ children }: { children: React.ReactNode }) {
+// ─── Auth Context ────────────────────────────────────────────────────────────
+
+interface AuthContextValue {
+  user: { id: string; email: string; name: string; avatarColor: string; workspaceId?: string; workspaceName?: string; workspaceSlug?: string; role?: string } | null;
+  loading: boolean;
+  login: (email: string, password: string) => Promise<void>;
+  signup: (data: { email: string; password: string; name: string; workspaceName: string }) => Promise<void>;
+  logout: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextValue | null>(null);
+
+export function AppProviders({ children }: { children: React.ReactNode }) {
   const [route, setRoute] = useState<Route>(() => parseHash());
+  const [user, setUser] = useState<AuthContextValue["user"]>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const handler = () => setRoute(parseHash());
     window.addEventListener("hashchange", handler);
-    // Set default route to landing if no hash
     if (!window.location.hash) {
       window.location.hash = "#/";
     }
     return () => window.removeEventListener("hashchange", handler);
+  }, []);
+
+  // Set up auth failure handler to redirect to login
+  useEffect(() => {
+    setAuthFailureHandler(() => {
+      setUser(null);
+      window.location.hash = "#/login";
+    });
+  }, []);
+
+  // On mount, try to restore session from memory (token set at login)
+  useEffect(() => {
+    // Check if we have a token from a previous login this session
+    const token = typeof window !== "undefined" ? window.sessionStorage.getItem("bihari_token") : null;
+    if (token) {
+      let cancelled = false;
+      setAccessToken(token);
+      api.auth.me().then((res) => {
+        if (cancelled) return;
+        const ws = res.workspaces[0];
+        const fullUser = {
+          ...res.user,
+          workspaceId: ws?.id,
+          workspaceName: ws?.name,
+          workspaceSlug: ws?.slug,
+          role: ws?.role,
+        };
+        setUser(fullUser);
+        setCurrentUser(fullUser);
+        setLoading(false);
+      }).catch(() => {
+        if (cancelled) return;
+        window.sessionStorage.removeItem("bihari_token");
+        setAccessToken(null);
+        setLoading(false);
+      });
+      return () => { cancelled = true; };
+    }
+    // No token — use a microtask to avoid synchronous setState in effect
+    Promise.resolve().then(() => setLoading(false));
   }, []);
 
   const navigate = useCallback((path: string) => {
@@ -45,16 +99,68 @@ export function RouterProvider({ children }: { children: React.ReactNode }) {
     window.scrollTo({ top: 0, behavior: "instant" });
   }, []);
 
+  const login = useCallback(async (email: string, password: string) => {
+    const res = await api.auth.login(email, password);
+    setAccessToken(res.accessToken);
+    window.sessionStorage.setItem("bihari_token", res.accessToken);
+    const ws = res.workspaces[0];
+    const fullUser = {
+      ...res.user,
+      workspaceId: ws?.id,
+      workspaceName: ws?.name,
+      workspaceSlug: ws?.slug,
+      role: ws?.role,
+    };
+    setUser(fullUser);
+    setCurrentUser(fullUser);
+  }, []);
+
+  const signup = useCallback(async (data: { email: string; password: string; name: string; workspaceName: string }) => {
+    const res = await api.auth.signup(data);
+    setAccessToken(res.accessToken);
+    window.sessionStorage.setItem("bihari_token", res.accessToken);
+    const fullUser = {
+      ...res.user,
+      workspaceId: res.workspace.id,
+      workspaceName: res.workspace.name,
+      workspaceSlug: res.workspace.slug,
+      role: "owner",
+    };
+    setUser(fullUser);
+    setCurrentUser(fullUser);
+  }, []);
+
+  const logout = useCallback(async () => {
+    try {
+      await api.auth.logout();
+    } catch {
+      // ignore
+    }
+    setAccessToken(null);
+    setCurrentUser(null);
+    setUser(null);
+    window.sessionStorage.removeItem("bihari_token");
+    window.location.hash = "#/login";
+  }, []);
+
   return (
     <RouterContext.Provider value={{ route, navigate }}>
-      {children}
+      <AuthContext.Provider value={{ user, loading, login, signup, logout }}>
+        {children}
+      </AuthContext.Provider>
     </RouterContext.Provider>
   );
 }
 
 export function useRouter() {
   const ctx = useContext(RouterContext);
-  if (!ctx) throw new Error("useRouter must be used within RouterProvider");
+  if (!ctx) throw new Error("useRouter must be used within AppProviders");
+  return ctx;
+}
+
+export function useAuth() {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used within AppProviders");
   return ctx;
 }
 

@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "@/lib/app/router";
+import { useRouter, useAuth } from "@/lib/app/router";
 import { cn } from "@/lib/utils";
-import { CURRENT_USER, NOTIFICATIONS } from "@/lib/app/data";
+import { api } from "@/lib/app/api-client";
+import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard,
   Bot,
@@ -58,12 +59,19 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { route, navigate } = useRouter();
+  const { user, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
+  const { data: notifications = [] } = useQuery({
+    queryKey: ["notifications"],
+    queryFn: () => api.notifications.list(),
+    refetchInterval: 30000,
+  });
+
   const currentPath = route.segments[0] ?? "dashboard";
-  const unreadCount = NOTIFICATIONS.filter((n) => !n.read).length;
+  const unreadCount = notifications.filter((n) => !n.read).length;
 
   const Sidebar = (
     <div className="flex h-full flex-col">
@@ -74,7 +82,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
         <div className="min-w-0 flex-1">
           <div className="text-sm font-bold tracking-tight text-zinc-50">BIHARI AI</div>
-          <div className="truncate text-[0.65rem] text-zinc-500">{CURRENT_USER.workspace}</div>
+          <div className="truncate text-[0.65rem] text-zinc-500">{user?.workspaceName}</div>
         </div>
       </div>
 
@@ -147,13 +155,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         >
           <div
             className="flex h-8 w-8 items-center justify-center rounded-lg text-xs font-bold text-white"
-            style={{ backgroundColor: CURRENT_USER.avatarColor }}
+            style={{ backgroundColor: user?.avatarColor || "#10b981" }}
           >
-            RS
+            {user?.name?.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase()}
           </div>
           <div className="min-w-0 flex-1 text-left">
-            <div className="truncate text-xs font-semibold text-zinc-200">{CURRENT_USER.name}</div>
-            <div className="truncate text-[0.65rem] text-zinc-500">{CURRENT_USER.email}</div>
+            <div className="truncate text-xs font-semibold text-zinc-200">{user?.name}</div>
+            <div className="truncate text-[0.65rem] text-zinc-500">{user?.email}</div>
           </div>
           <ChevronDown className="h-3.5 w-3.5 text-zinc-500" />
         </button>
@@ -166,7 +174,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Settings className="h-3.5 w-3.5" /> Settings
             </button>
             <button
-              onClick={() => navigate("")}
+              onClick={() => logout()}
               className="flex w-full items-center gap-2 border-t border-zinc-800 px-3 py-2 text-xs text-red-400 transition-colors hover:bg-zinc-800"
             >
               <LogOut className="h-3.5 w-3.5" /> Sign out
@@ -257,7 +265,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       <span className="text-[0.65rem] text-zinc-500">{unreadCount} unread</span>
                     </div>
                     <div className="max-h-80 overflow-y-auto">
-                      {NOTIFICATIONS.slice(0, 5).map((n) => (
+                      {notifications.slice(0, 5).map((n) => (
                         <button
                           key={n.id}
                           onClick={() => {

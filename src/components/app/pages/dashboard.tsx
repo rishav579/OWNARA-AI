@@ -1,23 +1,18 @@
 "use client";
 
 import { useRouter, formatRelativeTime, formatNumber, formatINR } from "@/lib/app/router";
-import {
-  DASHBOARD_STATS,
-  TASK_ACTIVITY,
-  TOKEN_USAGE_BY_EMPLOYEE,
-  EMPLOYEES,
-  APPROVALS,
-  AUDIT_ENTRIES,
-} from "@/lib/app/data";
+import { api } from "@/lib/app/api-client";
+import { useQuery } from "@tanstack/react-query";
 import {
   StatCard,
   BarChart,
   DonutChart,
   PageHeader,
   Avatar,
-  ApprovalStatusBadge,
   EmployeeStateBadge,
   EmployeeStatusBadge,
+  ErrorState,
+  PageSkeleton,
 } from "@/components/app/ui";
 import {
   Bot,
@@ -29,16 +24,24 @@ import {
   FileText,
   CheckCircle2,
   XCircle,
-  Clock,
 } from "lucide-react";
 
 export function DashboardPage() {
   const { navigate } = useRouter();
-  const pendingApprovals = APPROVALS.filter((a) => a.status === "pending");
-  const activeEmployees = EMPLOYEES.filter((e) => e.status === "active");
-  const recentAudit = AUDIT_ENTRIES.slice(0, 6);
-  const barData = TASK_ACTIVITY.map((d) => ({ label: d.day.replace("Jan ", ""), value: d.tasks }));
-  const tokenPct = (DASHBOARD_STATS.tokens.usedThisMonth / 10000000) * 100;
+
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ["dashboard"],
+    queryFn: () => api.dashboard.get(),
+  });
+
+  if (isLoading) return <PageSkeleton variant="dashboard" />;
+  if (isError || !data) return <ErrorState message="Failed to load dashboard" onRetry={() => refetch()} />;
+
+  const pendingApprovals = data.approvals.pendingList;
+  const activeEmployees = data.employees.list;
+  const recentAudit = data.recentActivity;
+  const barData = data.taskActivity.map((d: any) => ({ label: d.day.replace("Jan ", ""), value: d.tasks }));
+  const tokenPct = (data.tokens.usedThisMonth / 10000000) * 100;
 
   return (
     <div>
@@ -85,43 +88,14 @@ export function DashboardPage() {
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        <StatCard
-          label="Active Employees"
-          value={String(DASHBOARD_STATS.employees.active)}
-          icon={Bot}
-          trend="up"
-          trendValue="+1 this week"
-          accent="emerald"
-        />
-        <StatCard
-          label="Pending Approvals"
-          value={String(DASHBOARD_STATS.approvals.pending)}
-          icon={ShieldCheck}
-          trend="flat"
-          trendValue="2 awaiting"
-          accent="amber"
-        />
-        <StatCard
-          label="Tasks This Month"
-          value={String(DASHBOARD_STATS.tasks.total)}
-          icon={ListTodo}
-          trend="up"
-          trendValue="+12%"
-          accent="violet"
-        />
-        <StatCard
-          label="Token Cost"
-          value={formatINR(DASHBOARD_STATS.tokens.costCentsThisMonth)}
-          icon={Zap}
-          trend="down"
-          trendValue="-8%"
-          accent="sky"
-        />
+        <StatCard label="Active Employees" value={String(data.employees.active)} icon={Bot} trend="up" trendValue="+1 this week" accent="emerald" />
+        <StatCard label="Pending Approvals" value={String(data.approvals.pending)} icon={ShieldCheck} trend="flat" trendValue={`${data.approvals.pending} awaiting`} accent="amber" />
+        <StatCard label="Tasks This Month" value={String(data.tasks.total)} icon={ListTodo} trend="up" trendValue="+12%" accent="violet" />
+        <StatCard label="Token Cost" value={formatINR(data.tokens.costCentsThisMonth)} icon={Zap} trend="down" trendValue="-8%" accent="sky" />
       </div>
 
       {/* Charts row */}
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
-        {/* Task activity */}
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5 lg:col-span-2">
           <div className="mb-4 flex items-center justify-between">
             <div>
@@ -133,70 +107,48 @@ export function DashboardPage() {
           <BarChart data={barData} color="#10b981" height={160} />
         </div>
 
-        {/* Token usage donut */}
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
           <h3 className="text-sm font-semibold text-zinc-100">Token Usage</h3>
           <p className="text-xs text-zinc-500">By employee — this month</p>
           <div className="mt-5 flex justify-center">
-            <DonutChart data={TOKEN_USAGE_BY_EMPLOYEE} />
+            <DonutChart data={data.tokens.byEmployee} />
           </div>
         </div>
       </div>
 
-      {/* Two-column: approvals + activity */}
+      {/* Two-column: approvals + employees */}
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        {/* Pending approvals */}
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50">
           <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-3.5">
             <h3 className="text-sm font-semibold text-zinc-100">Pending Approvals</h3>
-            <button
-              onClick={() => navigate("approvals")}
-              className="text-xs text-emerald-400 hover:text-emerald-300"
-            >
-              View all →
-            </button>
+            <button onClick={() => navigate("approvals")} className="text-xs text-emerald-400 hover:text-emerald-300">View all →</button>
           </div>
           <div className="divide-y divide-zinc-800/50">
-            {pendingApprovals.map((a) => (
-              <button
-                key={a.id}
-                onClick={() => navigate("approvals")}
-                className="flex w-full items-center gap-3 px-5 py-3.5 text-left transition-colors hover:bg-zinc-800/30"
-              >
-                <Avatar name={a.employeeName} color="#10b981" size="sm" />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium text-zinc-200">{a.employeeName}</div>
-                  <div className="truncate text-xs text-zinc-500">
-                    {a.toolDisplayName} → {a.proposedAction.to || a.proposedAction.subject || "Draft"}
-                  </div>
-                </div>
-                <Lock className="h-3.5 w-3.5 shrink-0 text-amber-400" />
-              </button>
-            ))}
-            {pendingApprovals.length === 0 && (
+            {pendingApprovals.length === 0 ? (
               <div className="px-5 py-8 text-center text-sm text-zinc-500">No pending approvals</div>
+            ) : (
+              pendingApprovals.map((a: any) => (
+                <button key={a.id} onClick={() => navigate("approvals")} className="flex w-full items-center gap-3 px-5 py-3.5 text-left transition-colors hover:bg-zinc-800/30">
+                  <Avatar name={a.employeeName} color={a.employeeColor} size="sm" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium text-zinc-200">{a.employeeName}</div>
+                    <div className="truncate text-xs text-zinc-500">{a.toolDisplayName} → {a.to}</div>
+                  </div>
+                  <Lock className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+                </button>
+              ))
             )}
           </div>
         </div>
 
-        {/* Employee status */}
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50">
           <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-3.5">
             <h3 className="text-sm font-semibold text-zinc-100">Employee Status</h3>
-            <button
-              onClick={() => navigate("employees")}
-              className="text-xs text-emerald-400 hover:text-emerald-300"
-            >
-              View all →
-            </button>
+            <button onClick={() => navigate("employees")} className="text-xs text-emerald-400 hover:text-emerald-300">View all →</button>
           </div>
           <div className="divide-y divide-zinc-800/50">
-            {activeEmployees.map((e) => (
-              <button
-                key={e.id}
-                onClick={() => navigate(`employees/${e.id}`)}
-                className="flex w-full items-center gap-3 px-5 py-3.5 text-left transition-colors hover:bg-zinc-800/30"
-              >
+            {activeEmployees.map((e: any) => (
+              <button key={e.id} onClick={() => navigate(`employees/${e.id}`)} className="flex w-full items-center gap-3 px-5 py-3.5 text-left transition-colors hover:bg-zinc-800/30">
                 <Avatar name={e.name} color={e.avatarColor} size="sm" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
@@ -216,24 +168,17 @@ export function DashboardPage() {
       <div className="mt-6 rounded-xl border border-zinc-800 bg-zinc-900/50">
         <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-3.5">
           <h3 className="text-sm font-semibold text-zinc-100">Recent Activity</h3>
-          <button
-            onClick={() => navigate("audit")}
-            className="text-xs text-emerald-400 hover:text-emerald-300"
-          >
-            Full audit trail →
-          </button>
+          <button onClick={() => navigate("audit")} className="text-xs text-emerald-400 hover:text-emerald-300">Full audit trail →</button>
         </div>
         <div className="divide-y divide-zinc-800/50">
-          {recentAudit.map((entry) => (
+          {recentAudit.map((entry: any) => (
             <div key={entry.id} className="flex items-center gap-3 px-5 py-3">
-              <div
-                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
-                  entry.entryType.includes("approval") ? "bg-amber-500/10 text-amber-400" :
-                  entry.entryType.includes("failed") || entry.entryType.includes("rejected") ? "bg-red-500/10 text-red-400" :
-                  entry.entryType.includes("completed") ? "bg-emerald-500/10 text-emerald-400" :
-                  "bg-zinc-500/10 text-zinc-400"
-                }`}
-              >
+              <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+                entry.entryType.includes("approval") ? "bg-amber-500/10 text-amber-400" :
+                entry.entryType.includes("failed") || entry.entryType.includes("rejected") ? "bg-red-500/10 text-red-400" :
+                entry.entryType.includes("completed") ? "bg-emerald-500/10 text-emerald-400" :
+                "bg-zinc-500/10 text-zinc-400"
+              }`}>
                 {entry.entryType.includes("approval") ? <Lock className="h-3.5 w-3.5" /> :
                  entry.entryType.includes("completed") ? <CheckCircle2 className="h-3.5 w-3.5" /> :
                  entry.entryType.includes("failed") ? <XCircle className="h-3.5 w-3.5" /> :
@@ -243,17 +188,13 @@ export function DashboardPage() {
               <div className="min-w-0 flex-1">
                 <div className="text-sm text-zinc-200">
                   <span className="font-medium">{entry.actorName}</span>{" "}
-                  <span className="text-zinc-400">
-                    {entry.entryType.replace(/_/g, " ")}
-                  </span>
+                  <span className="text-zinc-400">{entry.entryType.replace(/_/g, " ")}</span>
                 </div>
                 <div className="text-xs text-zinc-500">
                   {entry.payload.employee || entry.payload.tool || entry.payload.title || entry.targetType}
                 </div>
               </div>
-              <span className="shrink-0 text-xs text-zinc-500">
-                {formatRelativeTime(entry.createdAt)}
-              </span>
+              <span className="shrink-0 text-xs text-zinc-500">{formatRelativeTime(entry.createdAt)}</span>
             </div>
           ))}
         </div>
@@ -266,16 +207,11 @@ export function DashboardPage() {
             <h3 className="text-sm font-semibold text-zinc-100">Monthly Token Budget</h3>
             <p className="text-xs text-zinc-500">10M tokens included in your Pro plan</p>
           </div>
-          <button
-            onClick={() => navigate("billing")}
-            className="rounded-lg border border-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-700"
-          >
-            Manage plan
-          </button>
+          <button onClick={() => navigate("billing")} className="rounded-lg border border-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-zinc-700">Manage plan</button>
         </div>
         <div className="mt-4">
           <div className="mb-1.5 flex items-center justify-between text-xs">
-            <span className="text-zinc-400">{formatNumber(DASHBOARD_STATS.tokens.usedThisMonth)} / 10M tokens</span>
+            <span className="text-zinc-400">{formatNumber(data.tokens.usedThisMonth)} / 10M tokens</span>
             <span className="font-mono text-zinc-500">{tokenPct.toFixed(1)}%</span>
           </div>
           <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-800">

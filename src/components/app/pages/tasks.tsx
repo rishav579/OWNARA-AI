@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { useRouter, formatNumber, formatDateTime, formatRelativeTime } from "@/lib/app/router";
-import { TASKS, EMPLOYEES } from "@/lib/app/data";
-import type { TaskStatus } from "@/lib/app/data";
+import { api } from "@/lib/app/api-client";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   PageHeader,
   TaskStatusBadge,
@@ -11,6 +11,8 @@ import {
   Avatar,
   EmptyState,
   ProgressBar,
+  ErrorState,
+  ListSkeleton,
 } from "@/components/app/ui";
 import { cn } from "@/lib/utils";
 import {
@@ -19,7 +21,6 @@ import {
   Search,
   ChevronRight,
   ChevronDown,
-  Bot,
   Zap,
   Lock,
   CheckCircle2,
@@ -29,6 +30,8 @@ import {
   Brain,
   X,
 } from "lucide-react";
+
+type TaskStatus = "assigned" | "planning" | "executing" | "waiting_approval" | "completed" | "failed" | "paused" | "stopped";
 
 const STATUS_FILTERS: { label: string; value: TaskStatus | "all" }[] = [
   { label: "All", value: "all" },
@@ -51,12 +54,35 @@ export function TasksPage() {
   const [query, setQuery] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [form, setForm] = useState({ employeeId: "", title: "", description: "", stepCap: 20, tokenCap: 100000, priority: "medium" });
+  const queryClient = useQueryClient();
 
-  const filtered = TASKS.filter((t) => {
-    if (filter === "all") return true;
-    if (filter === "executing") return t.status === "executing" || t.status === "planning" || t.status === "assigned";
-    return t.status === filter;
-  }).filter((t) => {
+  const { data: tasks = [], isLoading, isError, refetch } = useQuery({
+    queryKey: ["tasks", filter],
+    queryFn: () => api.tasks.list({ status: filter }),
+  });
+
+  const { data: employees = [] } = useQuery({
+    queryKey: ["employees", "active"],
+    queryFn: () => api.employees.list({ status: "active" }),
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (data: any) => api.tasks.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      setShowCreate(false);
+    },
+  });
+
+  // Fetch timeline for expanded task
+  const { data: timeline = [] } = useQuery({
+    queryKey: ["task-timeline", expandedId],
+    queryFn: () => api.tasks.timeline(expandedId!),
+    enabled: !!expandedId,
+  });
+
+  const filtered = tasks.filter((t: any) => {
     if (!query) return true;
     return t.title.toLowerCase().includes(query.toLowerCase()) || t.employeeName.toLowerCase().includes(query.toLowerCase());
   });
@@ -65,7 +91,7 @@ export function TasksPage() {
     <div>
       <PageHeader
         title="Tasks"
-        description={`${TASKS.length} total · ${TASKS.filter((t) => t.status === "waiting_approval").length} waiting approval`}
+        description={`${tasks.length} total · ${tasks.filter((t: any) => t.status === "waiting_approval").length} waiting approval`}
         actions={
           <button
             onClick={() => setShowCreate(true)}
@@ -105,7 +131,11 @@ export function TasksPage() {
       </div>
 
       {/* Task list */}
-      {filtered.length === 0 ? (
+      {isLoading ? (
+        <ListSkeleton rows={5} />
+      ) : isError ? (
+        <ErrorState message="Failed to load tasks" onRetry={() => refetch()} />
+      ) : filtered.length === 0 ? (
         <EmptyState
           icon={ListTodo}
           title="No tasks found"
@@ -119,7 +149,7 @@ export function TasksPage() {
       ) : (
         <div className="space-y-2">
           {filtered.map((t) => {
-            const employee = EMPLOYEES.find((e) => e.id === t.employeeId);
+            const employee = employees.find((e: any) => e.id === t.employeeId);
             const isExpanded = expandedId === t.id;
             const tokenPct = (t.tokenUsage / t.tokenCap) * 100;
             return (
@@ -145,7 +175,7 @@ export function TasksPage() {
                 </button>
 
                 {/* Expanded view: timeline */}
-                {isExpanded && t.steps && (
+                {isExpanded && (
                   <div className="border-t border-zinc-800 bg-zinc-950/50 p-4">
                     <div className="mb-3 flex items-center justify-between">
                       <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Task Timeline — Explainability</h4>
@@ -157,8 +187,8 @@ export function TasksPage() {
                       <ProgressBar value={t.tokenUsage} max={t.tokenCap} color={tokenPct > 80 ? "#f59e0b" : "#10b981"} />
                     </div>
                     <div className="space-y-3">
-                      {t.steps.map((step) => {
-                        const Icon = STEP_ICONS[step.stepType] || FileText;
+                      {timeline.map((step: any) => {
+                        const Icon = STEP_ICONS[step.stepType as keyof typeof STEP_ICONS] || FileText;
                         return (
                           <div key={step.stepNumber} className="flex gap-3">
                             <div className="flex flex-col items-center">
@@ -171,7 +201,7 @@ export function TasksPage() {
                               )}>
                                 <Icon className="h-3.5 w-3.5" />
                               </div>
-                              {step.stepNumber < t.steps!.length && (
+                              {step.stepNumber < timeline.length && (
                                 <div className="my-1 w-px flex-1 bg-zinc-800" />
                               )}
                             </div>
@@ -181,9 +211,9 @@ export function TasksPage() {
                                 <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[0.6rem] text-zinc-400">
                                   {step.stepType.replace(/_/g, " ")}
                                 </span>
-                                {step.tool && (
+                                {step.input?.tool && (
                                   <span className="rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-[0.6rem] text-emerald-400">
-                                    {step.tool}
+                                    {step.input.tool}
                                   </span>
                                 )}
                                 {step.status === "pending" && step.stepType === "approval_gate" && (
@@ -196,7 +226,9 @@ export function TasksPage() {
                               {step.output && (
                                 <div className="mt-2 rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
                                   <div className="mb-1 text-[0.65rem] font-semibold uppercase tracking-wider text-zinc-500">Output</div>
-                                  <p className="text-xs leading-relaxed text-zinc-400 line-clamp-3">{step.output}</p>
+                                  <p className="text-xs leading-relaxed text-zinc-400 line-clamp-3">
+                                    {typeof step.output === "string" ? step.output : JSON.stringify(step.output).slice(0, 200)}
+                                  </p>
                                 </div>
                               )}
                               {step.status === "completed" && (
@@ -237,8 +269,13 @@ export function TasksPage() {
             <div className="p-6 space-y-4">
               <div>
                 <label className="mb-1.5 block text-xs font-medium text-zinc-400">Assign to</label>
-                <select className="h-10 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-emerald-500">
-                  {EMPLOYEES.filter((e) => e.status === "active").map((e) => (
+                <select
+                  value={form.employeeId}
+                  onChange={(e) => setForm({ ...form, employeeId: e.target.value })}
+                  className="h-10 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-emerald-500"
+                >
+                  <option value="">Select an employee…</option>
+                  {employees.map((e: any) => (
                     <option key={e.id} value={e.id}>{e.name} — {e.roleName}</option>
                   ))}
                 </select>
@@ -246,6 +283,8 @@ export function TasksPage() {
               <div>
                 <label className="mb-1.5 block text-xs font-medium text-zinc-400">Title</label>
                 <input
+                  value={form.title}
+                  onChange={(e) => setForm({ ...form, title: e.target.value })}
                   placeholder="e.g. Draft replies to today's customer queries"
                   className="h-10 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-emerald-500"
                 />
@@ -254,6 +293,8 @@ export function TasksPage() {
                 <label className="mb-1.5 block text-xs font-medium text-zinc-400">Description</label>
                 <textarea
                   rows={4}
+                  value={form.description}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
                   placeholder="Describe what the AI Employee should do…"
                   className="w-full rounded-lg border border-zinc-800 bg-zinc-900 p-3 text-sm text-zinc-100 outline-none focus:border-emerald-500"
                 />
@@ -261,17 +302,23 @@ export function TasksPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-zinc-400">Step cap</label>
-                  <input type="number" defaultValue={20} className="h-10 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-emerald-500" />
+                  <input type="number" value={form.stepCap} onChange={(e) => setForm({ ...form, stepCap: parseInt(e.target.value) || 20 })} className="h-10 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-emerald-500" />
                 </div>
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-zinc-400">Token cap</label>
-                  <input type="number" defaultValue={100000} className="h-10 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-emerald-500" />
+                  <input type="number" value={form.tokenCap} onChange={(e) => setForm({ ...form, tokenCap: parseInt(e.target.value) || 100000 })} className="h-10 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-emerald-500" />
                 </div>
               </div>
             </div>
             <div className="flex justify-end gap-2 border-t border-zinc-800 px-6 py-3">
               <button onClick={() => setShowCreate(false)} className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-400 hover:text-zinc-200">Cancel</button>
-              <button onClick={() => setShowCreate(false)} className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 hover:bg-emerald-400">Assign task</button>
+              <button
+                onClick={() => createMutation.mutate(form)}
+                disabled={createMutation.isPending || !form.employeeId || !form.title}
+                className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 hover:bg-emerald-400 disabled:opacity-50"
+              >
+                {createMutation.isPending ? "Assigning…" : "Assign task"}
+              </button>
             </div>
           </div>
         </div>

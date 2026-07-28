@@ -2,11 +2,14 @@
 
 import { useState } from "react";
 import { useRouter, formatDateTime } from "@/lib/app/router";
-import { AUDIT_ENTRIES } from "@/lib/app/data";
+import { api } from "@/lib/app/api-client";
+import { useQuery } from "@tanstack/react-query";
 import {
   PageHeader,
   HashDisplay,
   EmptyState,
+  ErrorState,
+  ListSkeleton,
 } from "@/components/app/ui";
 import { cn } from "@/lib/utils";
 import {
@@ -20,7 +23,6 @@ import {
   Play,
   Pause,
   ShieldCheck,
-  X,
 } from "lucide-react";
 
 const ENTRY_ICONS: Record<string, { icon: typeof FileText; cls: string }> = {
@@ -40,25 +42,29 @@ export function AuditPage() {
   const { navigate } = useRouter();
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
-  const [selectedId, setSelectedId] = useState<string | null>(AUDIT_ENTRIES[0]?.id ?? null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const entryTypes = ["all", ...new Set(AUDIT_ENTRIES.map((e) => e.entryType))];
+  const { data: entries = [], isLoading, isError, refetch } = useQuery({
+    queryKey: ["audit", typeFilter],
+    queryFn: () => api.audit.list({ entryType: typeFilter !== "all" ? typeFilter : undefined }),
+  });
 
-  const filtered = AUDIT_ENTRIES.filter((e) => {
-    if (typeFilter !== "all" && e.entryType !== typeFilter) return false;
+  const entryTypes = ["all", ...new Set(entries.map((e: any) => e.entryType))];
+
+  const filtered = entries.filter((e: any) => {
     if (query) {
       const q = query.toLowerCase();
       return (
         e.entryType.includes(q) ||
         e.actorName.toLowerCase().includes(q) ||
-        e.targetType.includes(q) ||
-        Object.values(e.payload).some((v) => v.toLowerCase().includes(q))
+        (e.targetType || "").includes(q) ||
+        Object.values(e.payload).some((v: any) => String(v).toLowerCase().includes(q))
       );
     }
     return true;
   });
 
-  const selected = AUDIT_ENTRIES.find((e) => e.id === selectedId) || filtered[0];
+  const selected = filtered.find((e: any) => e.id === selectedId) || filtered[0];
 
   return (
     <div>
@@ -95,7 +101,11 @@ export function AuditPage() {
         </select>
       </div>
 
-      {filtered.length === 0 ? (
+      {isLoading ? (
+        <ListSkeleton rows={6} />
+      ) : isError ? (
+        <ErrorState message="Failed to load audit trail" onRetry={() => refetch()} />
+      ) : filtered.length === 0 ? (
         <EmptyState icon={ScrollText} title="No audit entries" description="Audit entries will appear here as AI Employees take actions." />
       ) : (
         <div className="grid gap-4 lg:grid-cols-5">

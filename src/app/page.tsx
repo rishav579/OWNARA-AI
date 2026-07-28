@@ -1,6 +1,8 @@
 "use client";
 
-import { RouterProvider, useRouter } from "@/lib/app/router";
+import { useEffect } from "react";
+import { AppProviders, useRouter, useAuth } from "@/lib/app/router";
+import { QueryProvider } from "@/components/app/query-provider";
 import { AppShell } from "@/components/app/shell";
 import { LandingPage } from "@/components/app/pages/landing";
 import { AuthPage } from "@/components/app/pages/auth";
@@ -13,20 +15,45 @@ import { KnowledgePage } from "@/components/app/pages/knowledge";
 import { AuditPage } from "@/components/app/pages/audit";
 import { SettingsPage } from "@/components/app/pages/settings";
 import { BillingPage } from "@/components/app/pages/billing";
+import { LoadingScreen } from "@/components/app/loading-states";
 
 function AppRouter() {
-  const { route } = useRouter();
+  const { route, navigate } = useRouter();
+  const { user, loading } = useAuth();
   const path = route.segments[0] ?? "";
 
-  // Public pages (no sidebar)
+  // Handle redirects in an effect (not during render)
+  useEffect(() => {
+    if (loading) return;
+    // If on login page but already authenticated, go to dashboard
+    if (path === "login" && user) {
+      navigate("dashboard");
+    }
+    // If on a protected page but not authenticated, go to login
+    if (path !== "" && path !== "login" && !user) {
+      navigate("login");
+    }
+  }, [loading, path, user, navigate]);
+
+  // Show loading screen while checking auth
+  if (loading) {
+    return <LoadingScreen />;
+  }
+
+  // Public pages (no auth required)
   if (path === "" || path === undefined) {
     return <LandingPage />;
   }
   if (path === "login") {
+    if (user) return <LoadingScreen />;
     return <AuthPage />;
   }
 
-  // Protected pages (with sidebar shell)
+  // Protected pages — require auth
+  if (!user) {
+    return <LoadingScreen />;
+  }
+
   let page: React.ReactNode;
   switch (path) {
     case "dashboard":
@@ -66,8 +93,10 @@ function AppRouter() {
 
 export default function Home() {
   return (
-    <RouterProvider>
-      <AppRouter />
-    </RouterProvider>
+    <QueryProvider>
+      <AppProviders>
+        <AppRouter />
+      </AppProviders>
+    </QueryProvider>
   );
 }

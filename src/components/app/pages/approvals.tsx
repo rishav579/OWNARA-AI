@@ -2,13 +2,15 @@
 
 import { useState } from "react";
 import { useRouter, formatRelativeTime, formatDateTime } from "@/lib/app/router";
-import { APPROVALS } from "@/lib/app/data";
+import { api } from "@/lib/app/api-client";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   PageHeader,
   ApprovalStatusBadge,
   Avatar,
   CriticalityBadge,
   EmptyState,
+  ListSkeleton,
 } from "@/components/app/ui";
 import { cn } from "@/lib/utils";
 import {
@@ -26,14 +28,36 @@ import {
 export function ApprovalsPage() {
   const { navigate } = useRouter();
   const [tab, setTab] = useState<"pending" | "history">("pending");
-  const [selectedId, setSelectedId] = useState<string | null>(
-    APPROVALS.find((a) => a.status === "pending")?.id ?? null
-  );
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
-  const pending = APPROVALS.filter((a) => a.status === "pending");
-  const history = APPROVALS.filter((a) => a.status !== "pending");
+  const { data: pending = [], isLoading: pendingLoading } = useQuery({
+    queryKey: ["approvals", "pending"],
+    queryFn: () => api.approvals.pending(),
+  });
+  const { data: history = [], isLoading: historyLoading } = useQuery({
+    queryKey: ["approvals", "history"],
+    queryFn: () => api.approvals.list("all"),
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason?: string }) => api.approvals.approve(id, reason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["approvals"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+  const rejectMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason?: string }) => api.approvals.reject(id, reason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["approvals"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+
   const list = tab === "pending" ? pending : history;
-  const selected = APPROVALS.find((a) => a.id === selectedId) || list[0];
+  const selected = list.find((a: any) => a.id === selectedId) || list[0];
+  const isLoading = tab === "pending" ? pendingLoading : historyLoading;
 
   return (
     <div>
@@ -75,7 +99,9 @@ export function ApprovalsPage() {
         </button>
       </div>
 
-      {list.length === 0 ? (
+      {isLoading ? (
+        <ListSkeleton rows={4} />
+      ) : list.length === 0 ? (
         <EmptyState
           icon={ShieldCheck}
           title={tab === "pending" ? "No pending approvals" : "No approval history yet"}
@@ -198,14 +224,22 @@ export function ApprovalsPage() {
                 {selected.status === "pending" && (
                   <div className="p-5">
                     <div className="flex flex-col gap-2 sm:flex-row">
-                      <button className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-500 py-2.5 text-sm font-semibold text-emerald-950 transition-colors hover:bg-emerald-400">
-                        <Check className="h-4 w-4" /> Approve
+                      <button
+                        onClick={() => approveMutation.mutate({ id: selected.id })}
+                        disabled={approveMutation.isPending}
+                        className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-500 py-2.5 text-sm font-semibold text-emerald-950 transition-colors hover:bg-emerald-400 disabled:opacity-50"
+                      >
+                        <Check className="h-4 w-4" /> {approveMutation.isPending ? "Approving…" : "Approve"}
                       </button>
                       <button className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-zinc-700 py-2.5 text-sm font-semibold text-zinc-200 transition-colors hover:bg-zinc-800">
                         <Edit3 className="h-4 w-4" /> Modify
                       </button>
-                      <button className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-red-500/30 py-2.5 text-sm font-semibold text-red-400 transition-colors hover:bg-red-500/10">
-                        <X className="h-4 w-4" /> Reject
+                      <button
+                        onClick={() => rejectMutation.mutate({ id: selected.id })}
+                        disabled={rejectMutation.isPending}
+                        className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-red-500/30 py-2.5 text-sm font-semibold text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-50"
+                      >
+                        <X className="h-4 w-4" /> {rejectMutation.isPending ? "Rejecting…" : "Reject"}
                       </button>
                     </div>
                     <p className="mt-3 flex items-center justify-center gap-1 text-xs text-zinc-500">

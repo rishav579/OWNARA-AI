@@ -2,12 +2,15 @@
 
 import { useState } from "react";
 import { useRouter, formatDate, formatBytes } from "@/lib/app/router";
-import { KNOWLEDGE_DOCS, EMPLOYEES } from "@/lib/app/data";
+import { api } from "@/lib/app/api-client";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   PageHeader,
   DocumentStatusBadge,
   Avatar,
   EmptyState,
+  ErrorState,
+  TableSkeleton,
 } from "@/components/app/ui";
 import { cn } from "@/lib/utils";
 import {
@@ -34,9 +37,23 @@ export function KnowledgePage() {
   const [query, setQuery] = useState("");
   const [showUpload, setShowUpload] = useState(false);
   const [filterEmp, setFilterEmp] = useState<string>("all");
+  const queryClient = useQueryClient();
 
-  const filtered = KNOWLEDGE_DOCS.filter((d) => {
-    if (filterEmp !== "all" && d.employeeId !== filterEmp) return false;
+  const { data: docs = [], isLoading, isError, refetch } = useQuery({
+    queryKey: ["knowledge", filterEmp],
+    queryFn: () => api.knowledge.list({ employeeId: filterEmp !== "all" ? filterEmp : undefined }),
+  });
+  const { data: employees = [] } = useQuery({
+    queryKey: ["employees", "active"],
+    queryFn: () => api.employees.list({ status: "active" }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.knowledge.delete(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["knowledge"] }),
+  });
+
+  const filtered = docs.filter((d: any) => {
     if (query && !d.filename.toLowerCase().includes(query.toLowerCase())) return false;
     return true;
   });
@@ -45,7 +62,7 @@ export function KnowledgePage() {
     <div>
       <PageHeader
         title="Knowledge Base"
-        description={`${KNOWLEDGE_DOCS.filter((d) => d.status === "ready").length} documents ready · ${KNOWLEDGE_DOCS.filter((d) => d.status === "processing").length} processing`}
+        description={`${docs.filter((d: any) => d.status === "ready").length} documents ready · ${docs.filter((d: any) => d.status === "processing").length} processing`}
         actions={
           <button
             onClick={() => setShowUpload(true)}
@@ -75,14 +92,18 @@ export function KnowledgePage() {
           className="h-8 rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-xs text-zinc-200 outline-none focus:border-zinc-700"
         >
           <option value="all">All employees</option>
-          {EMPLOYEES.filter((e) => e.status !== "retired").map((e) => (
+          {employees.map((e: any) => (
             <option key={e.id} value={e.id}>{e.name}</option>
           ))}
         </select>
       </div>
 
       {/* Table */}
-      {filtered.length === 0 ? (
+      {isLoading ? (
+        <TableSkeleton rows={5} />
+      ) : isError ? (
+        <ErrorState message="Failed to load documents" onRetry={() => refetch()} />
+      ) : filtered.length === 0 ? (
         <EmptyState
           icon={BookOpen}
           title="No documents found"
@@ -140,7 +161,10 @@ export function KnowledgePage() {
                     {formatDate(d.createdAt)}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <button className="text-zinc-500 transition-colors hover:text-red-400">
+                    <button
+                      onClick={() => deleteMutation.mutate(d.id)}
+                      className="text-zinc-500 transition-colors hover:text-red-400"
+                    >
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </td>
@@ -164,7 +188,7 @@ export function KnowledgePage() {
                 <label className="mb-1.5 block text-xs font-medium text-zinc-400">Scope to employee</label>
                 <select className="h-10 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-emerald-500">
                   <option value="">Workspace (shared)</option>
-                  {EMPLOYEES.filter((e) => e.status === "active").map((e) => (
+                  {employees.map((e: any) => (
                     <option key={e.id} value={e.id}>{e.name} — {e.roleName}</option>
                   ))}
                 </select>

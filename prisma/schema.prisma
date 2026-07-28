@@ -1,8 +1,6 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// BIHARI AI — Prisma Schema (V1)
+// Based on DDS-001 Database Design Specification, adapted for SQLite.
+// Portable to PostgreSQL: arrays → JSON, String IDs → UUID, add pgvector for embeddings.
 
 generator client {
   provider = "prisma-client-js"
@@ -13,20 +11,314 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ─── Auth & Workspace ───────────────────────────────────────────────────────
+
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String   @id @default(cuid())
+  email           String   @unique
+  passwordHash    String
+  name            String
+  emailVerifiedAt DateTime?
+  status          String   @default("active") // active | suspended | deactivated
+  avatarColor     String   @default("#10b981")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  deactivatedAt   DateTime?
+
+  workspaceMembers WorkspaceMember[]
+  sessions         Session[]
+  ownedWorkspaces  Workspace[] @relation("WorkspaceOwner")
+  tasks            Task[]      @relation("TaskAssignedBy")
+  approvals        Approval[]  @relation("ApprovalDecidedBy")
+  knowledgeDocs    KnowledgeDocument[]
+  employees        Employee[]  @relation("EmployeeCreatedBy")
+  notifications    Notification[]
 }
 
-model Post {
+model Workspace {
+  id            String   @id @default(cuid())
+  name          String
+  slug          String   @unique
+  ownerUserId   String
+  defaultRegion String   @default("in-central")
+  status        String   @default("active") // active | suspended
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  suspendedAt   DateTime?
+
+  members    WorkspaceMember[]
+  employees  Employee[]
+  tasks      Task[]
+  approvals  Approval[]
+  auditLogs  AuditLog[]
+  documents  KnowledgeDocument[]
+  notifications Notification[]
+  llmUsage   LlmUsage[]
+
+  owner User @relation("WorkspaceOwner", fields: [ownerUserId], references: [id])
+}
+
+model WorkspaceMember {
+  id          String   @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        String   @default("member") // owner | member
+  status      String   @default("pending") // pending | active | removed
+  invitedAt   DateTime @default(now())
+  joinedAt    DateTime?
+  removedAt   DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@unique([workspaceId, userId])
+}
+
+model Session {
   id        String   @id @default(cuid())
-  title     String
-  content   String?
-  published Boolean  @default(false)
-  authorId  String
+  userId    String
+  tokenHash String   @unique
+  ipAddress String?
+  userAgent String?
+  expiresAt DateTime
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  revokedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+// ─── AI Employees ───────────────────────────────────────────────────────────
+
+model EmployeeTemplate {
+  id                   String   @id @default(cuid())
+  name                 String
+  role                 String   @unique
+  description          String
+  defaultJobDescription String
+  defaultApprovalRules String   @default("{}") // JSON
+  defaultToolNames     String   @default("[]") // JSON array
+  version              Int      @default(1)
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  employees Employee[]
+}
+
+model Employee {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  role        String
+  templateId  String?
+  status      String   @default("draft") // draft | active | paused | retired
+  state       String   @default("idle")  // idle | assigned | planning | executing | waiting_approval | completed | failed | paused | stopped
+  priorState  String?
+  jobDescription String
+  boundaries  String   @default("[]") // JSON array
+  approvalRules String @default("{}") // JSON
+  tokenUsage  Int      @default(0)
+  tokenCap    Int      @default(5000000)
+  tools       String   @default("[]") // JSON array of tool names
+  pendingApprovals Int @default(0)
+  taskCount   Int      @default(0)
+  completedTasks Int   @default(0)
+  createdBy   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  activatedAt DateTime?
+  retiredAt   DateTime?
+
+  workspace     Workspace           @relation(fields: [workspaceId], references: [id])
+  template      EmployeeTemplate?   @relation(fields: [templateId], references: [id])
+  creator       User                @relation("EmployeeCreatedBy", fields: [createdBy], references: [id])
+  tasks         Task[]
+  approvals     Approval[]
+  documents     KnowledgeDocument[]
+  toolPermissions EmployeeToolPermission[]
+}
+
+model Tool {
+  id                  String   @id @default(cuid())
+  name                String   @unique
+  displayName         String
+  description         String
+  defaultCriticality  String   @default("non_critical") // non_critical | critical
+  inputSchema         String   @default("{}") // JSON
+  outputSchema        String   @default("{}") // JSON
+  version             Int      @default(1)
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  permissions EmployeeToolPermission[]
+}
+
+model EmployeeToolPermission {
+  id           String   @id @default(cuid())
+  employeeId   String
+  toolId       String
+  criticalityOverride String? // null = use tool default
+  grantedBy    String
+  grantedAt    DateTime @default(now())
+  revokedAt    DateTime?
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+  tool     Tool     @relation(fields: [toolId], references: [id])
+}
+
+// ─── Tasks & Steps ──────────────────────────────────────────────────────────
+
+model Task {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  employeeId    String
+  assignedBy    String
+  title         String
+  description   String
+  status        String   @default("assigned") // assigned | planning | executing | waiting_approval | completed | failed | paused | stopped
+  priority      String   @default("medium")   // low | medium | high
+  stepCount     Int      @default(0)
+  stepCap       Int      @default(20)
+  tokenUsage    Int      @default(0)
+  tokenCap      Int      @default(100000)
+  startedAt     DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id])
+  employee    Employee   @relation(fields: [employeeId], references: [id])
+  assigner    User       @relation("TaskAssignedBy", fields: [assignedBy], references: [id])
+  steps       TaskStep[]
+  approvals   Approval[]
+}
+
+model TaskStep {
+  id         String   @id @default(cuid())
+  taskId     String
+  stepNumber Int
+  stepType   String   // plan | reasoning | tool_call | approval_gate
+  input      String   @default("{}") // JSON
+  reasoning  String?
+  output     String?  // JSON
+  status     String   @default("pending") // pending | running | completed | failed | skipped
+  tokens     Int      @default(0)
+  durationMs Int      @default(0)
+  startedAt  DateTime?
+  completedAt DateTime?
+  createdAt  DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+}
+
+// ─── Approvals ──────────────────────────────────────────────────────────────
+
+model Approval {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  taskId        String
+  employeeId    String
+  tool          String
+  toolDisplayName String
+  proposedAction String  @default("{}") // JSON
+  status        String   @default("pending") // pending | approved | rejected | modified | expired
+  criticality   String   @default("critical")
+  timeoutAt     DateTime?
+  decidedBy     String?
+  decidedAt     DateTime?
+  decision      String?  // approved | rejected | modified
+  modifiedAction String? // JSON
+  reason        String?
+  createdAt     DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  task      Task      @relation(fields: [taskId], references: [id])
+  employee  Employee  @relation(fields: [employeeId], references: [id])
+  decider   User?     @relation("ApprovalDecidedBy", fields: [decidedBy], references: [id])
+}
+
+// ─── Knowledge ──────────────────────────────────────────────────────────────
+
+model KnowledgeDocument {
+  id          String   @id @default(cuid())
+  workspaceId String
+  employeeId  String?
+  filename    String
+  contentType String
+  sizeBytes   Int
+  storageKey  String
+  status      String   @default("processing") // processing | ready | failed | removed
+  chunkCount  Int      @default(0)
+  uploadedBy  String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  removedAt   DateTime?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  employee  Employee? @relation(fields: [employeeId], references: [id])
+  uploader  User      @relation(fields: [uploadedBy], references: [id])
+}
+
+// ─── Audit ──────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  workspaceId    String
+  sequenceNumber Int
+  entryType      String
+  actorType      String   // user | employee | system
+  actorId        String?
+  actorName      String
+  targetType     String?
+  targetId       String?
+  payload        String   @default("{}") // JSON
+  previousHash   String?
+  entryHash      String
+  createdAt      DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@unique([workspaceId, sequenceNumber])
+}
+
+// ─── Notifications ──────────────────────────────────────────────────────────
+
+model Notification {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  userId       String
+  type         String   // approval_pending | task_completed | task_failed | employee_paused
+  title        String
+  body         String
+  referenceType String?
+  referenceId  String?
+  channel      String   @default("in_app")
+  status       String   @default("pending") // pending | delivered | read | failed
+  readAt       DateTime?
+  createdAt    DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  user      User      @relation(fields: [userId], references: [id])
+}
+
+// ─── LLM Usage ──────────────────────────────────────────────────────────────
+
+model LlmUsage {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  taskId          String?
+  employeeId      String?
+  provider        String   @default("openai")
+  model           String
+  promptTokens    Int      @default(0)
+  completionTokens Int     @default(0)
+  totalTokens     Int      @default(0)
+  costCents       Int      @default(0)
+  latencyMs       Int      @default(0)
+  status          String   @default("success")
+  errorMessage    String?
+  createdAt       DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
 }

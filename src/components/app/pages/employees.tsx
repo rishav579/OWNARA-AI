@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { useRouter, formatNumber, formatDate } from "@/lib/app/router";
-import { EMPLOYEES, TEMPLATES } from "@/lib/app/data";
-import type { EmployeeStatus } from "@/lib/app/data";
+import { api } from "@/lib/app/api-client";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   PageHeader,
   Avatar,
@@ -11,9 +11,40 @@ import {
   EmployeeStateBadge,
   EmptyState,
   ProgressBar,
+  ErrorState,
+  EmployeeGridSkeleton,
 } from "@/components/app/ui";
 import { cn } from "@/lib/utils";
-import { Bot, Plus, Search, Pause, Play, MoreVertical, FileText } from "lucide-react";
+import { Bot, Plus, Search, MoreVertical } from "lucide-react";
+
+const TEMPLATES = [
+  {
+    id: "t_csa",
+    name: "Customer Support Agent",
+    description: "Drafts and routes customer replies under human approval.",
+    defaultJobDescription: "Draft replies to customer queries about orders, returns, and product information. Route complex billing issues to the finance team.",
+    tools: ["draft_response", "send_email", "search_knowledge", "summarize"],
+    approvalRules: { send_email: "critical", draft_response: "non_critical", search_knowledge: "non_critical", summarize: "non_critical" },
+  },
+  {
+    id: "t_sdr",
+    name: "Sales Development Rep",
+    description: "Researches prospects and drafts personalized outreach emails.",
+    defaultJobDescription: "Research prospects and draft personalized outreach emails. Follow up on replies and schedule demos.",
+    tools: ["draft_response", "send_email", "search_knowledge", "summarize"],
+    approvalRules: { send_email: "critical", draft_response: "non_critical", search_knowledge: "non_critical", summarize: "non_critical" },
+  },
+  {
+    id: "t_ra",
+    name: "Research Analyst",
+    description: "Researches market trends and produces briefings for leadership.",
+    defaultJobDescription: "Research market trends, competitor moves, and industry reports. Summarize findings into briefings for the leadership team.",
+    tools: ["search_knowledge", "summarize", "draft_response"],
+    approvalRules: { draft_response: "non_critical", search_knowledge: "non_critical", summarize: "non_critical" },
+  },
+];
+
+type EmployeeStatus = "draft" | "active" | "paused" | "retired";
 
 const STATUS_FILTERS: { label: string; value: EmployeeStatus | "all" }[] = [
   { label: "All", value: "all" },
@@ -27,18 +58,26 @@ export function EmployeesPage() {
   const [filter, setFilter] = useState<EmployeeStatus | "all">("all");
   const [query, setQuery] = useState("");
   const [showHire, setShowHire] = useState(false);
+  const queryClient = useQueryClient();
 
-  const filtered = EMPLOYEES.filter((e) => {
-    if (filter !== "all" && e.status !== filter) return false;
-    if (query && !e.name.toLowerCase().includes(query.toLowerCase()) && !e.roleName.toLowerCase().includes(query.toLowerCase())) return false;
-    return true;
+  const { data: employees = [], isLoading, isError, refetch } = useQuery({
+    queryKey: ["employees", filter, query],
+    queryFn: () => api.employees.list({ status: filter, q: query || undefined }),
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (data: any) => api.employees.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["employees"] });
+      setShowHire(false);
+    },
   });
 
   return (
     <div>
       <PageHeader
         title="AI Employees"
-        description={`${EMPLOYEES.filter((e) => e.status === "active").length} active · ${EMPLOYEES.length} total`}
+        description={`${employees.filter((e: any) => e.status === "active").length} active · ${employees.length} total`}
         actions={
           <button
             onClick={() => setShowHire(true)}
@@ -81,7 +120,11 @@ export function EmployeesPage() {
       </div>
 
       {/* Grid */}
-      {filtered.length === 0 ? (
+      {isLoading ? (
+        <EmployeeGridSkeleton />
+      ) : isError ? (
+        <ErrorState message="Failed to load employees" onRetry={() => refetch()} />
+      ) : employees.length === 0 ? (
         <EmptyState
           icon={Bot}
           title="No employees found"
@@ -97,7 +140,7 @@ export function EmployeesPage() {
         />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((e) => (
+          {employees.map((e: any) => (
             <div
               key={e.id}
               role="button"
@@ -177,10 +220,17 @@ export function EmployeesPage() {
                   <button
                     key={t.id}
                     onClick={() => {
-                      setShowHire(false);
-                      navigate("employees");
+                      createMutation.mutate({
+                        name: t.name.split(" ").map((w: string) => w[0]).join("") + " " + (Math.floor(Math.random() * 100)),
+                        templateId: t.id,
+                        jobDescription: t.defaultJobDescription,
+                        operatingBoundaries: ["Set boundaries during configuration"],
+                        approvalRules: t.approvalRules,
+                        toolNames: t.tools,
+                      });
                     }}
-                    className="flex w-full items-start gap-3 rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 text-left transition-colors hover:border-emerald-500/40 hover:bg-zinc-900"
+                    disabled={createMutation.isPending}
+                    className="flex w-full items-start gap-3 rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 text-left transition-colors hover:border-emerald-500/40 hover:bg-zinc-900 disabled:opacity-50"
                   >
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400">
                       <Bot className="h-5 w-5" />
@@ -191,7 +241,7 @@ export function EmployeesPage() {
                       </div>
                       <p className="mt-0.5 text-xs text-zinc-400">{t.description}</p>
                       <div className="mt-2 flex flex-wrap gap-1">
-                        {t.tools.map((tool) => (
+                        {t.tools.map((tool: string) => (
                           <span key={tool} className="rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-[0.6rem] text-zinc-400">
                             {tool}
                           </span>
