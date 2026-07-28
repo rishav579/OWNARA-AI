@@ -14,24 +14,25 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "BIHARI AI — Engineering Documentation",
+  title: "BIHARI AI — India's Trusted AI Employee Company",
   description:
-    "BIHARI AI engineering documentation hub. India's Trusted AI Employee Company. Locked, versioned, audit-first engineering specs for Version 1.",
+    "Hire AI Employees you can actually trust. Delegate real work to role-based AI Employees that are reliable, transparent, auditable, and always under human control.",
   keywords: [
     "BIHARI AI",
     "AI Employee",
-    "Engineering Documentation",
-    "Audit-First",
-    "Trust Architecture",
+    "AI Workforce",
+    "Business Automation",
+    "Audit-First AI",
+    "India AI",
   ],
   authors: [{ name: "BIHARI AI" }],
   icons: {
     icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
   },
   openGraph: {
-    title: "BIHARI AI — Engineering Documentation",
+    title: "BIHARI AI — India's Trusted AI Employee Company",
     description:
-      "India's Trusted AI Employee Company. Locked, versioned, audit-first engineering specs.",
+      "Hire AI Employees you can actually trust. Every critical action is human-approved.",
     siteName: "BIHARI AI",
     type: "website",
   },
@@ -43,7 +44,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className="dark" suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
