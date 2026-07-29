@@ -65,6 +65,7 @@ export function EmployeeStateBadge({ state }: { state: EmployeeState }) {
 
 export function TaskStatusBadge({ status }: { status: TaskStatus }) {
   const config = {
+    queued: { label: "Queued", cls: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30" },
     assigned: { label: "Assigned", cls: "bg-sky-500/15 text-sky-400 border-sky-500/30" },
     planning: { label: "Planning", cls: "bg-violet-500/15 text-violet-400 border-violet-500/30" },
     executing: { label: "Executing", cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
@@ -73,7 +74,7 @@ export function TaskStatusBadge({ status }: { status: TaskStatus }) {
     failed: { label: "Failed", cls: "bg-red-500/15 text-red-400 border-red-500/30" },
     paused: { label: "Paused", cls: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
     stopped: { label: "Stopped", cls: "bg-zinc-500/10 text-zinc-500 border-zinc-500/20" },
-  }[status];
+  }[status] || { label: status, cls: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30" };
   return (
     <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium", config.cls)}>
       {config.label}

@@ -2,8 +2,7 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { requireWorkspace } from "@/lib/auth";
 import { success, error, handleApiError } from "@/lib/api-response";
-
-const EMPLOYEE_NAMES: Record<string, string> = {};
+import { appendAudit } from "@/lib/runtime/audit";
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,7 +13,7 @@ export async function GET(request: NextRequest) {
 
     const where: any = { workspaceId };
     if (status === "executing") {
-      where.status = { in: ["assigned", "planning", "executing"] };
+      where.status = { in: ["queued", "planning", "executing"] };
     } else if (status && status !== "all") {
       where.status = status;
     }
@@ -61,24 +60,57 @@ export async function POST(request: NextRequest) {
     if (!employee) return error("NOT_FOUND", "Employee not found.", 404);
     if (employee.status !== "active") return error("CONFLICT", "Employee is not active.", 409);
 
-    const task = await db.task.create({
-      data: {
-        workspaceId,
+    // Check the employee doesn't already have an in-flight task
+    const inFlight = await db.task.findFirst({
+      where: {
         employeeId,
-        assignedBy: user.id,
-        title,
-        description,
-        status: "assigned",
-        priority: body.priority || "medium",
-        stepCap: stepCap || 20,
-        tokenCap: tokenCap || 100000,
-        startedAt: new Date(),
+        status: { in: ["queued", "planning", "executing", "waiting_approval"] },
       },
     });
+    if (inFlight) {
+      return error("CONFLICT", "Employee already has an active task. Wait for it to complete or cancel it first.", 409);
+    }
 
-    await db.employee.update({
-      where: { id: employeeId },
-      data: { taskCount: { increment: 1 } },
+    // Create the task with status "queued" — the worker will pick it up
+    const task = await db.$transaction(async (tx) => {
+      const newTask = await tx.task.create({
+        data: {
+          workspaceId,
+          employeeId,
+          assignedBy: user.id,
+          title,
+          description,
+          status: "queued", // Worker picks up queued tasks
+          priority: body.priority || "medium",
+          stepCap: stepCap || 20,
+          tokenCap: tokenCap || 100000,
+          startedAt: new Date(),
+        },
+      });
+
+      // Update employee state to "assigned"
+      await tx.employee.update({
+        where: { id: employeeId },
+        data: { state: "assigned", taskCount: { increment: 1 } },
+      });
+
+      // Write audit entry for task creation
+      await appendAudit(tx, {
+        workspaceId,
+        entryType: "task_created",
+        actorType: "user",
+        actorId: user.id,
+        actorName: user.name,
+        targetType: "task",
+        targetId: newTask.id,
+        payload: {
+          title,
+          employee: employee.name,
+          role: employee.role,
+        },
+      });
+
+      return newTask;
     });
 
     return success({
@@ -103,4 +135,3 @@ const AVATAR_COLORS: Record<string, string> = {
   Vikram: "#ec4899",
   Priya: "#64748b",
 };
-void EMPLOYEE_NAMES;

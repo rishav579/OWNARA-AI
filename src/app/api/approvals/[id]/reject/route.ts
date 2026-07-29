@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { requireWorkspace } from "@/lib/auth";
 import { success, error, handleApiError, parseBody } from "@/lib/api-response";
+import { failAfterApprovalRejection } from "@/lib/runtime/executor";
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -13,7 +14,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!approval) return error("NOT_FOUND", "Approval not found.", 404);
     if (approval.status !== "pending") return error("CONFLICT", "Approval is not pending.", 409);
 
-    const updated = await db.approval.update({
+    // Update the approval record
+    await db.approval.update({
       where: { id },
       data: {
         status: "rejected",
@@ -24,21 +26,25 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       },
     });
 
-    // Update task to failed
-    await db.task.update({
-      where: { id: approval.taskId },
-      data: { status: "failed" },
-    });
+    // Fail the task — this marks the approval_gate step as failed,
+    // transitions the task to "failed", and writes audit entries.
+    await failAfterApprovalRejection(
+      approval.taskId,
+      id,
+      user.id,
+      user.name,
+      body.reason
+    );
 
     return success({
-      id: updated.id,
-      status: updated.status,
+      id,
+      status: "rejected",
       decision: {
         decision: "rejected",
         decidedBy: user.id,
         decidedByName: user.name,
-        reason: updated.reason,
-        decidedAt: updated.decidedAt,
+        reason: body.reason || null,
+        decidedAt: new Date().toISOString(),
       },
     });
   } catch (err) {

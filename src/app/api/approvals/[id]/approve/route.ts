@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { requireWorkspace } from "@/lib/auth";
 import { success, error, handleApiError, parseBody } from "@/lib/api-response";
+import { resumeAfterApproval } from "@/lib/runtime/executor";
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -13,7 +14,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!approval) return error("NOT_FOUND", "Approval not found.", 404);
     if (approval.status !== "pending") return error("CONFLICT", "Approval is not pending.", 409);
 
-    const updated = await db.approval.update({
+    // Update the approval record
+    await db.approval.update({
       where: { id },
       data: {
         status: "approved",
@@ -24,15 +26,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       },
     });
 
+    // Resume the task — this marks the approval_gate step as completed,
+    // transitions the task back to "executing", and writes audit entries.
+    // The worker will pick it up on the next poll and continue.
+    await resumeAfterApproval(approval.taskId, id, user.id, user.name);
+
     return success({
-      id: updated.id,
-      status: updated.status,
+      id,
+      status: "approved",
       decision: {
         decision: "approved",
         decidedBy: user.id,
         decidedByName: user.name,
-        reason: updated.reason,
-        decidedAt: updated.decidedAt,
+        reason: body.reason || null,
+        decidedAt: new Date().toISOString(),
       },
     });
   } catch (err) {

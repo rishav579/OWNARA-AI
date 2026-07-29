@@ -16,6 +16,7 @@ export type EmployeeState =
   | "stopped";
 
 export type TaskStatus =
+  | "queued"
   | "assigned"
   | "planning"
   | "executing"

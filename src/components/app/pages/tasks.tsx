@@ -34,7 +34,7 @@ import {
   X,
 } from "lucide-react";
 
-type TaskStatus = "assigned" | "planning" | "executing" | "waiting_approval" | "completed" | "failed" | "paused" | "stopped";
+type TaskStatus = "queued" | "assigned" | "planning" | "executing" | "waiting_approval" | "completed" | "failed" | "paused" | "stopped";
 
 const STATUS_FILTERS: { label: string; value: TaskStatus | "all" }[] = [
   { label: "All", value: "all" },
