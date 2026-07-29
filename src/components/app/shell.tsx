@@ -22,6 +22,9 @@ import {
   LogOut,
   Plus,
   Zap,
+  Scale,
+  Plug,
+  Building2,
 } from "lucide-react";
 
 interface NavItem {
@@ -42,15 +45,18 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     ],
   },
   {
-    label: "Knowledge & Audit",
+    label: "Trust & Governance",
     items: [
+      { path: "governance", label: "Governance", icon: Scale },
       { path: "knowledge", label: "Knowledge Base", icon: BookOpen },
       { path: "audit", label: "Audit Timeline", icon: ScrollText },
     ],
   },
   {
-    label: "Account",
+    label: "Administration",
     items: [
+      { path: "integrations", label: "Integrations", icon: Plug },
+      { path: "workspace-admin", label: "Administration", icon: Building2 },
       { path: "settings", label: "Settings", icon: Settings },
       { path: "billing", label: "Billing", icon: CreditCard },
     ],

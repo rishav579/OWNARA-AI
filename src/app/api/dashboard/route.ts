@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
   try {
     const { workspaceId } = await requireWorkspace(request);
 
-    const [employees, tasks, approvals, documents, llmUsage, auditLogs] = await Promise.all([
+    const [employees, tasks, approvals, documents, llmUsage, auditLogs, trustScores, policies, businessActivity] = await Promise.all([
       db.employee.findMany({ where: { workspaceId } }),
       db.task.findMany({ where: { workspaceId } }),
       db.approval.findMany({ where: { workspaceId } }),
@@ -18,6 +18,9 @@ export async function GET(request: NextRequest) {
         orderBy: { sequenceNumber: "desc" },
         take: 6,
       }),
+      db.trustScore.findMany({ where: { workspaceId }, include: { employee: true } }),
+      db.policy.count({ where: { workspaceId, status: "active" } }),
+      db.auditLog.findMany({ where: { workspaceId }, orderBy: { sequenceNumber: "desc" }, take: 8 }),
     ]);
 
     const activeEmployees = employees.filter((e) => e.status === "active").length;
@@ -57,6 +60,26 @@ export async function GET(request: NextRequest) {
       targetId: e.targetId,
       payload: JSON.parse(e.payload),
       createdAt: e.createdAt,
+    }));
+
+    // Business activity (translated)
+    const businessFeed = businessActivity.map((e) => {
+      const payload = JSON.parse(e.payload);
+      return translateBusiness(e.entryType, e.actorName, e.actorType, payload, e.targetType, e.id, e.sequenceNumber, e.createdAt);
+    });
+
+    // Trust scores
+    const trustData = trustScores.map((s) => ({
+      employeeId: s.employeeId,
+      employeeName: s.employee.name,
+      avatarColor: AVATAR_COLORS[s.employee.name] || "#10b981",
+      overallScore: s.overallScore,
+      trend: s.trend,
+      trendDelta: s.trendDelta,
+      successRate: s.successRate,
+      approvalRate: s.approvalRate,
+      policyViolations: s.policyViolations,
+      humanCorrections: s.humanCorrections,
     }));
 
     return success({
@@ -117,6 +140,9 @@ export async function GET(request: NextRequest) {
         failed: documents.filter((d) => d.status === "failed").length,
       },
       recentActivity,
+      businessFeed,
+      trustScores: trustData,
+      activePolicies: policies,
       // Task activity over 14 days (from LLM usage as proxy)
       taskActivity: llmUsage.slice(-14).map((u, i) => ({
         day: `Jan ${15 + i}`,
@@ -127,6 +153,49 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     return handleApiError(err);
   }
+}
+
+function translateBusiness(entryType: string, actorName: string, actorType: string, payload: any, targetType: string | null, id: string, seq: number, createdAt: Date) {
+  let event = entryType.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  let description = `${actorName} (${actorType}) performed an action.`;
+  let category = "system";
+  let severity = "info";
+
+  if (entryType === "approval_requested") {
+    event = "Approval Required";
+    description = `${actorName} requested approval to ${payload.tool?.replace(/_/g, " ") || "perform an action"}.`;
+    category = "approval";
+    severity = payload.criticality === "critical" ? "warning" : "info";
+  } else if (entryType === "approval_decided") {
+    event = payload.decision === "approved" ? "Action Approved" : payload.decision === "rejected" ? "Action Rejected" : "Approval Under Review";
+    description = `${actorName} ${payload.decision} the ${payload.tool?.replace(/_/g, " ") || "action"} for ${payload.employee || "an AI Employee"}.`;
+    category = "approval";
+    severity = payload.decision === "rejected" ? "warning" : payload.decision === "approved" ? "success" : "info";
+  } else if (entryType === "task_started") {
+    event = "Work Delegated";
+    description = `${actorName} assigned "${payload.title}" to ${payload.employee}.`;
+    category = "task";
+  } else if (entryType === "task_completed") {
+    event = "Task Completed";
+    description = `${payload.employee || "An AI Employee"} completed a task.`;
+    category = "task";
+    severity = "success";
+  } else if (entryType === "tool_executed") {
+    event = "Tool Executed";
+    description = `${actorName} used the ${payload.tool?.replace(/_/g, " ")} tool.`;
+    category = "task";
+  } else if (entryType === "llm_call") {
+    event = "AI Model Called";
+    description = `LLM Gateway called ${payload.model} (${payload.tokens} tokens).`;
+    category = "system";
+  } else if (entryType === "employee_resumed") {
+    event = "AI Employee Resumed";
+    description = `${actorName} resumed ${payload.employee}.`;
+    category = "employee";
+    severity = "success";
+  }
+
+  return { id, sequenceNumber: seq, entryType, actorName, actorType, targetType, targetId: null, payload, businessEvent: event, businessDescription: description, category, severity, createdAt };
 }
 
 function isToday(date: Date): boolean {

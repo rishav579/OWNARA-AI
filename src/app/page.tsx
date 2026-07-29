@@ -15,6 +15,9 @@ import { KnowledgePage } from "@/components/app/pages/knowledge";
 import { AuditPage } from "@/components/app/pages/audit";
 import { SettingsPage } from "@/components/app/pages/settings";
 import { BillingPage } from "@/components/app/pages/billing";
+import { GovernancePage } from "@/components/app/pages/governance";
+import { IntegrationsPage } from "@/components/app/pages/integrations";
+import { WorkspaceAdminPage } from "@/components/app/pages/workspace-admin";
 import { LoadingScreen } from "@/components/app/loading-states";
 
 function AppRouter() {
@@ -77,6 +80,15 @@ function AppRouter() {
       break;
     case "audit":
       page = <AuditPage />;
+      break;
+    case "governance":
+      page = <GovernancePage />;
+      break;
+    case "integrations":
+      page = <IntegrationsPage />;
+      break;
+    case "workspace-admin":
+      page = <WorkspaceAdminPage />;
       break;
     case "settings":
       page = <SettingsPage />;

@@ -60,9 +60,26 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       return error("NOT_FOUND", "Employee not found.", 404);
     }
 
+    // Fetch trust score
+    const trustScore = await db.trustScore.findFirst({
+      where: { workspaceId, employeeId: id },
+      orderBy: { computedAt: "desc" },
+    });
+
     const base = serialize(employee);
     return success({
       ...base,
+      trustScore: trustScore ? {
+        overallScore: trustScore.overallScore,
+        trend: trustScore.trend,
+        trendDelta: trustScore.trendDelta,
+        successRate: trustScore.successRate,
+        approvalRate: trustScore.approvalRate,
+        humanCorrections: trustScore.humanCorrections,
+        policyViolations: trustScore.policyViolations,
+        accuracyScore: trustScore.accuracyScore,
+        moneyRecoveredCents: trustScore.moneyRecoveredCents,
+      } : null,
       tasks: employee.tasks.map((t: any) => ({
         id: t.id,
         title: t.title,

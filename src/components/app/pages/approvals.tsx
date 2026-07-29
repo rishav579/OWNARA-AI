@@ -11,6 +11,10 @@ import {
   CriticalityBadge,
   EmptyState,
   ListSkeleton,
+  RiskScoreGauge,
+  ConfidenceBar,
+  BusinessImpactBlock,
+  PolicyBadge,
 } from "@/components/app/ui";
 import { cn } from "@/lib/utils";
 import {
@@ -179,10 +183,49 @@ export function ApprovalsPage() {
                   </button>
                 </div>
 
+                {/* Risk Assessment */}
+                <div className="border-b border-zinc-800 p-5">
+                  <div className="mb-3 text-[0.65rem] font-semibold uppercase tracking-wider text-zinc-500">Risk Assessment</div>
+                  <div className="flex items-start gap-5">
+                    <RiskScoreGauge score={selected.riskScore} size={72} />
+                    <div className="min-w-0 flex-1 space-y-3">
+                      <ConfidenceBar value={selected.confidence} label="AI Confidence" />
+                      {selected.policyTrigger && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-[0.65rem] font-semibold uppercase tracking-wider text-zinc-500">Policy Trigger</span>
+                          <PolicyBadge code={selected.policyTrigger.split(":")[0]} name={selected.policyTrigger.split(":")[1]?.trim()} />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {selected.businessImpact && (
+                    <div className="mt-4">
+                      <BusinessImpactBlock text={selected.businessImpact} />
+                    </div>
+                  )}
+                </div>
+
+                {/* Original vs AI Comparison (for modified decisions) */}
+                {selected.originalAction && selected.modifiedAction && (
+                  <div className="border-b border-zinc-800 p-5">
+                    <div className="mb-3 text-[0.65rem] font-semibold uppercase tracking-wider text-zinc-500">Original vs Human-Modified</div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3">
+                        <div className="mb-2 text-[0.6rem] font-semibold uppercase text-zinc-500">AI Original</div>
+                        {selected.originalAction.body && <p className="text-xs leading-relaxed text-zinc-400 line-clamp-4">{selected.originalAction.body}</p>}
+                      </div>
+                      <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
+                        <div className="mb-2 text-[0.6rem] font-semibold uppercase text-emerald-400">Human Modified</div>
+                        {selected.modifiedAction.body && <p className="text-xs leading-relaxed text-zinc-300 line-clamp-4">{selected.modifiedAction.body}</p>}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Proposed action */}
                 <div className="border-b border-zinc-800 p-5">
                   <div className="mb-2 flex items-center gap-1.5 text-[0.65rem] font-semibold uppercase tracking-wider text-zinc-500">
-                    <Mail className="h-3.5 w-3.5" /> Proposed Action
+                    <Mail className="h-3.5 w-3.5" /> Proposed Action {selected.originalAction && <span className="text-emerald-400">(edited)</span>}
                   </div>
                   {selected.proposedAction.to && (
                     <div className="mb-3">

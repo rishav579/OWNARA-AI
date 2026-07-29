@@ -13,6 +13,7 @@ import {
   ProgressBar,
   ErrorState,
   ListSkeleton,
+  StepTypeBadge,
 } from "@/components/app/ui";
 import { cn } from "@/lib/utils";
 import {
@@ -28,6 +29,8 @@ import {
   Clock,
   FileText,
   Brain,
+  Scale,
+  BookOpen,
   X,
 } from "lucide-react";
 
@@ -206,23 +209,39 @@ export function TasksPage() {
                               )}
                             </div>
                             <div className="min-w-0 flex-1 pb-3">
-                              <div className="flex items-center gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
                                 <span className="font-mono text-xs text-zinc-500">Step {step.stepNumber}</span>
-                                <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[0.6rem] text-zinc-400">
-                                  {step.stepType.replace(/_/g, " ")}
-                                </span>
+                                <StepTypeBadge type={step.stepType} />
                                 {step.input?.tool && (
                                   <span className="rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-[0.6rem] text-emerald-400">
                                     {step.input.tool}
                                   </span>
                                 )}
-                                {step.status === "pending" && step.stepType === "approval_gate" && (
-                                  <span className="flex items-center gap-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-[0.6rem] font-medium text-amber-400">
-                                    <Lock className="h-2.5 w-2.5" /> Awaiting approval
+                                {step.confidence != null && (
+                                  <span className="flex items-center gap-1 text-[0.6rem] text-zinc-500">
+                                    <span className={cn("h-1.5 w-1.5 rounded-full", step.confidence >= 0.85 ? "bg-emerald-500" : step.confidence >= 0.7 ? "bg-amber-500" : "bg-red-500")} />
+                                    {Math.round(step.confidence * 100)}% confidence
                                   </span>
                                 )}
                               </div>
                               <p className="mt-1 text-sm leading-relaxed text-zinc-300">{step.reasoning}</p>
+                              {step.policyRefs && step.policyRefs.length > 0 && (
+                                <div className="mt-2 flex items-center gap-1.5">
+                                  <Scale className="h-3 w-3 text-violet-400" />
+                                  {step.policyRefs.map((p: string) => (
+                                    <span key={p} className="rounded border border-violet-500/30 bg-violet-500/10 px-1.5 py-0.5 font-mono text-[0.6rem] text-violet-300">{p}</span>
+                                  ))}
+                                  <span className="text-[0.6rem] text-zinc-500">policy checked</span>
+                                </div>
+                              )}
+                              {step.knowledgeRefs && step.knowledgeRefs.length > 0 && (
+                                <div className="mt-1.5 flex items-center gap-1.5">
+                                  <BookOpen className="h-3 w-3 text-teal-400" />
+                                  {step.knowledgeRefs.map((k: string, i: number) => (
+                                    <span key={i} className="rounded border border-teal-500/30 bg-teal-500/10 px-1.5 py-0.5 font-mono text-[0.6rem] text-teal-300">{k}</span>
+                                  ))}
+                                </div>
+                              )}
                               {step.output && (
                                 <div className="mt-2 rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
                                   <div className="mb-1 text-[0.65rem] font-semibold uppercase tracking-wider text-zinc-500">Output</div>

@@ -13,6 +13,9 @@ import {
   EmployeeStatusBadge,
   ErrorState,
   PageSkeleton,
+  SeverityDot,
+  CategoryBadge,
+  TrustScoreBadge,
 } from "@/components/app/ui";
 import {
   Bot,
@@ -24,6 +27,7 @@ import {
   FileText,
   CheckCircle2,
   XCircle,
+  Scale,
 } from "lucide-react";
 
 export function DashboardPage() {
@@ -116,6 +120,39 @@ export function DashboardPage() {
         </div>
       </div>
 
+      {/* Trust Scores */}
+      {data.trustScores && data.trustScores.length > 0 && (
+        <div className="mt-6 rounded-xl border border-zinc-800 bg-zinc-900/50">
+          <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-3.5">
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+              <Scale className="h-4 w-4 text-emerald-400" />
+              AI Employee Trust Scores
+            </h3>
+            <span className="text-xs text-zinc-500">{data.activePolicies || 0} active policies</span>
+          </div>
+          <div className="grid divide-y divide-zinc-800/50 sm:grid-cols-2 sm:divide-y-0 sm:divide-x sm:divide-zinc-800/50">
+            {data.trustScores.slice(0, 4).map((ts: any) => (
+              <button
+                key={ts.employeeId}
+                onClick={() => navigate(`employees/${ts.employeeId}`)}
+                className="flex items-center gap-3 p-4 text-left transition-colors hover:bg-zinc-800/30"
+              >
+                <Avatar name={ts.employeeName} color={ts.avatarColor} size="md" />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium text-zinc-200">{ts.employeeName}</div>
+                  <div className="flex items-center gap-1.5 text-xs text-zinc-500">
+                    <span>{Math.round(ts.successRate * 100)}% success</span>
+                    <span>·</span>
+                    <span>{ts.policyViolations} violations</span>
+                  </div>
+                </div>
+                <TrustScoreBadge score={ts.overallScore} trend={ts.trend} delta={ts.trendDelta} />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Two-column: approvals + employees */}
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50">
@@ -164,34 +201,23 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* Recent activity */}
+      {/* Business Activity Feed */}
       <div className="mt-6 rounded-xl border border-zinc-800 bg-zinc-900/50">
         <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-3.5">
-          <h3 className="text-sm font-semibold text-zinc-100">Recent Activity</h3>
+          <h3 className="text-sm font-semibold text-zinc-100">Business Activity</h3>
           <button onClick={() => navigate("audit")} className="text-xs text-emerald-400 hover:text-emerald-300">Full audit trail →</button>
         </div>
         <div className="divide-y divide-zinc-800/50">
-          {recentAudit.map((entry: any) => (
-            <div key={entry.id} className="flex items-center gap-3 px-5 py-3">
-              <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
-                entry.entryType.includes("approval") ? "bg-amber-500/10 text-amber-400" :
-                entry.entryType.includes("failed") || entry.entryType.includes("rejected") ? "bg-red-500/10 text-red-400" :
-                entry.entryType.includes("completed") ? "bg-emerald-500/10 text-emerald-400" :
-                "bg-zinc-500/10 text-zinc-400"
-              }`}>
-                {entry.entryType.includes("approval") ? <Lock className="h-3.5 w-3.5" /> :
-                 entry.entryType.includes("completed") ? <CheckCircle2 className="h-3.5 w-3.5" /> :
-                 entry.entryType.includes("failed") ? <XCircle className="h-3.5 w-3.5" /> :
-                 entry.entryType.includes("llm") ? <Zap className="h-3.5 w-3.5" /> :
-                 <FileText className="h-3.5 w-3.5" />}
-              </div>
+          {(data.businessFeed || recentAudit).map((entry: any) => (
+            <div key={entry.id} className="flex items-start gap-3 px-5 py-3">
+              <SeverityDot severity={entry.severity || "info"} />
               <div className="min-w-0 flex-1">
-                <div className="text-sm text-zinc-200">
-                  <span className="font-medium">{entry.actorName}</span>{" "}
-                  <span className="text-zinc-400">{entry.entryType.replace(/_/g, " ")}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-zinc-200">{entry.businessEvent || entry.entryType.replace(/_/g, " ")}</span>
+                  <CategoryBadge category={entry.category || "system"} />
                 </div>
-                <div className="text-xs text-zinc-500">
-                  {entry.payload.employee || entry.payload.tool || entry.payload.title || entry.targetType}
+                <div className="mt-0.5 text-xs leading-relaxed text-zinc-400">
+                  {entry.businessDescription || `${entry.actorName} performed an action`}
                 </div>
               </div>
               <span className="shrink-0 text-xs text-zinc-500">{formatRelativeTime(entry.createdAt)}</span>

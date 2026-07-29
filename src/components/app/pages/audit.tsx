@@ -10,6 +10,8 @@ import {
   EmptyState,
   ErrorState,
   ListSkeleton,
+  CategoryBadge,
+  PolicyBadge,
 } from "@/components/app/ui";
 import { cn } from "@/lib/utils";
 import {
@@ -134,12 +136,11 @@ export function AuditPage() {
                       <div className="min-w-0 flex-1 pt-0.5">
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-[0.65rem] text-zinc-600">#{entry.sequenceNumber}</span>
-                          <span className="text-sm font-medium text-zinc-200">{entry.entryType.replace(/_/g, " ")}</span>
+                          <span className="text-sm font-medium text-zinc-200">{entry.businessEvent || entry.entryType.replace(/_/g, " ")}</span>
+                          <CategoryBadge category={entry.category || "system"} />
                         </div>
                         <div className="mt-0.5 text-xs text-zinc-500">
-                          <span className="text-zinc-400">{entry.actorName}</span>
-                          {" · "}
-                          <span>{entry.actorType}</span>
+                          <span className="text-zinc-400">{entry.businessDescription || entry.actorName}</span>
                         </div>
                         <div className="mt-0.5 flex items-center gap-2 text-[0.65rem] text-zinc-600">
                           <span>{formatDateTime(entry.createdAt)}</span>
@@ -182,11 +183,37 @@ export function AuditPage() {
                       {Object.entries(selected.payload).map(([k, v]) => (
                         <div key={k} className="flex items-center justify-between text-xs">
                           <span className="text-zinc-500">{k}</span>
-                          <span className="font-mono text-zinc-300">{v}</span>
+                          <span className="font-mono text-zinc-300">{String(v)}</span>
                         </div>
                       ))}
                     </div>
                   </div>
+                  {/* Decision & Reason (for approval events) */}
+                  {selected.decision && (
+                    <div>
+                      <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-zinc-500">Decision</div>
+                      <div className="mt-1 flex items-center gap-2">
+                        <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium",
+                          selected.decision === "approved" ? "bg-emerald-500/15 text-emerald-400" :
+                          selected.decision === "rejected" ? "bg-red-500/15 text-red-400" :
+                          "bg-sky-500/15 text-sky-400"
+                        )}>{selected.decision}</span>
+                        <span className="text-xs text-zinc-400">by {selected.actorName}</span>
+                      </div>
+                      {selected.reason && (
+                        <p className="mt-1.5 rounded-lg bg-zinc-800/50 p-2 text-xs text-zinc-400">{selected.reason}</p>
+                      )}
+                    </div>
+                  )}
+                  {/* Policy Reference */}
+                  {selected.policyRef && (
+                    <div>
+                      <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-zinc-500">Policy Reference</div>
+                      <div className="mt-1">
+                        <PolicyBadge code={selected.policyRef} />
+                      </div>
+                    </div>
+                  )}
                   <div className="border-t border-zinc-800 pt-3">
                     <div className="mb-2 text-[0.65rem] font-semibold uppercase tracking-wider text-zinc-500">Hash Chain</div>
                     <div className="space-y-1.5">

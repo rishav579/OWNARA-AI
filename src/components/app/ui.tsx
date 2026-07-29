@@ -13,6 +13,7 @@ import {
   TrendingDown,
   Minus,
   Inbox,
+  Scale,
   type LucideIcon,
 } from "lucide-react";
 
@@ -461,3 +462,168 @@ export function HashDisplay({ hash }: { hash: string }) {
 
 // Re-export loading/skeleton components for convenience
 export { ErrorState, ListSkeleton, TableSkeleton, EmployeeGridSkeleton, StatCardSkeleton, CardSkeleton, ChartSkeleton, PageSkeleton, LoadingScreen } from './loading-states';
+
+// ─── Phase 3: Enterprise UI Primitives ───────────────────────────────────────
+
+// Risk Score Gauge — circular gauge 0-100
+export function RiskScoreGauge({ score, size = 64 }: { score: number; size?: number }) {
+  const radius = size / 2 - 6;
+  const circumference = 2 * Math.PI * radius;
+  const pct = Math.min(score / 100, 1);
+  const dash = pct * circumference;
+  const color = score >= 70 ? "#ef4444" : score >= 40 ? "#f59e0b" : "#10b981";
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="currentColor" strokeWidth="4" className="text-zinc-800" />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke={color}
+          strokeWidth="4"
+          strokeDasharray={`${dash} ${circumference - dash}`}
+          strokeDashoffset={circumference / 4}
+          strokeLinecap="round"
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-sm font-bold" style={{ color }}>{score}</span>
+        <span className="text-[0.55rem] text-zinc-500">risk</span>
+      </div>
+    </div>
+  );
+}
+
+// Confidence Bar — 0.0 to 1.0
+export function ConfidenceBar({ value, label = "Confidence" }: { value: number; label?: string }) {
+  const pct = Math.round(value * 100);
+  const color = value >= 0.85 ? "#10b981" : value >= 0.7 ? "#f59e0b" : "#ef4444";
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between text-xs">
+        <span className="text-zinc-500">{label}</span>
+        <span className="font-mono font-medium" style={{ color }}>{pct}%</span>
+      </div>
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
+        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
+      </div>
+    </div>
+  );
+}
+
+// Trust Score Badge — large number with trend
+export function TrustScoreBadge({ score, trend, delta }: { score: number; trend: string; delta: number }) {
+  const color = score >= 90 ? "#10b981" : score >= 75 ? "#f59e0b" : "#ef4444";
+  const trendIcon = trend === "up" ? "▲" : trend === "down" ? "▼" : "■";
+  const trendColor = trend === "up" ? "text-emerald-400" : trend === "down" ? "text-red-400" : "text-zinc-500";
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-2xl font-bold" style={{ color }}>{score.toFixed(1)}</span>
+      <div className="flex flex-col">
+        <span className={`text-xs font-medium ${trendColor}`}>
+          {trendIcon} {Math.abs(delta).toFixed(1)}
+        </span>
+        <span className="text-[0.6rem] text-zinc-500">/ 100</span>
+      </div>
+    </div>
+  );
+}
+
+// Policy Badge — references a policy code
+export function PolicyBadge({ code, name }: { code: string; name?: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-xs font-medium text-violet-300">
+      <Scale className="h-3 w-3" />
+      <span className="font-mono">{code}</span>
+      {name && <span className="text-violet-400/70">· {name}</span>}
+    </span>
+  );
+}
+
+// Severity Badge — for policies
+export function SeverityBadge({ severity }: { severity: string }) {
+  const config: Record<string, string> = {
+    low: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30",
+    medium: "bg-sky-500/15 text-sky-400 border-sky-500/30",
+    high: "bg-amber-500/15 text-amber-400 border-amber-500/30",
+    critical: "bg-red-500/15 text-red-400 border-red-500/30",
+  };
+  return (
+    <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-wide", config[severity] || config.medium)}>
+      {severity}
+    </span>
+  );
+}
+
+// Business Impact Block
+export function BusinessImpactBlock({ text }: { text: string }) {
+  return (
+    <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3">
+      <div className="mb-1 flex items-center gap-1.5 text-[0.65rem] font-semibold uppercase tracking-wider text-zinc-500">
+        <TrendingUp className="h-3.5 w-3.5" /> Business Impact
+      </div>
+      <p className="text-xs leading-relaxed text-zinc-300">{text}</p>
+    </div>
+  );
+}
+
+// Category Badge — for activity feed
+export function CategoryBadge({ category }: { category: string }) {
+  const config: Record<string, string> = {
+    approval: "bg-amber-500/10 text-amber-400",
+    task: "bg-sky-500/10 text-sky-400",
+    employee: "bg-emerald-500/10 text-emerald-400",
+    financial: "bg-violet-500/10 text-violet-400",
+    policy: "bg-red-500/10 text-red-400",
+    system: "bg-zinc-500/10 text-zinc-400",
+  };
+  return (
+    <span className={cn("inline-flex items-center rounded px-1.5 py-0.5 text-[0.6rem] font-bold uppercase tracking-wide", config[category] || config.system)}>
+      {category}
+    </span>
+  );
+}
+
+// Severity Dot — for activity feed
+export function SeverityDot({ severity }: { severity: string }) {
+  const color = severity === "critical" ? "bg-red-500" : severity === "warning" ? "bg-amber-500" : severity === "success" ? "bg-emerald-500" : "bg-zinc-500";
+  return <span className={cn("h-2 w-2 shrink-0 rounded-full", color)} />;
+}
+
+// Explainability Step Type Badge
+export function StepTypeBadge({ type }: { type: string }) {
+  const config: Record<string, { label: string; cls: string }> = {
+    observed: { label: "Observed", cls: "bg-sky-500/10 text-sky-400 border-sky-500/30" },
+    plan: { label: "Planned", cls: "bg-violet-500/10 text-violet-400 border-violet-500/30" },
+    reasoning: { label: "Reasoned", cls: "bg-violet-500/10 text-violet-400 border-violet-500/30" },
+    policy_check: { label: "Policy Checked", cls: "bg-amber-500/10 text-amber-400 border-amber-500/30" },
+    knowledge_used: { label: "Knowledge Used", cls: "bg-teal-500/10 text-teal-400 border-teal-500/30" },
+    tool_call: { label: "Tool Executed", cls: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" },
+    approval_gate: { label: "Waiting Approval", cls: "bg-red-500/10 text-red-400 border-red-500/30" },
+  };
+  const c = config[type] || { label: type, cls: "bg-zinc-500/10 text-zinc-400 border-zinc-500/30" };
+  return (
+    <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[0.6rem] font-bold uppercase tracking-wide", c.cls)}>
+      {c.label}
+    </span>
+  );
+}
+
+// Integration Status Badge
+export function IntegrationStatusBadge({ status }: { status: string }) {
+  const config: Record<string, { label: string; cls: string }> = {
+    connected: { label: "Connected", cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
+    available: { label: "Available", cls: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20" },
+    error: { label: "Error", cls: "bg-red-500/15 text-red-400 border-red-500/30" },
+  };
+  const c = config[status] || config.available;
+  return (
+    <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium", c.cls)}>
+      {status === "connected" && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />}
+      {c.label}
+    </span>
+  );
+}

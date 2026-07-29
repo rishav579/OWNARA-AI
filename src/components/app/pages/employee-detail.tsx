@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter, formatNumber, formatDate, formatDateTime } from "@/lib/app/router";
+import { useRouter, formatNumber, formatDate, formatDateTime, formatINR } from "@/lib/app/router";
 import { api } from "@/lib/app/api-client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { TOOL_LABELS } from "@/lib/app/data";
@@ -15,6 +15,8 @@ import {
   EmptyState,
   ErrorState,
   ListSkeleton,
+  TrustScoreBadge,
+  ConfidenceBar,
 } from "@/components/app/ui";
 import { cn } from "@/lib/utils";
 import {
@@ -188,6 +190,59 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
         {/* Overview tab */}
         {tab === "overview" && (
           <div className="space-y-5">
+            {/* Trust Score & Business Metrics */}
+            {employee.trustScore && (
+              <div className="grid gap-4 lg:grid-cols-3">
+                {/* Trust Score */}
+                <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+                  <h3 className="mb-3 text-sm font-semibold text-zinc-100">Trust Score</h3>
+                  <TrustScoreBadge score={employee.trustScore.overallScore} trend={employee.trustScore.trend} delta={employee.trustScore.trendDelta} />
+                  <div className="mt-4 space-y-3">
+                    <ConfidenceBar value={employee.trustScore.successRate} label="Success Rate" />
+                    <ConfidenceBar value={employee.trustScore.approvalRate} label="Approval Rate" />
+                    <ConfidenceBar value={employee.trustScore.accuracyScore} label="Accuracy" />
+                  </div>
+                </div>
+
+                {/* Business Metrics */}
+                <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5 lg:col-span-2">
+                  <h3 className="mb-3 text-sm font-semibold text-zinc-100">Business Metrics</h3>
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                    <div>
+                      <div className="text-xs text-zinc-500">Tasks Completed</div>
+                      <div className="mt-1 text-2xl font-bold text-zinc-50">{employee.trustScore.tasksCompleted || employee.completedTasks}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-zinc-500">Money Recovered</div>
+                      <div className="mt-1 text-2xl font-bold text-emerald-400">{formatINR(employee.trustScore.moneyRecoveredCents)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-zinc-500">Human Corrections</div>
+                      <div className="mt-1 text-2xl font-bold text-amber-400">{employee.trustScore.humanCorrections}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-zinc-500">Policy Violations</div>
+                      <div className="mt-1 text-2xl font-bold text-red-400">{employee.trustScore.policyViolations}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-zinc-500">Current Activity</div>
+                      <div className="mt-1 text-sm font-medium text-zinc-200">
+                        {employee.state === "waiting_approval" ? "Awaiting approval" :
+                         employee.state === "executing" ? "Executing task" :
+                         employee.state === "planning" ? "Planning task" :
+                         employee.state === "idle" ? "Idle — ready" :
+                         employee.state === "paused" ? "Paused" : employee.state}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-zinc-500">Accuracy Score</div>
+                      <div className="mt-1 text-2xl font-bold text-zinc-50">{Math.round(employee.trustScore.accuracyScore * 100)}%</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
               <h3 className="mb-2 text-sm font-semibold text-zinc-100">Job Description</h3>
               <p className="text-sm leading-relaxed text-zinc-400">{employee.jobDescription}</p>

@@ -199,4 +199,48 @@ export const api = {
   billing: {
     get: () => apiFetch<any>("/billing"),
   },
+
+  // Phase 3: Governance
+  governance: {
+    policies: (params?: { category?: string; status?: string }) => {
+      const q = new URLSearchParams();
+      if (params?.category) q.set("category", params.category);
+      if (params?.status) q.set("status", params.status);
+      const qs = q.toString();
+      return apiFetch<any[]>(`/governance/policies${qs ? `?${qs}` : ""}`);
+    },
+    createPolicy: (data: any) => apiFetch<any>("/governance/policies", { method: "POST", body: JSON.stringify(data) }),
+    updatePolicy: (id: string, data: any) => apiFetch<any>(`/governance/policies/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    archivePolicy: (id: string) => apiFetch<any>(`/governance/policies/${id}`, { method: "DELETE" }),
+    rules: () => apiFetch<any[]>("/governance/rules"),
+    createRule: (data: any) => apiFetch<any>("/governance/rules", { method: "POST", body: JSON.stringify(data) }),
+  },
+
+  // Phase 3: Trust Scores
+  trustScores: {
+    list: (employeeId?: string) => {
+      const qs = employeeId ? `?employeeId=${employeeId}` : "";
+      return apiFetch<any[]>(`/trust-scores${qs}`);
+    },
+  },
+
+  // Phase 3: Integrations
+  integrations: {
+    list: () => apiFetch<any[]>("/integrations"),
+    connect: (id: string) => apiFetch<any>(`/integrations/${id}/connect`, { method: "POST" }),
+    disconnect: (id: string) => apiFetch<any>(`/integrations/${id}/disconnect`, { method: "POST" }),
+  },
+
+  // Phase 3: Workspace Admin
+  workspaceAdmin: {
+    get: () => apiFetch<any>("/workspace-admin"),
+  },
+
+  // Phase 3: Business Activity
+  businessActivity: {
+    list: (limit?: number) => {
+      const qs = limit ? `?limit=${limit}` : "";
+      return apiFetch<any[]>(`/business-activity${qs}`);
+    },
+  },
 };

@@ -54,6 +54,11 @@ model Workspace {
   documents  KnowledgeDocument[]
   notifications Notification[]
   llmUsage   LlmUsage[]
+  policies   Policy[]
+  approvalRules ApprovalRule[]
+  trustScores TrustScore[]
+  departments Department[]
+  integrations Integration[]
 
   owner User @relation("WorkspaceOwner", fields: [ownerUserId], references: [id])
 }
@@ -136,6 +141,7 @@ model Employee {
   approvals     Approval[]
   documents     KnowledgeDocument[]
   toolPermissions EmployeeToolPermission[]
+  trustScores  TrustScore[]
 }
 
 model Tool {
@@ -198,13 +204,17 @@ model TaskStep {
   id         String   @id @default(cuid())
   taskId     String
   stepNumber Int
-  stepType   String   // plan | reasoning | tool_call | approval_gate
+  stepType   String   // plan | reasoning | tool_call | approval_gate | observed | policy_check | knowledge_used
   input      String   @default("{}") // JSON
   reasoning  String?
   output     String?  // JSON
   status     String   @default("pending") // pending | running | completed | failed | skipped
   tokens     Int      @default(0)
   durationMs Int      @default(0)
+  // Phase 3: explainability enrichment
+  policyRefs String?  // JSON array of policy codes checked
+  knowledgeRefs String? // JSON array of document chunks used
+  confidence Float?   // 0.0-1.0 for this step
   startedAt  DateTime?
   completedAt DateTime?
   createdAt  DateTime @default(now())
@@ -222,8 +232,14 @@ model Approval {
   tool          String
   toolDisplayName String
   proposedAction String  @default("{}") // JSON
+  originalAction String? // JSON — AI's original before human edit
   status        String   @default("pending") // pending | approved | rejected | modified | expired
   criticality   String   @default("critical")
+  riskScore     Int      @default(50) // 0-100
+  confidence    Float    @default(0.8) // 0.0-1.0
+  businessImpact String? // text description
+  policyTrigger String?  // e.g. "POL-001: Refund Authorization Limit"
+  policyId      String?
   timeoutAt     DateTime?
   decidedBy     String?
   decidedAt     DateTime?
@@ -319,6 +335,89 @@ model LlmUsage {
   status          String   @default("success")
   errorMessage    String?
   createdAt       DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+}
+
+// ─── Phase 3: Trust & Governance ────────────────────────────────────────────
+
+model Policy {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  code        String   // e.g. POL-001
+  category    String   // financial | data_access | communication | escalation | compliance
+  description String
+  rules       String   @default("[]") // JSON array of rule expressions
+  severity    String   @default("high") // low | medium | high | critical
+  status      String   @default("active") // active | draft | archived
+  appliesTo   String   @default("all") // all | role:customer_support_agent | etc.
+  createdBy   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+}
+
+model ApprovalRule {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  name          String
+  trigger       String   // e.g. send_email, refund_above_threshold, customer_data_access
+  condition     String   // JSON: { field: "amount", op: ">", value: 2000 }
+  action        String   @default("require_approval") // require_approval | auto_approve | auto_reject | escalate
+  approverRole  String   @default("owner") // owner | manager | department_head
+  policyId      String?
+  priority      Int      @default(100)
+  status        String   @default("active")
+  createdAt     DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+}
+
+model TrustScore {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  employeeId      String
+  successRate     Float    @default(1.0)    // 0.0 - 1.0
+  approvalRate    Float    @default(1.0)    // approved / total decisions
+  humanCorrections Int     @default(0)      // times human modified AI output
+  policyViolations Int     @default(0)
+  tasksCompleted  Int      @default(0)
+  moneyRecoveredCents Int  @default(0)
+  accuracyScore   Float    @default(1.0)    // 0.0 - 1.0
+  overallScore    Float    @default(85.0)   // 0 - 100
+  trend           String   @default("stable") // up | down | stable
+  trendDelta      Float    @default(0.0)
+  computedAt      DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  employee  Employee  @relation(fields: [employeeId], references: [id])
+}
+
+model Department {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  description String?
+  headUserId  String?
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+}
+
+model Integration {
+  id          String   @id @default(cuid())
+  workspaceId String
+  provider    String   @unique // quickbooks | zoho | tally | slack | teams | outlook | gmail | sap | salesforce | hubspot
+  displayName String
+  category    String   // accounting | communication | crm | erp
+  description String
+  status      String   @default("available") // available | connected | error
+  logoColor   String
+  connectedAt DateTime?
+  connectedBy String?
+  createdAt   DateTime @default(now())
 
   workspace Workspace @relation(fields: [workspaceId], references: [id])
 }

@@ -25,6 +25,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       status: s.status,
       tokens: s.tokens,
       durationMs: s.durationMs,
+      policyRefs: s.policyRefs ? JSON.parse(s.policyRefs) : null,
+      knowledgeRefs: s.knowledgeRefs ? JSON.parse(s.knowledgeRefs) : null,
+      confidence: s.confidence,
       startedAt: s.startedAt,
       completedAt: s.completedAt,
     })));
