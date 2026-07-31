@@ -157,6 +157,20 @@ export interface FinanceContext {
     decidedAt: Date;
   }>;
 
+  // Employee Memory — persistent learnings from past interactions
+  // Retrieved before reasoning, updated after task completion
+  employeeMemories: Array<{
+    memoryType: string;
+    entityType: string;
+    entityId: string;
+    entityLabel: string;
+    key: string;
+    value: Record<string, string>;
+    confidence: number;
+    reinforcementCount: number;
+    updatedAt: Date;
+  }>;
+
   // Computed
   daysOverdue: number;
   agingBucket: string;
@@ -246,7 +260,8 @@ export interface RejectedAlternative {
  * Then computes aging, priority, and exposure.
  */
 export async function buildFinanceContext(
-  invoiceId: string
+  invoiceId: string,
+  employeeId?: string
 ): Promise<FinanceContext | null> {
   // Load everything in one query
   const invoice = await db.invoice.findUnique({
@@ -344,6 +359,29 @@ export async function buildFinanceContext(
     invoice.customer.riskLevel
   );
 
+  // ─── Retrieve Employee Memory ────────────────────────────────────────────
+  // The employee recalls what it has learned about this customer and invoice
+  // from past interactions. This is what makes the employee "get better over time."
+  let employeeMemories: FinanceContext["employeeMemories"] = [];
+  if (employeeId) {
+    const { getMemoriesForEntity } = await import("@/lib/memory/service");
+    // Get all memories about this customer
+    const customerMemories = await getMemoriesForEntity(employeeId, "customer", invoice.customerId);
+    // Get all memories about this invoice
+    const invoiceMemories = await getMemoriesForEntity(employeeId, "invoice", invoice.id);
+    employeeMemories = [...customerMemories, ...invoiceMemories].map((m) => ({
+      memoryType: m.memoryType,
+      entityType: m.entityType,
+      entityId: m.entityId,
+      entityLabel: m.entityLabel,
+      key: m.key,
+      value: m.value,
+      confidence: m.confidence,
+      reinforcementCount: m.reinforcementCount,
+      updatedAt: m.updatedAt,
+    }));
+  }
+
   return {
     invoice: {
       id: invoice.id,
@@ -434,6 +472,7 @@ export async function buildFinanceContext(
       decidedAt: a.decidedAt,
     })),
     humanFeedback,
+    employeeMemories,
     daysOverdue,
     agingBucket,
     collectionPriority,
@@ -590,6 +629,87 @@ export function produceRecommendation(ctx: FinanceContext): FinanceRecommendatio
       fact: `${ctx.knowledgeDocuments.length} finance knowledge document(s) available for reference: ${ctx.knowledgeDocuments.map((d) => d.filename).join(", ")}.`,
       weight: "low",
     });
+  }
+
+  // ─── Employee Memory Evidence ──────────────────────────────────────────────
+  // The employee's accumulated learnings from past interactions with this
+  // customer and invoice. This is what makes the employee get better over time.
+  if (ctx.employeeMemories.length > 0) {
+    // Payment habits memory
+    const paymentHabits = ctx.employeeMemories.filter((m) => m.memoryType === "payment_habits");
+    if (paymentHabits.length > 0) {
+      const latest = paymentHabits[0];
+      evidence.push({
+        source: "human_feedback",
+        fact: `[MEMORY | ${latest.confidence > 0.7 ? "reinforced" : "observed"}] Payment habits: ${latest.value.daysOverdue || "N/A"} days overdue on ${latest.value.invoiceNumber || "a previous invoice"}, aging bucket ${latest.value.agingBucket || "N/A"}. Observed ${latest.reinforcementCount} time(s).`,
+        weight: latest.confidence > 0.7 ? "high" : "medium",
+      });
+    }
+
+    // Customer behavior memory
+    const behaviorMems = ctx.employeeMemories.filter((m) => m.memoryType === "customer_behavior");
+    if (behaviorMems.length > 0) {
+      const riskMem = behaviorMems.find((m) => m.key === "risk_level");
+      if (riskMem) {
+        evidence.push({
+          source: "human_feedback",
+          fact: `[MEMORY] Customer risk level previously assessed as "${riskMem.value.riskLevel}" with priority "${riskMem.value.collectionPriority}". Reinforced ${riskMem.reinforcementCount} time(s).`,
+          weight: riskMem.confidence > 0.7 ? "high" : "medium",
+        });
+      }
+
+      const responseRate = behaviorMems.find((m) => m.key === "reminder_response_rate");
+      if (responseRate) {
+        evidence.push({
+          source: "human_feedback",
+          fact: `[MEMORY] Customer has received ${responseRate.value.remindersSent} reminder(s) with response: ${responseRate.value.responded === "true" ? "responded" : "no response"}. Reinforced ${responseRate.reinforcementCount} time(s).`,
+          weight: responseRate.confidence > 0.7 ? "high" : "medium",
+        });
+      }
+    }
+
+    // Manager feedback memory
+    const feedbackMems = ctx.employeeMemories.filter((m) => m.memoryType === "manager_feedback");
+    if (feedbackMems.length > 0) {
+      const latest = feedbackMems[0];
+      evidence.push({
+        source: "human_feedback",
+        fact: `[MEMORY] Manager previously ${latest.value.decision} a ${latest.value.tool} action${latest.value.reason ? ` with reason: "${latest.value.reason}"` : ""}. Reinforced ${latest.reinforcementCount} time(s).`,
+        weight: "high",
+      });
+    }
+
+    // Strategy effectiveness memory
+    const strategyMems = ctx.employeeMemories.filter((m) => m.memoryType === "strategy_effectiveness");
+    if (strategyMems.length > 0) {
+      const effectiveStrategies = strategyMems.filter((m) => m.value.wasEffective === "true");
+      const ineffectiveStrategies = strategyMems.filter((m) => m.value.wasEffective === "false");
+      if (effectiveStrategies.length > 0) {
+        evidence.push({
+          source: "human_feedback",
+          fact: `[MEMORY] ${effectiveStrategies.length} previous strategy(ies) were effective (approved by manager) for this customer.`,
+          weight: "medium",
+        });
+      }
+      if (ineffectiveStrategies.length > 0) {
+        evidence.push({
+          source: "human_feedback",
+          fact: `[MEMORY] ${ineffectiveStrategies.length} previous strategy(ies) were ineffective (rejected by manager) for this customer.`,
+          weight: "high",
+        });
+      }
+    }
+
+    // Communication preference memory
+    const commMems = ctx.employeeMemories.filter((m) => m.memoryType === "communication_preference");
+    if (commMems.length > 0) {
+      const latest = commMems[0];
+      evidence.push({
+        source: "human_feedback",
+        fact: `[MEMORY] Last communicated with this customer via ${latest.value.channel || "email"} on ${latest.value.lastContactedAt ? formatDate(new Date(latest.value.lastContactedAt)) : "N/A"}.`,
+        weight: "low",
+      });
+    }
   }
 
   // ─── Determine Action ─────────────────────────────────────────────────────

@@ -64,6 +64,7 @@ model Workspace {
   payments   Payment[]
   reminders  Reminder[]
   collectionCases CollectionCase[]
+  employeeMemories EmployeeMemory[]
 
   owner User @relation("WorkspaceOwner", fields: [ownerUserId], references: [id])
 }
@@ -550,4 +551,33 @@ model FollowUpHistory {
   performedAt     DateTime @default(now())
 
   collectionCase  CollectionCase @relation(fields: [collectionCaseId], references: [id], onDelete: Cascade)
+}
+
+// ─── Employee Memory Layer ──────────────────────────────────────────────────
+// Generic persistent memory for ALL AI Employees (Finance, HR, Sales, etc.).
+// Records learned patterns, customer behavior, approval outcomes, and
+// strategy effectiveness. The employee retrieves this before acting and
+// updates it after every task.
+
+model EmployeeMemory {
+  id                String   @id @default(cuid())
+  workspaceId      String
+  employeeId       String
+  memoryType       String   // customer_behavior | payment_habits | negotiation_outcome | approval_history | manager_feedback | communication_preference | dispute_history | customer_promise | collection_strategy | strategy_effectiveness
+  entityType       String   // customer | invoice | task | approval | generic
+  entityId         String   // ID of the entity (customer ID, invoice ID, etc.)
+  entityLabel      String   // Human-readable label (e.g., customer name)
+  key              String   // Specific key within type (e.g., "average_payment_delay", "preferred_channel")
+  value            String   // JSON — the memory content
+  confidence       Float    @default(0.5) // 0.0–1.0, increases with reinforcement
+  source           String   @default("task") // task | approval | observation | human_feedback
+  reinforcementCount Int    @default(1) // how many times this memory has been confirmed
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  workspace        Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@unique([employeeId, memoryType, entityType, entityId, key])
+  @@index([employeeId, entityType, entityId])
+  @@index([employeeId, memoryType])
 }

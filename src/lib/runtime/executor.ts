@@ -26,6 +26,7 @@ import { generatePlan, executeTool, type PlannedStep } from "./planner";
 import { isFinanceTask, generateFinancePlan, generateBatchFinancePlan, executeFinanceTool } from "./finance-planner";
 import { buildFinanceContext, produceRecommendation, type FinanceRecommendation } from "@/lib/finance/brain";
 import { findInvoicesNeedingAttention } from "@/lib/finance/domain";
+import { updateMemoryAfterTask, recordApprovalFeedback, extractFinanceMemories } from "@/lib/memory/service";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -170,10 +171,10 @@ async function planTask(
       }
 
       if (invoiceId) {
-        // Step 1: Build the complete FinanceContext (invoice, customer, payments, reminders, policies, etc.)
-        const financeCtx = await buildFinanceContext(invoiceId);
+        // Step 1: Build the complete FinanceContext (invoice, customer, payments, reminders, policies, memory, etc.)
+        const financeCtx = await buildFinanceContext(invoiceId, employee.id);
         if (financeCtx) {
-          // Step 2: The Finance Brain reasons over the context to produce a recommendation
+          // Step 2: The Finance Brain reasons over the context (including memory) to produce a recommendation
           const recommendation = produceRecommendation(financeCtx);
           // Step 3: Generate the execution plan from the recommendation
           plan = generateFinancePlan(recommendation, employeeTools);
@@ -190,7 +191,7 @@ async function planTask(
         // For each invoice, build the full FinanceContext and produce a recommendation
         const recommendations: FinanceRecommendation[] = [];
         for (const ic of invoiceContexts) {
-          const financeCtx = await buildFinanceContext(ic.invoiceId);
+          const financeCtx = await buildFinanceContext(ic.invoiceId, employee.id);
           if (financeCtx) {
             const rec = produceRecommendation(financeCtx);
             recommendations.push(rec);
@@ -648,6 +649,22 @@ async function completeTask(task: any): Promise<ExecutionResult> {
     });
   });
 
+  // ─── Update Employee Memory ──────────────────────────────────────────────
+  // After every completed task, the employee learns from the outcome.
+  // Generic memories (strategy, approval feedback, communication) are
+  // extracted first, then domain-specific memories (finance) if applicable.
+  try {
+    await updateMemoryAfterTask(employee.id, task.workspaceId, task.id);
+
+    // If this was a finance task, also extract finance-specific memories
+    if (isFinanceTask(employee.role, task.title, task.description)) {
+      await extractFinanceMemories(employee.id, task.workspaceId, task.id);
+    }
+  } catch (err) {
+    // Memory update failure should not fail the task — log and continue
+    console.error(`[Executor] Memory update failed for task ${task.id}:`, err);
+  }
+
   return { action: "completed", message: "Task completed" };
 }
 
@@ -768,6 +785,22 @@ export async function resumeAfterApproval(
       },
     });
   });
+
+  // ─── Record Approval Feedback in Memory ──────────────────────────────────
+  // The employee learns from the manager's approval decision immediately.
+  try {
+    await recordApprovalFeedback(
+      task.employeeId,
+      task.workspaceId,
+      approvalId,
+      "approved",
+      null,
+      approval.tool,
+      proposedAction
+    );
+  } catch (err) {
+    console.error(`[Executor] Memory recording failed for approval ${approvalId}:`, err);
+  }
 }
 
 /**
@@ -858,4 +891,23 @@ export async function failAfterApprovalRejection(
       },
     });
   });
+
+  // ─── Record Rejection Feedback in Memory ──────────────────────────────────
+  // The employee learns from the manager's rejection — this is especially
+  // important because rejections often carry a reason that teaches the
+  // employee what NOT to do next time.
+  try {
+    const proposedAction = JSON.parse(approvalRecord?.proposedAction || "{}");
+    await recordApprovalFeedback(
+      task.employeeId,
+      task.workspaceId,
+      approvalId,
+      "rejected",
+      reason || null,
+      approvalRecord?.tool || "",
+      proposedAction
+    );
+  } catch (err) {
+    console.error(`[Executor] Memory recording failed for rejection ${approvalId}:`, err);
+  }
 }
