@@ -25,6 +25,7 @@ import {
   Scale,
   Plug,
   Building2,
+  IndianRupee,
 } from "lucide-react";
 
 interface NavItem {
@@ -42,6 +43,12 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
       { path: "employees", label: "AI Employees", icon: Bot },
       { path: "tasks", label: "Tasks", icon: ListTodo },
       { path: "approvals", label: "Approvals", icon: ShieldCheck, badge: 2 },
+    ],
+  },
+  {
+    label: "Finance",
+    items: [
+      { path: "finance", label: "Receivables", icon: IndianRupee },
     ],
   },
   {

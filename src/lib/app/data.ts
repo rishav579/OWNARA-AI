@@ -31,7 +31,7 @@ export type ApprovalDecision = "approved" | "rejected" | "modified";
 
 export type DocumentStatus = "processing" | "ready" | "failed" | "removed";
 
-export type RoleKey = "customer_support_agent" | "sales_development_representative" | "research_analyst";
+export type RoleKey = "customer_support_agent" | "sales_development_representative" | "research_analyst" | "finance_employee";
 
 export interface Employee {
   id: string;
@@ -147,6 +147,7 @@ export const ROLE_LABELS: Record<RoleKey, string> = {
   customer_support_agent: "Customer Support Agent",
   sales_development_representative: "Sales Development Rep",
   research_analyst: "Research Analyst",
+  finance_employee: "Finance Employee",
 };
 
 export const TOOL_LABELS: Record<string, string> = {
@@ -154,6 +155,9 @@ export const TOOL_LABELS: Record<string, string> = {
   send_email: "Send Email",
   search_knowledge: "Search Knowledge",
   summarize: "Summarize",
+  generate_reminder: "Generate Reminder",
+  send_reminder: "Send Reminder",
+  update_collection_case: "Update Collection Case",
 };
 
 // ─── Sample Data ─────────────────────────────────────────────────────────────

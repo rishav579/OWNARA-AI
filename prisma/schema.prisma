@@ -59,6 +59,11 @@ model Workspace {
   trustScores TrustScore[]
   departments Department[]
   integrations Integration[]
+  customers  Customer[]
+  invoices   Invoice[]
+  payments   Payment[]
+  reminders  Reminder[]
+  collectionCases CollectionCase[]
 
   owner User @relation("WorkspaceOwner", fields: [ownerUserId], references: [id])
 }
@@ -420,4 +425,129 @@ model Integration {
   createdAt   DateTime @default(now())
 
   workspace Workspace @relation(fields: [workspaceId], references: [id])
+}
+
+// ─── Finance Domain Layer ───────────────────────────────────────────────────
+// Real AR / Collections entities. The Finance Employee reasons over these
+// and mutates them through the existing runtime trust loop.
+
+model Customer {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  name          String
+  email         String
+  phone         String?
+  gstin         String?   // GST Identification Number (India)
+  billingAddress String?
+  paymentTerms  Int      @default(30) // days
+  creditLimit   Int      @default(0)  // in rupees
+  status        String   @default("active") // active | inactive | blocked
+  riskLevel     String   @default("medium") // low | medium | high
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  workspace     Workspace  @relation(fields: [workspaceId], references: [id])
+  invoices      Invoice[]
+  payments      Payment[]
+  reminders     Reminder[]
+  collectionCases CollectionCase[]
+}
+
+model Invoice {
+  id              String    @id @default(cuid())
+  workspaceId     String
+  customerId      String
+  invoiceNumber   String    @unique
+  issueDate       DateTime
+  dueDate         DateTime
+  subtotal        Int       // in paise (1 rupee = 100 paise)
+  tax             Int       @default(0)
+  total           Int       // subtotal + tax
+  amountPaid      Int       @default(0)
+  outstanding     Int       @default(0) // total - amountPaid
+  status          String    @default("unpaid") // unpaid | partially_paid | paid | overdue | written_off
+  paymentTerms    Int       @default(30) // days
+  notes           String?
+  createdBy       String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  workspace       Workspace  @relation(fields: [workspaceId], references: [id])
+  customer        Customer   @relation(fields: [customerId], references: [id])
+  payments        Payment[]
+  reminders       Reminder[]
+  collectionCases CollectionCase[]
+}
+
+model Payment {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  invoiceId       String
+  customerId      String
+  amount          Int       // in paise
+  paymentDate     DateTime
+  method          String    @default("bank_transfer") // bank_transfer | upi | cheque | cash | card
+  reference       String?   // transaction reference
+  status          String    @default("completed") // pending | completed | failed | reversed
+  notes           String?
+  recordedBy      String?
+  createdAt       DateTime @default(now())
+
+  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+  invoice         Invoice   @relation(fields: [invoiceId], references: [id])
+  customer        Customer  @relation(fields: [customerId], references: [id])
+}
+
+model Reminder {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  invoiceId       String
+  customerId      String
+  reminderType    String   @default("email") // email | sms | phone_call | letter
+  subject         String
+  body            String
+  status          String   @default("drafted") // drafted | sent | failed | responded
+  sentAt          DateTime?
+  respondedAt     DateTime?
+  responseNotes   String?
+  createdBy       String?  // employee or user who created it
+  createdAt       DateTime @default(now())
+
+  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+  invoice         Invoice   @relation(fields: [invoiceId], references: [id])
+  customer        Customer  @relation(fields: [customerId], references: [id])
+}
+
+model CollectionCase {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  invoiceId       String
+  customerId      String
+  status          String   @default("open") // open | escalated | resolved | closed
+  priority        String   @default("medium") // low | medium | high | critical
+  agingBucket     String   @default("current") // current | 1_30 | 31_60 | 61_90 | 90_plus
+  daysOverdue     Int      @default(0)
+  assignedTo      String?  // employee ID
+  escalationLevel Int      @default(0) // 0 = none, 1 = manager, 2 = legal
+  resolution      String?  // how it was resolved
+  openedAt        DateTime @default(now())
+  resolvedAt      DateTime?
+  updatedAt       DateTime @updatedAt
+
+  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+  invoice         Invoice   @relation(fields: [invoiceId], references: [id])
+  customer        Customer  @relation(fields: [customerId], references: [id])
+  followUps       FollowUpHistory[]
+}
+
+model FollowUpHistory {
+  id              String   @id @default(cuid())
+  collectionCaseId String
+  action          String   // reminder_sent | phone_call | email_sent | escalation | customer_responded | payment_received
+  description     String
+  performedBy     String?  // employee or user ID
+  performedAt     DateTime @default(now())
+
+  collectionCase  CollectionCase @relation(fields: [collectionCaseId], references: [id], onDelete: Cascade)
 }

@@ -23,6 +23,36 @@ export async function GET(request: NextRequest) {
       db.auditLog.findMany({ where: { workspaceId }, orderBy: { sequenceNumber: "desc" }, take: 8 }),
     ]);
 
+    // Finance metrics (live data from AR domain)
+    const [invoices, customers, payments, reminders, collectionCases] = await Promise.all([
+      db.invoice.findMany({ where: { workspaceId }, include: { customer: true, payments: { where: { status: "completed" } } } }),
+      db.customer.findMany({ where: { workspaceId }, include: { invoices: true } }),
+      db.payment.findMany({ where: { workspaceId, status: "completed" }, orderBy: { paymentDate: "desc" } }),
+      db.reminder.findMany({ where: { workspaceId } }),
+      db.collectionCase.findMany({ where: { workspaceId, status: { in: ["open", "escalated"] } } }),
+    ]);
+
+    // Calculate finance metrics
+    const outstandingReceivables = invoices.reduce((sum, inv) => sum + inv.outstanding, 0);
+    const overdueInvoices = invoices.filter((inv) => {
+      const due = new Date(inv.dueDate);
+      due.setHours(0, 0, 0, 0);
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      return due < now && inv.outstanding > 0;
+    });
+    const totalOverdue = overdueInvoices.reduce((sum, inv) => sum + inv.outstanding, 0);
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    const recoveredThisWeek = payments.filter((p) => new Date(p.paymentDate) >= weekAgo).reduce((sum, p) => sum + p.amount, 0);
+    const customersAtRisk = customers.filter((c) => c.riskLevel === "high" || c.invoices.filter((inv) => {
+      const due = new Date(inv.dueDate);
+      due.setHours(0, 0, 0, 0);
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      return due < now && inv.outstanding > 0;
+    }).length >= 2).length;
+
     const activeEmployees = employees.filter((e) => e.status === "active").length;
     const pausedEmployees = employees.filter((e) => e.status === "paused").length;
     const retiredEmployees = employees.filter((e) => e.status === "retired").length;
@@ -143,6 +173,18 @@ export async function GET(request: NextRequest) {
       businessFeed,
       trustScores: trustData,
       activePolicies: policies,
+      // Finance metrics (live data from AR domain)
+      finance: {
+        outstandingReceivables,
+        overdueCount: overdueInvoices.length,
+        totalOverdue,
+        recoveredThisWeek,
+        customersAtRisk,
+        openCollectionCases: collectionCases.length,
+        totalCustomers: customers.length,
+        totalInvoices: invoices.length,
+        totalRemindersSent: reminders.filter((r) => r.status === "sent").length,
+      },
       // Task activity over 14 days (from LLM usage as proxy)
       taskActivity: llmUsage.slice(-14).map((u, i) => ({
         day: `Jan ${15 + i}`,

@@ -23,6 +23,8 @@
 import { db } from "@/lib/db";
 import { appendAudit } from "./audit";
 import { generatePlan, executeTool, type PlannedStep } from "./planner";
+import { isFinanceTask, generateFinancePlan, generateBatchFinancePlan, executeFinanceTool } from "./finance-planner";
+import { findInvoicesNeedingAttention, loadInvoiceContext } from "@/lib/finance/domain";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -38,6 +40,10 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   send_email: "Send Email",
   search_knowledge: "Search Knowledge",
   summarize: "Summarize",
+  // Finance tools
+  generate_reminder: "Generate Reminder",
+  send_reminder: "Send Reminder",
+  update_collection_case: "Update Collection Case",
 };
 
 // ─── Main Entry Point ────────────────────────────────────────────────────────
@@ -142,7 +148,49 @@ async function planTask(
   });
 
   // Generate the plan
-  const plan = generatePlan(task.title, task.description, employee.role, employeeTools);
+  let plan: { steps: PlannedStep[] };
+
+  // Check if this is a finance task
+  if (isFinanceTask(employee.role, task.title, task.description)) {
+    // Finance planning: load invoice context and generate a collections plan
+    const invoiceIdMatch = task.description.match(/invoice[_\s-]?id[:\s]+([a-zA-Z0-9]+)/i);
+    const invoiceNumMatch = task.description.match(/invoice[_\s-]?number[:\s]+([A-Z0-9-]+)/i);
+
+    if (invoiceIdMatch || invoiceNumMatch) {
+      // Single invoice processing
+      let invoiceId = invoiceIdMatch?.[1];
+
+      // If we have an invoice number but no ID, look it up
+      if (!invoiceId && invoiceNumMatch) {
+        const inv = await db.invoice.findFirst({
+          where: { invoiceNumber: invoiceNumMatch[1] },
+        });
+        invoiceId = inv?.id;
+      }
+
+      if (invoiceId) {
+        const ctx = await loadInvoiceContext(invoiceId);
+        if (ctx) {
+          plan = generateFinancePlan(ctx, employeeTools);
+        } else {
+          plan = { steps: [] };
+        }
+      } else {
+        plan = { steps: [] };
+      }
+    } else {
+      // Batch processing: find all invoices needing attention
+      const contexts = await findInvoicesNeedingAttention(task.workspaceId, 3); // Limit to 3 per task
+      if (contexts.length > 0) {
+        plan = generateBatchFinancePlan(contexts, employeeTools);
+      } else {
+        plan = { steps: [] };
+      }
+    }
+  } else {
+    // Generic planning (existing behavior)
+    plan = generatePlan(task.title, task.description, employee.role, employeeTools);
+  }
 
   if (plan.steps.length === 0) {
     // No steps to execute — fail immediately
@@ -175,12 +223,16 @@ async function planTask(
 
   await db.$transaction(async (tx) => {
     // Step 0: The plan itself
+    const isFinance = isFinanceTask(employee.role, task.title, task.description);
+    const criticalCount = plan.steps.filter((s) => s.tool === "send_email" || s.tool === "send_reminder").length;
     await tx.taskStep.create({
       data: {
         taskId: task.id,
         stepNumber: 0,
         stepType: "plan",
-        reasoning: `Planned ${plan.steps.length} steps for this task. The plan includes ${plan.steps.filter((s) => s.tool === "send_email").length} email action(s) that will require human approval.`,
+        reasoning: isFinance
+          ? `Planned ${plan.steps.length} steps for this finance collections task. The plan includes ${criticalCount} critical action(s) requiring human approval.`
+          : `Planned ${plan.steps.length} steps for this task. The plan includes ${criticalCount} email action(s) that will require human approval.`,
         status: "completed",
         tokens: 420,
         durationMs: 3100,
@@ -344,8 +396,23 @@ async function executeToolStep(task: any, step: any, employee: any): Promise<Exe
     return await executeReasoningStep(task, step, employee);
   }
 
-  // Execute the tool (mock)
-  const result = executeTool(toolName, input);
+  // Check if this is a finance tool
+  const financeTools = ["generate_reminder", "send_reminder", "update_collection_case"];
+  const isFinanceTool = financeTools.includes(toolName);
+
+  // Execute the tool
+  let result: { output: Record<string, string>; tokens: number; durationMs: number };
+
+  if (isFinanceTool) {
+    result = await executeFinanceTool(toolName, input, task.workspaceId, employee.id);
+  } else {
+    result = executeTool(toolName, input);
+  }
+
+  // Determine the finance-specific audit entry type
+  let auditEntryType = "tool_executed";
+  if (toolName === "generate_reminder") auditEntryType = "reminder_drafted";
+  else if (toolName === "update_collection_case") auditEntryType = "collection_case_updated";
 
   await db.$transaction(async (tx) => {
     await tx.taskStep.update({
@@ -366,16 +433,18 @@ async function executeToolStep(task: any, step: any, employee: any): Promise<Exe
 
     await appendAudit(tx, {
       workspaceId: task.workspaceId,
-      entryType: "tool_executed",
+      entryType: auditEntryType,
       actorType: "employee",
       actorId: employee.id,
       actorName: employee.name,
-      targetType: "task_step",
-      targetId: step.id,
+      targetType: isFinanceTool ? "invoice" : "task_step",
+      targetId: input.invoiceId || step.id,
       payload: {
         tool: toolName,
         status: "completed",
         tokens: String(result.tokens),
+        ...(input.invoiceNumber ? { invoiceNumber: input.invoiceNumber } : {}),
+        ...(input.customerName ? { customer: input.customerName } : {}),
       },
     });
   });
@@ -450,32 +519,45 @@ async function executeApprovalGateStep(task: any, step: any, employee: any): Pro
       data: { state: "waiting_approval", pendingApprovals: { increment: 1 } },
     });
 
-    // Write audit entry
+    // Write audit entry — include finance context when available
+    const isFinanceApproval = toolName === "send_reminder";
     await appendAudit(tx, {
       workspaceId: task.workspaceId,
-      entryType: "approval_requested",
+      entryType: isFinanceApproval ? "reminder_approval_requested" : "approval_requested",
       actorType: "employee",
       actorId: employee.id,
       actorName: employee.name,
-      targetType: "approval",
-      targetId: approval.id,
+      targetType: isFinanceApproval ? "invoice" : "approval",
+      targetId: isFinanceApproval ? (input.invoiceId || approval.id) : approval.id,
       payload: {
         tool: toolName,
         task: task.title,
         criticality: "critical",
+        ...(input.invoiceNumber ? { invoiceNumber: input.invoiceNumber } : {}),
+        ...(input.customerName ? { customer: input.customerName } : {}),
+        ...(input.outstanding ? { outstanding: input.outstanding } : {}),
+        ...(input.daysOverdue ? { daysOverdue: input.daysOverdue } : {}),
+        ...(input.recommendedAction ? { recommendedAction: input.recommendedAction } : {}),
+        ...(input.businessReason ? { businessReason: input.businessReason.substring(0, 200) } : {}),
       },
     });
 
     // Create a notification for the user
     const task2 = await tx.task.findUnique({ where: { id: task.id } });
     if (task2) {
+      const notifTitle = isFinanceApproval
+        ? `${employee.name} needs approval to send a reminder`
+        : `${employee.name} needs your approval`;
+      const notifBody = isFinanceApproval
+        ? `Invoice ${input.invoiceNumber || ""} — ${input.customerName || ""}: ${input.businessReason ? input.businessReason.substring(0, 120) : "Reminder requires approval"}`
+        : `${TOOL_DISPLAY_NAMES[toolName] || toolName} — ${proposedAction.to || proposedAction.subject || "Action requires review"}`;
       await tx.notification.create({
         data: {
           workspaceId: task.workspaceId,
           userId: task2.assignedBy,
           type: "approval_pending",
-          title: `${employee.name} needs your approval`,
-          body: `${TOOL_DISPLAY_NAMES[toolName] || toolName} — ${proposedAction.to || proposedAction.subject || "Action requires review"}`,
+          title: notifTitle,
+          body: notifBody,
           referenceType: "approval",
           referenceId: approval.id,
           channel: "in_app",
@@ -576,10 +658,19 @@ export async function resumeAfterApproval(
     (s) => s.stepType === "approval_gate" && s.status === "pending"
   );
 
-  await db.$transaction(async (tx) => {
-    // Execute the approved tool (mock)
-    const toolResult = executeTool(approval.tool, JSON.parse(approval.proposedAction));
+  // Execute the approved tool BEFORE the transaction (it may do DB operations)
+  const proposedAction = JSON.parse(approval.proposedAction);
+  const financeTools = ["generate_reminder", "send_reminder", "update_collection_case"];
+  const isFinanceTool = financeTools.includes(approval.tool);
 
+  let toolResult: { output: Record<string, string>; tokens: number; durationMs: number };
+  if (isFinanceTool) {
+    toolResult = await executeFinanceTool(approval.tool, proposedAction, task.workspaceId, task.employeeId);
+  } else {
+    toolResult = executeTool(approval.tool, proposedAction);
+  }
+
+  await db.$transaction(async (tx) => {
     // Mark the gate step as completed
     if (gateStep) {
       await tx.taskStep.update({
@@ -617,34 +708,39 @@ export async function resumeAfterApproval(
     });
 
     // Write audit entry for the approval decision
+    const isFinanceApproval = approval.tool === "send_reminder";
     await appendAudit(tx, {
       workspaceId: task.workspaceId,
-      entryType: "approval_decided",
+      entryType: isFinanceApproval ? "reminder_approved" : "approval_decided",
       actorType: "user",
       actorId: approvedBy,
       actorName: approvedByName,
-      targetType: "approval",
-      targetId: approvalId,
+      targetType: isFinanceApproval ? "invoice" : "approval",
+      targetId: isFinanceApproval ? (proposedAction.invoiceId || approvalId) : approvalId,
       payload: {
         decision: "approved",
         tool: approval.tool,
         employee: task.employee.name,
+        ...(proposedAction.invoiceNumber ? { invoiceNumber: proposedAction.invoiceNumber } : {}),
+        ...(proposedAction.customerName ? { customer: proposedAction.customerName } : {}),
       },
     });
 
     // Write audit entry for the tool execution
     await appendAudit(tx, {
       workspaceId: task.workspaceId,
-      entryType: "tool_executed",
+      entryType: isFinanceApproval ? "reminder_sent" : "tool_executed",
       actorType: "employee",
       actorId: task.employeeId,
       actorName: task.employee.name,
-      targetType: "task_step",
-      targetId: gateStep?.id ?? "",
+      targetType: isFinanceApproval ? "invoice" : "task_step",
+      targetId: proposedAction.invoiceId || gateStep?.id || "",
       payload: {
         tool: approval.tool,
         status: "completed",
         approved_by: approvedByName,
+        ...(proposedAction.invoiceNumber ? { invoiceNumber: proposedAction.invoiceNumber } : {}),
+        ...(proposedAction.customerName ? { customer: proposedAction.customerName } : {}),
       },
     });
   });

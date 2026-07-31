@@ -28,7 +28,18 @@ import {
   CheckCircle2,
   XCircle,
   Scale,
+  IndianRupee,
+  Clock,
+  AlertTriangle,
 } from "lucide-react";
+
+function formatINRfinance(paise: number): string {
+  const rupees = paise / 100;
+  if (rupees >= 10000000) return `₹${(rupees / 10000000).toFixed(2)} Cr`;
+  if (rupees >= 100000) return `₹${(rupees / 100000).toFixed(2)} L`;
+  if (rupees >= 1000) return `₹${(rupees / 1000).toFixed(1)}K`;
+  return `₹${rupees.toLocaleString("en-IN")}`;
+}
 
 export function DashboardPage() {
   const { navigate } = useRouter();
@@ -97,6 +108,24 @@ export function DashboardPage() {
         <StatCard label="Tasks This Month" value={String(data.tasks.total)} icon={ListTodo} trend="up" trendValue="+12%" accent="violet" />
         <StatCard label="Token Cost" value={formatINR(data.tokens.costCentsThisMonth)} icon={Zap} trend="down" trendValue="-8%" accent="sky" />
       </div>
+
+      {/* Finance metrics (live data) */}
+      {data.finance && (
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+          <button onClick={() => navigate("finance")} className="text-left">
+            <StatCard label="Outstanding AR" value={formatINRfinance(data.finance.outstandingReceivables)} icon={IndianRupee} accent="emerald" />
+          </button>
+          <button onClick={() => navigate("finance")} className="text-left">
+            <StatCard label="Overdue Invoices" value={String(data.finance.overdueCount)} icon={Clock} accent="amber" />
+          </button>
+          <button onClick={() => navigate("finance")} className="text-left">
+            <StatCard label="Recovered This Week" value={formatINRfinance(data.finance.recoveredThisWeek)} icon={CheckCircle2} accent="emerald" />
+          </button>
+          <button onClick={() => navigate("finance")} className="text-left">
+            <StatCard label="Customers at Risk" value={String(data.finance.customersAtRisk)} icon={AlertTriangle} accent="violet" />
+          </button>
+        </div>
+      )}
 
       {/* Charts row */}
       <div className="mt-6 grid gap-4 lg:grid-cols-3">

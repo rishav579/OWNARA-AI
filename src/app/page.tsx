@@ -18,6 +18,7 @@ import { BillingPage } from "@/components/app/pages/billing";
 import { GovernancePage } from "@/components/app/pages/governance";
 import { IntegrationsPage } from "@/components/app/pages/integrations";
 import { WorkspaceAdminPage } from "@/components/app/pages/workspace-admin";
+import { FinancePage } from "@/components/app/pages/finance";
 import { LoadingScreen } from "@/components/app/loading-states";
 
 function AppRouter() {
@@ -89,6 +90,9 @@ function AppRouter() {
       break;
     case "workspace-admin":
       page = <WorkspaceAdminPage />;
+      break;
+    case "finance":
+      page = <FinancePage />;
       break;
     case "settings":
       page = <SettingsPage />;

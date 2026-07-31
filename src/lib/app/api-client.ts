@@ -243,4 +243,27 @@ export const api = {
       return apiFetch<any[]>(`/business-activity${qs}`);
     },
   },
+
+  // Finance Domain
+  finance: {
+    invoices: (params?: { status?: string; customerId?: string }) => {
+      const q = new URLSearchParams();
+      if (params?.status) q.set("status", params.status);
+      if (params?.customerId) q.set("customerId", params.customerId);
+      const qs = q.toString();
+      return apiFetch<any[]>(`/finance/invoices${qs ? `?${qs}` : ""}`);
+    },
+    invoice: (id: string) => apiFetch<any>(`/finance/invoices/${id}`),
+    createInvoice: (data: any) => apiFetch<any>("/finance/invoices", { method: "POST", body: JSON.stringify(data) }),
+    customers: (status?: string) => {
+      const qs = status ? `?status=${status}` : "";
+      return apiFetch<any[]>(`/finance/customers${qs}`);
+    },
+    collectionCases: () => apiFetch<any[]>("/finance/collection-cases"),
+    reminders: (status?: string) => {
+      const qs = status ? `?status=${status}` : "";
+      return apiFetch<any[]>(`/finance/reminders${qs}`);
+    },
+    metrics: () => apiFetch<any>("/finance/metrics"),
+  },
 };
