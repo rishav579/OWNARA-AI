@@ -24,7 +24,8 @@ import { db } from "@/lib/db";
 import { appendAudit } from "./audit";
 import { generatePlan, executeTool, type PlannedStep } from "./planner";
 import { isFinanceTask, generateFinancePlan, generateBatchFinancePlan, executeFinanceTool } from "./finance-planner";
-import { findInvoicesNeedingAttention, loadInvoiceContext } from "@/lib/finance/domain";
+import { buildFinanceContext, produceRecommendation, type FinanceRecommendation } from "@/lib/finance/brain";
+import { findInvoicesNeedingAttention } from "@/lib/finance/domain";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -152,12 +153,12 @@ async function planTask(
 
   // Check if this is a finance task
   if (isFinanceTask(employee.role, task.title, task.description)) {
-    // Finance planning: load invoice context and generate a collections plan
+    // Finance planning: use the Finance Brain to build context + produce recommendation
     const invoiceIdMatch = task.description.match(/invoice[_\s-]?id[:\s]+([a-zA-Z0-9]+)/i);
     const invoiceNumMatch = task.description.match(/invoice[_\s-]?number[:\s]+([A-Z0-9-]+)/i);
 
     if (invoiceIdMatch || invoiceNumMatch) {
-      // Single invoice processing
+      // Single invoice processing — Finance Brain builds full context + recommendation
       let invoiceId = invoiceIdMatch?.[1];
 
       // If we have an invoice number but no ID, look it up
@@ -169,9 +170,13 @@ async function planTask(
       }
 
       if (invoiceId) {
-        const ctx = await loadInvoiceContext(invoiceId);
-        if (ctx) {
-          plan = generateFinancePlan(ctx, employeeTools);
+        // Step 1: Build the complete FinanceContext (invoice, customer, payments, reminders, policies, etc.)
+        const financeCtx = await buildFinanceContext(invoiceId);
+        if (financeCtx) {
+          // Step 2: The Finance Brain reasons over the context to produce a recommendation
+          const recommendation = produceRecommendation(financeCtx);
+          // Step 3: Generate the execution plan from the recommendation
+          plan = generateFinancePlan(recommendation, employeeTools);
         } else {
           plan = { steps: [] };
         }
@@ -179,10 +184,23 @@ async function planTask(
         plan = { steps: [] };
       }
     } else {
-      // Batch processing: find all invoices needing attention
-      const contexts = await findInvoicesNeedingAttention(task.workspaceId, 3); // Limit to 3 per task
-      if (contexts.length > 0) {
-        plan = generateBatchFinancePlan(contexts, employeeTools);
+      // Batch processing: find invoices needing attention, then build full context + recommendation for each
+      const invoiceContexts = await findInvoicesNeedingAttention(task.workspaceId, 3); // Limit to 3 per task
+      if (invoiceContexts.length > 0) {
+        // For each invoice, build the full FinanceContext and produce a recommendation
+        const recommendations: FinanceRecommendation[] = [];
+        for (const ic of invoiceContexts) {
+          const financeCtx = await buildFinanceContext(ic.invoiceId);
+          if (financeCtx) {
+            const rec = produceRecommendation(financeCtx);
+            recommendations.push(rec);
+          }
+        }
+        if (recommendations.length > 0) {
+          plan = generateBatchFinancePlan(recommendations, employeeTools);
+        } else {
+          plan = { steps: [] };
+        }
       } else {
         plan = { steps: [] };
       }
@@ -519,7 +537,7 @@ async function executeApprovalGateStep(task: any, step: any, employee: any): Pro
       data: { state: "waiting_approval", pendingApprovals: { increment: 1 } },
     });
 
-    // Write audit entry — include finance context when available
+    // Write audit entry — include finance reasoning chain when available
     const isFinanceApproval = toolName === "send_reminder";
     await appendAudit(tx, {
       workspaceId: task.workspaceId,
@@ -538,7 +556,13 @@ async function executeApprovalGateStep(task: any, step: any, employee: any): Pro
         ...(input.outstanding ? { outstanding: input.outstanding } : {}),
         ...(input.daysOverdue ? { daysOverdue: input.daysOverdue } : {}),
         ...(input.recommendedAction ? { recommendedAction: input.recommendedAction } : {}),
-        ...(input.businessReason ? { businessReason: input.businessReason.substring(0, 200) } : {}),
+        // Finance Brain reasoning chain — stored in audit for permanent record
+        ...(input.why ? { why: input.why.substring(0, 500) } : {}),
+        ...(input.confidence ? { confidence: input.confidence } : {}),
+        ...(input.riskAssessment ? { riskAssessment: input.riskAssessment.substring(0, 200) } : {}),
+        ...(input.policyInfluence ? { policies: input.policyInfluence.substring(0, 300) } : {}),
+        ...(input.customerHistoryInfluence ? { customerHistory: input.customerHistoryInfluence.substring(0, 300) } : {}),
+        ...(input.rejectedAlternatives ? { rejectedAlternatives: input.rejectedAlternatives.substring(0, 300) } : {}),
       },
     });
 
@@ -549,7 +573,7 @@ async function executeApprovalGateStep(task: any, step: any, employee: any): Pro
         ? `${employee.name} needs approval to send a reminder`
         : `${employee.name} needs your approval`;
       const notifBody = isFinanceApproval
-        ? `Invoice ${input.invoiceNumber || ""} — ${input.customerName || ""}: ${input.businessReason ? input.businessReason.substring(0, 120) : "Reminder requires approval"}`
+        ? `Invoice ${input.invoiceNumber || ""} — ${input.customerName || ""}: ${input.why ? input.why.substring(0, 150) : "Reminder requires approval with full finance reasoning."}`
         : `${TOOL_DISPLAY_NAMES[toolName] || toolName} — ${proposedAction.to || proposedAction.subject || "Action requires review"}`;
       await tx.notification.create({
         data: {
