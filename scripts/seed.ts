@@ -29,6 +29,8 @@ async function main() {
   await db.payment.deleteMany();
   await db.invoice.deleteMany();
   await db.customer.deleteMany();
+  // Employee memory (must be before employee)
+  await db.employeeMemory.deleteMany();
   // Trust/governance
   try { await db.trustScore.deleteMany(); } catch {}
   await db.employee.deleteMany();
