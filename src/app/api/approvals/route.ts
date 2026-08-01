@@ -52,3 +52,12 @@ export async function GET(request: NextRequest) {
     return handleApiError(err);
   }
 }
+
+const AVATAR_COLORS: Record<string, string> = {
+  Saanvi: "#10b981",
+  Arjun: "#f59e0b",
+  Meera: "#8b5cf6",
+  Vikram: "#ec4899",
+  Priya: "#64748b",
+  Kavya: "#06b6d4",
+};

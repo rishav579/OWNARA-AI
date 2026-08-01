@@ -27,6 +27,9 @@ async function main() {
   // Capabilities
   await db.employeeCapability.deleteMany();
   await db.capability.deleteMany();
+  // Employee profiles
+  await db.employeeSkill.deleteMany();
+  await db.employeeProfile.deleteMany();
   // Finance tables
   await db.followUpHistory.deleteMany();
   await db.collectionCase.deleteMany();
@@ -491,6 +494,14 @@ async function main() {
   // Grant finance capabilities to Kavya (the Finance Employee)
   await grantFinanceCapabilities(kavya.id, rohit.id);
   console.log(`  ✓ Granted ${FINANCE_CAPABILITIES.length} capabilities to Kavya (Finance Employee)`);
+
+  // ─── Initialize Employee Profiles ────────────────────────────────────────
+  const { initProfile } = await import("../src/lib/profile/engine");
+  await initProfile(saanvi.id, workspace.id, "customer_support_agent", "Customer Support");
+  await initProfile(arjun.id, workspace.id, "sales_development_representative", "Sales");
+  await initProfile(meera.id, workspace.id, "research_analyst", "Research");
+  await initProfile(kavya.id, workspace.id, "finance_employee", "Finance");
+  console.log("  ✓ Initialized employee profiles for all 4 employees");
 
   console.log("\n✅ Clean V1 seed complete!");
   console.log("   Login: rohit@acmetrading.in / demo-password");

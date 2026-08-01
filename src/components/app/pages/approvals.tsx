@@ -45,7 +45,8 @@ export function ApprovalsPage() {
   });
 
   const approveMutation = useMutation({
-    mutationFn: ({ id, reason }: { id: string; reason?: string }) => api.approvals.approve(id, reason),
+    mutationFn: ({ id, reason }: { id: string; reason?: string }) =>
+      api.approvals.approve(id, { reason }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["approvals"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });

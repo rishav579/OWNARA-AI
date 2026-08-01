@@ -30,6 +30,7 @@ import { updateMemoryAfterTask, recordApprovalFeedback, extractFinanceMemories }
 import { getLLMGateway } from "@/lib/llm";
 import { generateContract, approveContract, rejectContract, linkApprovalToContract, type ContractInput } from "@/lib/contracts/engine";
 import { checkCapability, recordCapabilityDenial } from "@/lib/capabilities/engine";
+import { recordProfileEvent } from "@/lib/profile/engine";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -519,6 +520,19 @@ async function executeToolStep(task: any, step: any, employee: any): Promise<Exe
       await recordCapabilityDenial(tx, task.workspaceId, employee.id, employee.name, toolName, capCheck);
     });
 
+    // ─── Update Employee Profile (capability denied) ───────────────────────
+    try {
+      await recordProfileEvent({
+        type: "capability_denied",
+        employeeId: employee.id,
+        workspaceId: task.workspaceId,
+        taskId: task.id,
+        toolName,
+      });
+    } catch (err) {
+      console.error(`[Executor] Profile update failed for capability denial:`, err);
+    }
+
     return { action: "failed", message: `Capability denied: ${capCheck.capabilityCode} required for ${toolName}` };
   }
 
@@ -861,6 +875,23 @@ async function completeTask(task: any): Promise<ExecutionResult> {
     console.error(`[Executor] Memory update failed for task ${task.id}:`, err);
   }
 
+  // ─── Update Employee Profile ──────────────────────────────────────────────
+  // After every completed task, the employee's career profile is updated:
+  // XP, level, KPIs, trust score, skills, memory counts, capability counts.
+  try {
+    await recordProfileEvent({
+      type: "task_completed",
+      employeeId: employee.id,
+      workspaceId: task.workspaceId,
+      taskId: task.id,
+      executionTimeMs: task.startedAt && task.completedAt
+        ? new Date(task.completedAt).getTime() - new Date(task.startedAt).getTime()
+        : undefined,
+    });
+  } catch (err) {
+    console.error(`[Executor] Profile update failed for task ${task.id}:`, err);
+  }
+
   return { action: "completed", message: "Task completed" };
 }
 
@@ -1032,6 +1063,43 @@ export async function resumeAfterApproval(
   } catch (err) {
     console.error(`[Executor] Memory recording failed for approval ${approvalId}:`, err);
   }
+
+  // ─── Update Employee Profile (approval approved) ─────────────────────────
+  try {
+    await recordProfileEvent({
+      type: "approval_approved",
+      employeeId: task.employeeId,
+      workspaceId: task.workspaceId,
+      taskId,
+      toolName: approval.tool,
+    });
+    // If this was a reminder send, record the specific KPI
+    if (approval.tool === "send_reminder" || approval.tool === "send_email") {
+      await recordProfileEvent({
+        type: "reminder_sent",
+        employeeId: task.employeeId,
+        workspaceId: task.workspaceId,
+        taskId,
+        toolName: approval.tool,
+      });
+    }
+    // Bookkeeping: contract_approved is zero-XP (XP already counted via
+    // approval_approved) but nudges the accuracy score so the profile
+    // reflects the contract lifecycle separately from the approval lifecycle.
+    if (gateStep) {
+      const stepOutput = JSON.parse(gateStep.output || "{}");
+      if (stepOutput.contractId) {
+        await recordProfileEvent({
+          type: "contract_approved",
+          employeeId: task.employeeId,
+          workspaceId: task.workspaceId,
+          taskId,
+        });
+      }
+    }
+  } catch (err) {
+    console.error(`[Executor] Profile update failed for approval ${approvalId}:`, err);
+  }
 }
 
 /**
@@ -1153,6 +1221,38 @@ export async function failAfterApprovalRejection(
     }
   } catch (err) {
     console.error(`[Executor] Contract rejection failed for approval ${approvalId}:`, err);
+  }
+
+  // ─── Update Employee Profile (approval rejected) ─────────────────────────
+  try {
+    await recordProfileEvent({
+      type: "approval_rejected",
+      employeeId: task.employeeId,
+      workspaceId: task.workspaceId,
+      taskId,
+      toolName: approvalRecord?.tool || "",
+    });
+    await recordProfileEvent({
+      type: "task_failed",
+      employeeId: task.employeeId,
+      workspaceId: task.workspaceId,
+      taskId,
+    });
+    // Bookkeeping: contract_rejected is zero-XP (XP already counted via
+    // approval_rejected + task_failed) but nudges the accuracy score.
+    if (gateStep) {
+      const stepOutput = JSON.parse(gateStep.output || "{}");
+      if (stepOutput.contractId) {
+        await recordProfileEvent({
+          type: "contract_rejected",
+          employeeId: task.employeeId,
+          workspaceId: task.workspaceId,
+          taskId,
+        });
+      }
+    }
+  } catch (err) {
+    console.error(`[Executor] Profile update failed for rejection ${approvalId}:`, err);
   }
 }
 

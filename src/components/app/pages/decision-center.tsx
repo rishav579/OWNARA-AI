@@ -75,7 +75,8 @@ export function DecisionCenterPage() {
   });
 
   const approveMutation = useMutation({
-    mutationFn: ({ id, reason }: { id: string; reason?: string }) => api.approvals.approve(id, reason),
+    mutationFn: ({ id, reason, modifiedAction }: { id: string; reason?: string; modifiedAction?: string }) =>
+      api.approvals.approve(id, { reason, modifiedAction }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["approvals"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
@@ -203,8 +204,12 @@ export function DecisionCenterPage() {
                 approval={selected}
                 onCancel={() => setShowModify(false)}
                 onSubmit={(modifiedAction: string) => {
-                  // For now, approve with modified action — the backend stores it in modifiedAction
-                  approveMutation.mutate({ id: selected.id, reason: `Modified: ${modifiedAction}` });
+                  // Send the modified action as a dedicated field.
+                  // The backend creates Execution Contract V2 with this edit,
+                  // preserves V1 permanently, and emits a human_override
+                  // profile event so the employee's trust score reflects the
+                  // manager's correction.
+                  approveMutation.mutate({ id: selected.id, modifiedAction });
                   setShowModify(false);
                 }}
               />
@@ -461,6 +466,33 @@ function DecisionDetail({
         </div>
       </div>
 
+      {/* ─── Employee Profile Summary ─── */}
+      {approval.profile && (
+        <div className="border-b border-zinc-800 p-5">
+          <div className="mb-3 text-[0.65rem] font-semibold uppercase tracking-wider text-zinc-500">Employee Profile</div>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <ProfileField label="Level" value={`Lv${approval.profile.level}`} sub={approval.profile.title} />
+            <ProfileField label="Trust" value={`${approval.profile.trustScore.toFixed(1)}`} sub="/ 100" />
+            <ProfileField label="XP" value={String(approval.profile.experiencePoints)} sub="experience" />
+            <ProfileField label="Tasks" value={`${approval.profile.completedTasks}`} sub={`${approval.profile.failedTasks} failed`} />
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <ProfileField label="Approval Rate" value={`${(approval.profile.approvalRate * 100).toFixed(0)}%`} />
+            <ProfileField label="Emails Sent" value={String(approval.profile.emailsSent)} />
+            <ProfileField label="Tasks Automated" value={String(approval.profile.tasksAutomated)} />
+            <ProfileField label="Hours Saved" value={`${approval.profile.hoursSaved.toFixed(1)}h`} />
+          </div>
+          {approval.profile.estimatedBusinessValue > 0 && (
+            <div className="mt-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
+              <span className="text-xs text-zinc-500">Estimated Business Value: </span>
+              <span className="text-sm font-bold text-emerald-400">
+                ₹{((approval.profile.estimatedBusinessValue / 100) / 100000).toFixed(2)} L
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ─── Capability Status ─── */}
       {approval.capability && (
         <div className="border-b border-zinc-800 p-5">
@@ -642,6 +674,18 @@ function ContextField({ label, value, mono }: { label: string; value: string; mo
     <div>
       <div className="text-[0.6rem] font-semibold uppercase tracking-wider text-zinc-500">{label}</div>
       <div className={cn("mt-0.5 text-sm font-medium text-zinc-200", mono && "font-mono")}>{value}</div>
+    </div>
+  );
+}
+
+function ProfileField({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div>
+      <div className="text-[0.6rem] font-semibold uppercase tracking-wider text-zinc-500">{label}</div>
+      <div className="mt-0.5 flex items-baseline gap-1">
+        <span className="text-sm font-bold text-zinc-100">{value}</span>
+        {sub && <span className="text-[0.6rem] text-zinc-500">{sub}</span>}
+      </div>
     </div>
   );
 }

@@ -135,6 +135,13 @@ export const api = {
     pause: (id: string) => apiFetch<any>(`/employees/${id}/pause`, { method: "POST" }),
     resume: (id: string) => apiFetch<any>(`/employees/${id}/resume`, { method: "POST" }),
     retire: (id: string) => apiFetch<any>(`/employees/${id}`, { method: "DELETE" }),
+
+    // Employee Profile Engine (EMP-001)
+    // The profile is the employee's persistent career record: level, XP,
+    // trust score, KPIs, skills, memory stats, capability stats.
+    profile: (id: string) => apiFetch<any>(`/employees/${id}/profile`),
+    performance: (id: string) => apiFetch<any>(`/employees/${id}/performance`),
+    history: (id: string) => apiFetch<any[]>(`/employees/${id}/history`),
   },
 
   // Tasks
@@ -159,8 +166,11 @@ export const api = {
     },
     pending: () => apiFetch<any[]>("/approvals/pending"),
     get: (id: string) => apiFetch<any>(`/approvals/${id}`),
-    approve: (id: string, reason?: string) =>
-      apiFetch<any>(`/approvals/${id}/approve`, { method: "POST", body: JSON.stringify({ reason }) }),
+    approve: (id: string, payload?: { reason?: string; modifiedAction?: string }) =>
+      apiFetch<any>(`/approvals/${id}/approve`, {
+        method: "POST",
+        body: JSON.stringify(payload ?? {}),
+      }),
     reject: (id: string, reason?: string) =>
       apiFetch<any>(`/approvals/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
   },
@@ -178,6 +188,13 @@ export const api = {
       apiFetch<any>(`/employees/${employeeId}/capabilities`, { method: "POST", body: JSON.stringify({ capabilityCode }) }),
     revoke: (employeeId: string, capabilityCode: string) =>
       apiFetch<any>(`/employees/${employeeId}/capabilities?code=${capabilityCode}`, { method: "DELETE" }),
+  },
+
+  // Employee Profile
+  profile: {
+    get: (employeeId: string) => apiFetch<any>(`/employees/${employeeId}/profile`),
+    performance: (employeeId: string) => apiFetch<any>(`/employees/${employeeId}/performance`),
+    history: (employeeId: string) => apiFetch<any[]>(`/employees/${employeeId}/history`),
   },
 
   // Knowledge

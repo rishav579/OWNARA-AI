@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { requireWorkspace } from "@/lib/auth";
 import { success, handleApiError } from "@/lib/api-response";
 import { checkCapability } from "@/lib/capabilities/engine";
+import { getProfile } from "@/lib/profile/engine";
 
 export async function GET(request: NextRequest) {
   try {
@@ -63,6 +64,9 @@ export async function GET(request: NextRequest) {
       // Check capability status for this approval's tool
       const capCheck = await checkCapability(a.employeeId, a.tool);
 
+      // Get employee profile for Decision Center
+      const profile = await getProfile(a.employeeId);
+
       const proposedAction = JSON.parse(a.proposedAction);
 
       return {
@@ -93,6 +97,23 @@ export async function GET(request: NextRequest) {
           granted: capCheck.allowed,
           reason: capCheck.reason,
         },
+        // Employee profile
+        profile: profile ? {
+          level: profile.level,
+          title: profile.title,
+          experiencePoints: profile.experiencePoints,
+          trustScore: profile.trustScore,
+          completedTasks: profile.completedTasks,
+          failedTasks: profile.failedTasks,
+          approvalRate: profile.approvalRate,
+          moneyRecovered: profile.moneyRecovered,
+          emailsSent: profile.emailsSent,
+          tasksAutomated: profile.tasksAutomated,
+          hoursSaved: profile.hoursSaved,
+          estimatedBusinessValue: profile.estimatedBusinessValue,
+          memoryCount: profile.memoryCount,
+          capabilitiesGranted: profile.capabilitiesGranted,
+        } : null,
       };
     }));
 

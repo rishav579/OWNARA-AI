@@ -66,6 +66,8 @@ model Workspace {
   collectionCases CollectionCase[]
   employeeMemories EmployeeMemory[]
   executionContracts ExecutionContract[]
+  employeeProfiles EmployeeProfile[]
+  employeeSkills EmployeeSkill[]
 
   owner User @relation("WorkspaceOwner", fields: [ownerUserId], references: [id])
 }
@@ -671,5 +673,89 @@ model EmployeeCapability {
   capability  Capability @relation(fields: [capabilityId], references: [id], onDelete: Cascade)
 
   @@unique([employeeId, capabilityId])
+  @@index([employeeId])
+}
+
+// ─── Employee Profile Engine (EMP-001) ──────────────────────────────────────
+// Persistent professional profile for every AI Employee.
+// Think: LinkedIn profile + performance review + resume + trust history.
+// Automatically updated after every task, approval, memory, and capability event.
+
+model EmployeeProfile {
+  id              String   @id @default(cuid())
+  employeeId      String   @unique
+  workspaceId     String
+
+  // Professional
+  employeeType    String   @default("finance_employee") // finance_employee | hr_employee | etc.
+  department      String   @default("Finance")
+  title           String   @default("Intern") // changes with level
+  version         Int      @default(1) // increments on every update
+
+  // Experience
+  experiencePoints Int     @default(0)
+  level           Int      @default(1) // 1-7
+  completedTasks  Int      @default(0)
+  successfulTasks Int      @default(0)
+  failedTasks     Int      @default(0)
+  approvalRate    Float    @default(1.0) // approved / total decisions
+  averageConfidence Float  @default(0.85)
+  averageExecutionTime Int @default(0) // ms
+
+  // Business KPIs
+  moneyRecovered       Int @default(0) // in paise
+  invoicesProcessed    Int @default(0)
+  customersHandled     Int @default(0)
+  emailsSent           Int @default(0)
+  tasksAutomated       Int @default(0)
+  hoursSaved           Float @default(0) // estimated hours of manual work replaced
+  estimatedBusinessValue Int @default(0) // in paise
+
+  // Quality
+  trustScore          Float   @default(85.0) // 0-100
+  accuracyScore       Float   @default(0.90) // 0-1
+  consistencyScore    Float   @default(0.85) // 0-1
+  riskScore           Float   @default(30.0) // 0-100 (lower is better)
+  hallucinationRate   Float   @default(0.05) // 0-1 (lower is better)
+  humanInterventionRate Float @default(0.20) // 0-1 (lower is better)
+
+  // Learning
+  skills              String  @default("[]") // JSON array of skill objects
+  knowledgeAreas      String  @default("[]") // JSON array
+  specializations     String  @default("[]") // JSON array
+  strongestDomains    String  @default("[]") // JSON array
+  weakDomains         String  @default("[]") // JSON array
+
+  // Memory
+  memoryCount         Int     @default(0)
+  reinforcementCount  Int     @default(0)
+
+  // Capabilities
+  capabilitiesGranted Int     @default(0)
+  criticalCapabilities Int    @default(0)
+
+  // Timeline
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  lastTaskAt          DateTime?
+
+  workspace           Workspace @relation(fields: [workspaceId], references: [id])
+}
+
+model EmployeeSkill {
+  id          String   @id @default(cuid())
+  employeeId  String
+  workspaceId String
+  name        String   // e.g., "Invoice Analysis", "Collections"
+  level       Int      @default(1) // 1-10
+  confidence  Float    @default(0.5) // 0-1
+  usageCount  Int      @default(0)
+  lastUsedAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@unique([employeeId, name])
   @@index([employeeId])
 }

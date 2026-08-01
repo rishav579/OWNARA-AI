@@ -32,10 +32,15 @@ import {
   Activity,
   Zap,
   Lock,
+  Award,
+  TrendingUp,
+  Brain,
+  Sparkles,
 } from "lucide-react";
 
 const TABS = [
   { id: "overview", label: "Overview", icon: Activity },
+  { id: "career", label: "Career", icon: Award },
   { id: "tasks", label: "Tasks", icon: ListTodo },
   { id: "tools", label: "Tools", icon: Shield },
   { id: "knowledge", label: "Knowledge", icon: BookOpen },
@@ -50,6 +55,14 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
   const { data: employee, isLoading, isError, refetch } = useQuery({
     queryKey: ["employee", employeeId],
     queryFn: () => api.employees.get(employeeId),
+  });
+
+  // Career profile (XP, level, trust, KPIs, skills, memory, capabilities)
+  // Loaded lazily — only fetched when the Career tab is opened.
+  const { data: profile, isLoading: profileLoading } = useQuery({
+    queryKey: ["employee", employeeId, "profile"],
+    queryFn: () => api.employees.profile(employeeId),
+    enabled: tab === "career",
   });
 
   const pauseMutation = useMutation({
@@ -272,6 +285,11 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
           </div>
         )}
 
+        {/* Career tab — Employee Profile Engine (EMP-001) */}
+        {tab === "career" && (
+          <CareerPanel profile={profile ?? undefined} loading={profileLoading} />
+        )}
+
         {/* Tasks tab */}
         {tab === "tasks" && (
           <div className="space-y-2">
@@ -393,6 +411,356 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ─── Career Panel (Employee Profile Engine — EMP-001) ─────────────────────────
+
+interface SkillStat { name: string; level: number; confidence: number; usageCount: number }
+interface ProfileData {
+  level: number;
+  title: string;
+  experiencePoints: number;
+  version: number;
+  nextLevelXp?: number;
+  progressToNextLevel?: number;
+  completedTasks: number;
+  successfulTasks: number;
+  failedTasks: number;
+  approvalRate: number;
+  averageConfidence: number;
+  averageExecutionTime: number;
+  moneyRecovered: number;
+  invoicesProcessed: number;
+  customersHandled: number;
+  emailsSent: number;
+  tasksAutomated: number;
+  hoursSaved: number;
+  estimatedBusinessValue: number;
+  trustScore: number;
+  accuracyScore: number;
+  consistencyScore: number;
+  riskScore: number;
+  hallucinationRate: number;
+  humanInterventionRate: number;
+  memoryCount: number;
+  reinforcementCount: number;
+  capabilitiesGranted: number;
+  criticalCapabilities: number;
+  skills: SkillStat[];
+  lastTaskAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const LEVEL_LADDER = [
+  { level: 1, title: "Intern", minXp: 0 },
+  { level: 2, title: "Junior Employee", minXp: 50 },
+  { level: 3, title: "Employee", minXp: 150 },
+  { level: 4, title: "Senior Employee", minXp: 350 },
+  { level: 5, title: "Lead Employee", minXp: 700 },
+  { level: 6, title: "Principal Employee", minXp: 1200 },
+  { level: 7, title: "Expert Employee", minXp: 2000 },
+];
+
+function CareerPanel({ profile, loading }: { profile?: ProfileData; loading: boolean }) {
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <div className="h-32 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50" />
+        <div className="h-64 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50" />
+      </div>
+    );
+  }
+  if (!profile) {
+    return (
+      <EmptyState
+        icon={Award}
+        title="No career profile yet"
+        description="This employee hasn't completed any tasks. The profile initializes on first activation."
+      />
+    );
+  }
+
+  const p = profile;
+  const currentLevel = LEVEL_LADDER.find((l) => l.level === p.level) || LEVEL_LADDER[0];
+  const nextLevel = LEVEL_LADDER.find((l) => l.level === p.level + 1);
+  const progressPct = nextLevel
+    ? Math.min(100, Math.round(((p.experiencePoints - currentLevel.minXp) / (nextLevel.minXp - currentLevel.minXp)) * 100))
+    : 100;
+
+  return (
+    <div className="space-y-4">
+      {/* ─── Level + XP Header ─── */}
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400">
+              <Award className="h-6 w-6" />
+            </div>
+            <div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-bold text-zinc-50">Level {p.level}</span>
+                <span className="text-sm text-zinc-400">· {p.title}</span>
+              </div>
+              <div className="mt-0.5 font-mono text-xs text-zinc-500">
+                {p.experiencePoints} XP · v{p.version} · updated {formatDateTime(p.updatedAt)}
+              </div>
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-xs text-zinc-500">Trust Score</div>
+            <div className={cn(
+              "text-2xl font-bold",
+              p.trustScore >= 80 ? "text-emerald-400" :
+              p.trustScore >= 60 ? "text-amber-400" :
+              "text-red-400"
+            )}>
+              {p.trustScore.toFixed(1)}
+            </div>
+            <div className="text-[0.6rem] text-zinc-500">/ 100</div>
+          </div>
+        </div>
+
+        {/* Level progress bar */}
+        {nextLevel ? (
+          <div className="mt-4">
+            <div className="mb-1.5 flex items-center justify-between text-xs">
+              <span className="text-zinc-400">Progress to <span className="text-zinc-200">{nextLevel.title}</span> (Lv{nextLevel.level})</span>
+              <span className="font-mono text-zinc-500">
+                {p.experiencePoints - currentLevel.minXp} / {nextLevel.minXp - currentLevel.minXp} XP
+              </span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-zinc-800">
+              <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all" style={{ width: `${progressPct}%` }} />
+            </div>
+            <div className="mt-1 text-right text-[0.6rem] text-zinc-500">{progressPct}%</div>
+          </div>
+        ) : (
+          <div className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-400">
+            ★ Max level reached — Expert Employee
+          </div>
+        )}
+
+        {/* Level ladder */}
+        <div className="mt-4 flex flex-wrap gap-1.5">
+          {LEVEL_LADDER.map((l) => (
+            <span
+              key={l.level}
+              className={cn(
+                "rounded-full px-2 py-0.5 text-[0.6rem] font-medium",
+                l.level === p.level
+                  ? "bg-emerald-500/15 text-emerald-400"
+                  : l.level < p.level
+                  ? "bg-zinc-800 text-zinc-400"
+                  : "bg-zinc-900 text-zinc-600"
+              )}
+              title={`${l.title} (${l.minXp} XP)`}
+            >
+              Lv{l.level} {l.title}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* ─── KPIs ─── */}
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+        <div className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-zinc-100">
+          <TrendingUp className="h-4 w-4 text-emerald-400" /> Business KPIs
+        </div>
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+          <KpiCell label="Tasks Completed" value={p.completedTasks} sub={`${p.failedTasks} failed`} />
+          <KpiCell label="Tasks Automated" value={p.tasksAutomated} sub="manual work replaced" />
+          <KpiCell label="Emails Sent" value={p.emailsSent} sub="automated" />
+          <KpiCell label="Customers Handled" value={p.customersHandled} sub="unique" />
+          <KpiCell label="Hours Saved" value={`${p.hoursSaved.toFixed(1)}h`} sub="vs manual" />
+          <KpiCell label="Invoices Processed" value={p.invoicesProcessed} />
+          <KpiCell
+            label="Money Recovered"
+            value={`₹${((p.moneyRecovered / 100) / 100000).toFixed(2)}L`}
+            sub={p.moneyRecovered > 0 ? "realised" : "pending payments"}
+            highlight={p.moneyRecovered > 0 ? "emerald" : undefined}
+          />
+          <KpiCell
+            label="Business Value"
+            value={`₹${((p.estimatedBusinessValue / 100) / 100000).toFixed(2)}L`}
+            sub="estimated"
+            highlight={p.estimatedBusinessValue > 0 ? "emerald" : undefined}
+          />
+        </div>
+      </div>
+
+      {/* ─── Quality + Memory + Capabilities ─── */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        {/* Quality */}
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+          <div className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-zinc-100">
+            <Shield className="h-4 w-4 text-sky-400" /> Quality
+          </div>
+          <div className="space-y-3">
+            <QualityBar label="Trust" value={p.trustScore} max={100} suffix="/100" color="emerald" />
+            <QualityBar label="Accuracy" value={p.accuracyScore * 100} max={100} suffix="%" color="sky" />
+            <QualityBar label="Consistency" value={p.consistencyScore * 100} max={100} suffix="%" color="violet" />
+            <QualityBar label="Risk (lower is better)" value={100 - p.riskScore} max={100} suffix="% safe" color="emerald" />
+            <QualityBar label="Hallucination-free" value={(1 - p.hallucinationRate) * 100} max={100} suffix="%" color="emerald" />
+            <QualityBar label="Autonomy" value={(1 - p.humanInterventionRate) * 100} max={100} suffix="%" color="emerald" />
+          </div>
+        </div>
+
+        {/* Memory */}
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+          <div className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-zinc-100">
+            <Brain className="h-4 w-4 text-violet-400" /> Memory & Learning
+          </div>
+          <div className="space-y-3">
+            <StatRow label="Memories stored" value={p.memoryCount} />
+            <StatRow label="Reinforcements" value={p.reinforcementCount} />
+            <StatRow label="Avg confidence" value={`${(p.averageConfidence * 100).toFixed(0)}%`} />
+            <StatRow label="Avg execution time" value={p.averageExecutionTime > 0 ? `${(p.averageExecutionTime / 1000).toFixed(1)}s` : "—"} />
+            <StatRow label="Approval rate" value={`${(p.approvalRate * 100).toFixed(0)}%`} />
+            <StatRow label="Last task at" value={p.lastTaskAt ? formatDateTime(p.lastTaskAt) : "—"} />
+          </div>
+        </div>
+
+        {/* Capabilities */}
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+          <div className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-zinc-100">
+            <Lock className="h-4 w-4 text-amber-400" /> Capabilities
+          </div>
+          <div className="space-y-3">
+            <StatRow label="Granted" value={p.capabilitiesGranted} />
+            <StatRow label="Critical / high-risk" value={p.criticalCapabilities} highlight="amber" />
+            <StatRow label="Profile version" value={`v${p.version}`} />
+            <StatRow label="Created" value={formatDate(p.createdAt)} />
+            <div className="mt-2 rounded-lg border border-zinc-800 bg-zinc-950/50 p-3 text-xs leading-relaxed text-zinc-500">
+              Capabilities follow least-privilege: every tool execution is
+              authorized against the employee's granted capabilities. Critical
+              capabilities require explicit human approval before each use.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Skills ─── */}
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+        <div className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-zinc-100">
+          <Sparkles className="h-4 w-4 text-amber-400" /> Skills
+          <span className="ml-auto text-xs font-normal text-zinc-500">
+            {p.skills.length} tracked · auto-inferred from task patterns
+          </span>
+        </div>
+        {p.skills.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500">
+            No skills tracked yet. Skills are inferred automatically as the employee completes tasks.
+          </div>
+        ) : (
+          <div className="space-y-2.5">
+            {p.skills.map((s) => (
+              <div key={s.name} className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-zinc-100">{s.name}</span>
+                    <span className={cn(
+                      "rounded-full px-1.5 py-0.5 text-[0.6rem] font-bold",
+                      s.level >= 7 ? "bg-amber-500/15 text-amber-400" :
+                      s.level >= 4 ? "bg-emerald-500/15 text-emerald-400" :
+                      "bg-zinc-800 text-zinc-400"
+                    )}>
+                      Lv{s.level}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 font-mono text-[0.65rem] text-zinc-500">
+                    <span>{s.usageCount} uses</span>
+                    <span>{(s.confidence * 100).toFixed(0)}% conf</span>
+                  </div>
+                </div>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-zinc-800">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-violet-500 to-violet-400"
+                    style={{ width: `${Math.min(100, (s.level / 10) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function KpiCell({
+  label,
+  value,
+  sub,
+  highlight,
+}: {
+  label: string;
+  value: string | number;
+  sub?: string;
+  highlight?: "emerald";
+}) {
+  return (
+    <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
+      <div className="text-[0.65rem] uppercase tracking-wider text-zinc-500">{label}</div>
+      <div className={cn(
+        "mt-1 text-xl font-bold",
+        highlight === "emerald" ? "text-emerald-400" : "text-zinc-50"
+      )}>
+        {value}
+      </div>
+      {sub && <div className="text-[0.6rem] text-zinc-500">{sub}</div>}
+    </div>
+  );
+}
+
+function QualityBar({
+  label,
+  value,
+  max,
+  suffix,
+  color,
+}: {
+  label: string;
+  value: number;
+  max: number;
+  suffix?: string;
+  color: "emerald" | "sky" | "violet";
+}) {
+  const pct = Math.min(100, (value / max) * 100);
+  const colorClass =
+    color === "emerald" ? "from-emerald-500 to-emerald-400" :
+    color === "sky" ? "from-sky-500 to-sky-400" :
+    "from-violet-500 to-violet-400";
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between text-xs">
+        <span className="text-zinc-400">{label}</span>
+        <span className="font-mono text-zinc-300">{pct.toFixed(0)}{suffix}</span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-zinc-800">
+        <div className={cn("h-full rounded-full bg-gradient-to-r", colorClass)} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function StatRow({
+  label,
+  value,
+  highlight,
+}: {
+  label: string;
+  value: string | number;
+  highlight?: "amber";
+}) {
+  return (
+    <div className="flex items-center justify-between text-sm">
+      <span className="text-zinc-400">{label}</span>
+      <span className={cn("font-medium", highlight === "amber" ? "text-amber-400" : "text-zinc-100")}>
+        {value}
+      </span>
     </div>
   );
 }

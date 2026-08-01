@@ -30,6 +30,16 @@
 
 import { db } from "@/lib/db";
 
+// Lazy import to avoid circular dependency
+let recordProfileEventFn: ((event: any) => Promise<void>) | null = null;
+async function getRecordProfileEvent() {
+  if (!recordProfileEventFn) {
+    const mod = await import("@/lib/profile/engine");
+    recordProfileEventFn = mod.recordProfileEvent;
+  }
+  return recordProfileEventFn;
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface MemoryEntry {
@@ -107,6 +117,16 @@ export async function recordMemory(
         entityLabel: record.entityLabel || existing.entityLabel,
       },
     });
+
+    // ─── Update Employee Profile (memory reinforced) ────────────────────────
+    try {
+      const recordProfileEvent = await getRecordProfileEvent();
+      await recordProfileEvent({
+        type: "memory_reinforced",
+        employeeId,
+        workspaceId,
+      });
+    } catch {}
   } else {
     // Create new memory
     const value = {
@@ -129,6 +149,16 @@ export async function recordMemory(
         reinforcementCount: 1,
       },
     });
+
+    // ─── Update Employee Profile (memory created) ───────────────────────────
+    try {
+      const recordProfileEvent = await getRecordProfileEvent();
+      await recordProfileEvent({
+        type: "memory_created",
+        employeeId,
+        workspaceId,
+      });
+    } catch {}
   }
 }
 
