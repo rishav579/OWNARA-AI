@@ -65,6 +65,7 @@ model Workspace {
   reminders  Reminder[]
   collectionCases CollectionCase[]
   employeeMemories EmployeeMemory[]
+  executionContracts ExecutionContract[]
 
   owner User @relation("WorkspaceOwner", fields: [ownerUserId], references: [id])
 }
@@ -580,4 +581,64 @@ model EmployeeMemory {
   @@unique([employeeId, memoryType, entityType, entityId, key])
   @@index([employeeId, entityType, entityId])
   @@index([employeeId, memoryType])
+}
+
+// ─── Execution Contract Engine ──────────────────────────────────────────────
+// Immutable contracts generated before ANY irreversible tool execution.
+// Every approval references a Contract (not mutable task state).
+// Contracts are versioned — modifications create V2, V3, etc.
+// Approved contracts become immutable. Rejected contracts remain searchable.
+
+model ExecutionContract {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  taskId          String
+  employeeId      String
+  approvalId      String?  // linked approval (null until approval is created)
+
+  // Contract identity
+  contractNumber  String   // e.g., "EC-0001"
+  version         Int      @default(1) // 1, 2, 3... each modification = new version
+  parentContractId String? // ID of the previous version (for version chain)
+
+  // Contract content (immutable once approved)
+  status          String   @default("draft") // draft | pending_approval | approved | rejected | expired | superseded
+
+  // The 17 required fields
+  goal            String   // What the employee is trying to achieve
+  proposedAction  String   // JSON — the exact action to be executed
+  confidence      Float    // 0.0–1.0 — employee's confidence
+  evidence        String   @default("[]") // JSON array of evidence items
+  memoriesUsed    String   @default("[]") // JSON array of memory IDs used
+  policiesUsed    String   @default("[]") // JSON array of policy codes
+  businessImpact  String   // text — financial/reputational/operational impact
+  affectedSystems String   @default("[]") // JSON array of systems affected (e.g., ["invoices", "reminders"])
+  rollbackPlan    String   // text — how to undo this action if needed
+  estimatedBusinessOutcome String // text — expected business result
+  estimatedTokenCost Int   @default(0) // estimated tokens for this action
+  estimatedExecutionTime Int @default(0) // estimated milliseconds
+  requiredAuthority String @default("owner") // owner | manager | department_head
+
+  // Hash (SHA-256 of the canonical contract content)
+  contractHash    String   @unique
+
+  // Lifecycle
+  generatedAt     DateTime @default(now())
+  approvedAt      DateTime?
+  approvedBy      String?
+  rejectedAt      DateTime?
+  rejectedBy      String?
+  rejectionReason String?
+  supersededAt    DateTime?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@unique([workspaceId, contractNumber, version])
+  @@index([workspaceId, status])
+  @@index([taskId])
+  @@index([employeeId])
+  @@index([contractHash])
 }

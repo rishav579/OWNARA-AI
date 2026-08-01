@@ -22,6 +22,8 @@ async function main() {
   await db.taskStep.deleteMany();
   await db.approval.deleteMany();
   await db.task.deleteMany();
+  // Execution contracts
+  await db.executionContract.deleteMany();
   // Finance tables
   await db.followUpHistory.deleteMany();
   await db.collectionCase.deleteMany();

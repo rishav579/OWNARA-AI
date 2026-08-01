@@ -28,6 +28,7 @@ import { buildFinanceContext, produceRecommendation, type FinanceRecommendation 
 import { findInvoicesNeedingAttention } from "@/lib/finance/domain";
 import { updateMemoryAfterTask, recordApprovalFeedback, extractFinanceMemories } from "@/lib/memory/service";
 import { getLLMGateway } from "@/lib/llm";
+import { generateContract, approveContract, rejectContract, linkApprovalToContract, type ContractInput } from "@/lib/contracts/engine";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -566,8 +567,45 @@ async function executeApprovalGateStep(task: any, step: any, employee: any): Pro
   const timeoutAt = new Date();
   timeoutAt.setHours(timeoutAt.getHours() + 12); // 12-hour timeout
 
+  // ─── Generate Execution Contract ──────────────────────────────────────────
+  // Before creating the approval, generate an immutable Execution Contract.
+  // The contract captures the complete decision context at this moment.
+  // The approval references the contract — not mutable task state.
+  const isFinanceApproval = toolName === "send_reminder";
+
+  // Build contract input from the step's input (which contains the Finance
+  // Brain's recommendation for finance tasks, or the tool input for generic tasks)
+  const contractInput: ContractInput = {
+    taskId: task.id,
+    employeeId: employee.id,
+    workspaceId: task.workspaceId,
+    goal: isFinanceApproval
+      ? `Send collection reminder for Invoice ${input.invoiceNumber || "N/A"} to ${input.customerName || "customer"}`
+      : `Execute ${toolName} for task: ${task.title}`,
+    proposedAction,
+    confidence: input.confidence ? parseFloat(input.confidence) : 0.85,
+    evidence: input.evidence ? safeParseJson(input.evidence, []) : [],
+    memoriesUsed: [], // Populated from the Finance Brain context if available
+    policiesUsed: input.policyInfluence ? safeParseJson(input.policyInfluence, []) : [],
+    businessImpact: input.businessImpact || input.riskAssessment || "Critical action requiring human approval before execution.",
+    affectedSystems: isFinanceApproval
+      ? ["invoices", "reminders", "collection_cases"]
+      : ["task_steps"],
+    rollbackPlan: isFinanceApproval
+      ? `Mark the reminder as "not sent" in the reminders table. No external side effects if caught before the email provider sends. If already sent, send a follow-up correction email.`
+      : `Mark the tool execution as failed in the task step. No rollback needed for non-external actions.`,
+    estimatedBusinessOutcome: isFinanceApproval
+      ? `Prompt payment from ${input.customerName || "customer"}, reducing outstanding receivables by ${input.outstanding || "the outstanding amount"}.`
+      : `Complete the task step and continue execution.`,
+    estimatedTokenCost: 200,
+    estimatedExecutionTime: 1000,
+    requiredAuthority: "owner",
+  };
+
+  const contract = await generateContract(contractInput);
+
   await db.$transaction(async (tx) => {
-    // Create the approval record
+    // Create the approval record — references the contract
     const approval = await tx.approval.create({
       data: {
         workspaceId: task.workspaceId,
@@ -582,12 +620,23 @@ async function executeApprovalGateStep(task: any, step: any, employee: any): Pro
       },
     });
 
-    // Update the step to reference the approval
+    // Link the contract to the approval
+    // (done outside the transaction to avoid FK issues — best-effort)
+    // We store the contract ID in the step output instead
+
+    // Update the step to reference the approval AND the contract
     await tx.taskStep.update({
       where: { id: step.id },
       data: {
         status: "pending", // stays pending until approval is decided
-        output: JSON.stringify({ approvalId: approval.id, status: "waiting" }),
+        output: JSON.stringify({
+          approvalId: approval.id,
+          contractId: contract.id,
+          contractNumber: contract.contractNumber,
+          contractVersion: contract.version,
+          contractHash: contract.contractHash,
+          status: "waiting",
+        }),
       },
     });
 
@@ -603,7 +652,11 @@ async function executeApprovalGateStep(task: any, step: any, employee: any): Pro
       data: { state: "waiting_approval", pendingApprovals: { increment: 1 } },
     });
 
-    // Write audit entry — include finance reasoning chain when available
+    // Link contract to approval (best-effort, outside transaction boundary)
+    // We do this after the transaction commits to avoid FK constraint issues
+    // The contract ID is already in the step output, so it's recoverable
+
+    // Write audit entry — include finance reasoning chain AND contract hash
     const isFinanceApproval = toolName === "send_reminder";
     await appendAudit(tx, {
       workspaceId: task.workspaceId,
@@ -617,12 +670,17 @@ async function executeApprovalGateStep(task: any, step: any, employee: any): Pro
         tool: toolName,
         task: task.title,
         criticality: "critical",
+        // ─── Execution Contract Reference ──────────────────────────────────
+        contractId: contract.id,
+        contractNumber: contract.contractNumber,
+        contractVersion: String(contract.version),
+        contractHash: contract.contractHash,
+        // ─── Finance Brain Reasoning Chain ──────────────────────────────────
         ...(input.invoiceNumber ? { invoiceNumber: input.invoiceNumber } : {}),
         ...(input.customerName ? { customer: input.customerName } : {}),
         ...(input.outstanding ? { outstanding: input.outstanding } : {}),
         ...(input.daysOverdue ? { daysOverdue: input.daysOverdue } : {}),
         ...(input.recommendedAction ? { recommendedAction: input.recommendedAction } : {}),
-        // Finance Brain reasoning chain — stored in audit for permanent record
         ...(input.why ? { why: input.why.substring(0, 500) } : {}),
         ...(input.confidence ? { confidence: input.confidence } : {}),
         ...(input.riskAssessment ? { riskAssessment: input.riskAssessment.substring(0, 200) } : {}),
@@ -851,6 +909,21 @@ export async function resumeAfterApproval(
     });
   });
 
+  // ─── Approve the Execution Contract ──────────────────────────────────────
+  // The contract becomes immutable. Its hash is locked.
+  try {
+    // Find the contract linked to this task's approval gate step
+    if (gateStep) {
+      const stepOutput = JSON.parse(gateStep.output || "{}");
+      if (stepOutput.contractId) {
+        await approveContract(stepOutput.contractId, approvedBy);
+        await linkApprovalToContract(stepOutput.contractId, approvalId);
+      }
+    }
+  } catch (err) {
+    console.error(`[Executor] Contract approval failed for approval ${approvalId}:`, err);
+  }
+
   // ─── Record Approval Feedback in Memory ──────────────────────────────────
   // The employee learns from the manager's approval decision immediately.
   try {
@@ -974,5 +1047,28 @@ export async function failAfterApprovalRejection(
     );
   } catch (err) {
     console.error(`[Executor] Memory recording failed for rejection ${approvalId}:`, err);
+  }
+
+  // ─── Reject the Execution Contract ────────────────────────────────────────
+  // The contract is marked as rejected but remains permanently searchable.
+  try {
+    if (gateStep) {
+      const stepOutput = JSON.parse(gateStep.output || "{}");
+      if (stepOutput.contractId) {
+        await rejectContract(stepOutput.contractId, rejectedBy, reason);
+      }
+    }
+  } catch (err) {
+    console.error(`[Executor] Contract rejection failed for approval ${approvalId}:`, err);
+  }
+}
+
+// ─── Helper: Safe JSON Parse ─────────────────────────────────────────────────
+
+function safeParseJson<T>(str: string, fallback: T): T {
+  try {
+    return JSON.parse(str) as T;
+  } catch {
+    return fallback;
   }
 }
