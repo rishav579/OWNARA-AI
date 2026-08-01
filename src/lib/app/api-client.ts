@@ -142,6 +142,21 @@ export const api = {
     profile: (id: string) => apiFetch<any>(`/employees/${id}/profile`),
     performance: (id: string) => apiFetch<any>(`/employees/${id}/performance`),
     history: (id: string) => apiFetch<any[]>(`/employees/${id}/history`),
+
+    // Autonomous Learning & Skill Evolution Engine (EMP-002)
+    // Every completed task generates an OutcomeEvaluation that drives skill
+    // reinforcement, pattern detection, strength/weakness detection,
+    // business outcome history, career timeline, and achievement unlocks.
+    careerTimeline: (id: string, limit = 50) =>
+      apiFetch<any[]>(`/employees/${id}/career-timeline?limit=${limit}`),
+    achievements: (id: string) => apiFetch<any[]>(`/employees/${id}/achievements`),
+    patterns: (id: string, limit = 50) =>
+      apiFetch<any[]>(`/employees/${id}/patterns?limit=${limit}`),
+    strengths: (id: string) => apiFetch<any[]>(`/employees/${id}/strengths`),
+    weaknesses: (id: string) => apiFetch<any[]>(`/employees/${id}/weaknesses`),
+    outcomeHistory: (id: string, limit = 20) =>
+      apiFetch<any[]>(`/employees/${id}/outcome-history?limit=${limit}`),
+    businessImpact: (id: string) => apiFetch<any>(`/employees/${id}/business-impact`),
   },
 
   // Tasks

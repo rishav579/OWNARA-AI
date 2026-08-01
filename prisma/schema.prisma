@@ -1,7 +1,3 @@
-// BIHARI AI — Prisma Schema (V1)
-// Based on DDS-001 Database Design Specification, adapted for SQLite.
-// Portable to PostgreSQL: arrays → JSON, String IDs → UUID, add pgvector for embeddings.
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,633 +7,569 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ─── Auth & Workspace ───────────────────────────────────────────────────────
-
 model User {
-  id              String   @id @default(cuid())
-  email           String   @unique
-  passwordHash    String
-  name            String
-  emailVerifiedAt DateTime?
-  status          String   @default("active") // active | suspended | deactivated
-  avatarColor     String   @default("#10b981")
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  deactivatedAt   DateTime?
-
-  workspaceMembers WorkspaceMember[]
-  sessions         Session[]
-  ownedWorkspaces  Workspace[] @relation("WorkspaceOwner")
-  tasks            Task[]      @relation("TaskAssignedBy")
-  approvals        Approval[]  @relation("ApprovalDecidedBy")
+  id               String              @id @default(cuid())
+  email            String              @unique
+  passwordHash     String
+  name             String
+  emailVerifiedAt  DateTime?
+  status           String              @default("active")
+  avatarColor      String              @default("#10b981")
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  deactivatedAt    DateTime?
+  approvals        Approval[]          @relation("ApprovalDecidedBy")
+  employees        Employee[]          @relation("EmployeeCreatedBy")
   knowledgeDocs    KnowledgeDocument[]
-  employees        Employee[]  @relation("EmployeeCreatedBy")
   notifications    Notification[]
+  sessions         Session[]
+  tasks            Task[]              @relation("TaskAssignedBy")
+  ownedWorkspaces  Workspace[]         @relation("WorkspaceOwner")
+  workspaceMembers WorkspaceMember[]
 }
 
 model Workspace {
-  id            String   @id @default(cuid())
-  name          String
-  slug          String   @unique
-  ownerUserId   String
-  defaultRegion String   @default("in-central")
-  status        String   @default("active") // active | suspended
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  suspendedAt   DateTime?
-
-  members    WorkspaceMember[]
-  employees  Employee[]
-  tasks      Task[]
-  approvals  Approval[]
-  auditLogs  AuditLog[]
-  documents  KnowledgeDocument[]
-  notifications Notification[]
-  llmUsage   LlmUsage[]
-  policies   Policy[]
-  approvalRules ApprovalRule[]
-  trustScores TrustScore[]
-  departments Department[]
-  integrations Integration[]
-  customers  Customer[]
-  invoices   Invoice[]
-  payments   Payment[]
-  reminders  Reminder[]
-  collectionCases CollectionCase[]
-  employeeMemories EmployeeMemory[]
+  id                 String              @id @default(cuid())
+  name               String
+  slug               String              @unique
+  ownerUserId        String
+  defaultRegion      String              @default("in-central")
+  status             String              @default("active")
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  suspendedAt        DateTime?
+  approvals          Approval[]
+  approvalRules      ApprovalRule[]
+  auditLogs          AuditLog[]
+  collectionCases    CollectionCase[]
+  customers          Customer[]
+  departments        Department[]
+  employees          Employee[]
+  employeeMemories   EmployeeMemory[]
+  employeeProfiles   EmployeeProfile[]
+  employeeSkills     EmployeeSkill[]
   executionContracts ExecutionContract[]
-  employeeProfiles EmployeeProfile[]
-  employeeSkills EmployeeSkill[]
-
-  owner User @relation("WorkspaceOwner", fields: [ownerUserId], references: [id])
+  // ─── Autonomous Learning & Skill Evolution Engine (EMP-002) ───
+  outcomeEvaluations  OutcomeEvaluation[]
+  skillReinforcements SkillReinforcement[]
+  learningPatterns    LearningPattern[]
+  employeeWeaknesses  EmployeeWeakness[]
+  employeeStrengths   EmployeeStrength[]
+  businessOutcomes    BusinessOutcome[]
+  careerTimeline      CareerTimelineEntry[]
+  achievements        Achievement[]
+  employeeAchievements EmployeeAchievement[]
+  // ─── end EMP-002 ───
+  integrations       Integration[]
+  invoices           Invoice[]
+  documents          KnowledgeDocument[]
+  llmUsage           LlmUsage[]
+  notifications      Notification[]
+  payments           Payment[]
+  policies           Policy[]
+  reminders          Reminder[]
+  tasks              Task[]
+  trustScores        TrustScore[]
+  owner              User                @relation("WorkspaceOwner", fields: [ownerUserId], references: [id])
+  members            WorkspaceMember[]
 }
 
 model WorkspaceMember {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   workspaceId String
   userId      String
-  role        String   @default("member") // owner | member
-  status      String   @default("pending") // pending | active | removed
-  invitedAt   DateTime @default(now())
+  role        String    @default("member")
+  status      String    @default("pending")
+  invitedAt   DateTime  @default(now())
   joinedAt    DateTime?
   removedAt   DateTime?
-
-  workspace Workspace @relation(fields: [workspaceId], references: [id])
-  user      User      @relation(fields: [userId], references: [id])
+  user        User      @relation(fields: [userId], references: [id])
+  workspace   Workspace @relation(fields: [workspaceId], references: [id])
 
   @@unique([workspaceId, userId])
 }
 
 model Session {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
-  tokenHash String   @unique
+  tokenHash String    @unique
   ipAddress String?
   userAgent String?
   expiresAt DateTime
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
   revokedAt DateTime?
-
-  user User @relation(fields: [userId], references: [id])
+  user      User      @relation(fields: [userId], references: [id])
 }
 
-// ─── AI Employees ───────────────────────────────────────────────────────────
-
 model EmployeeTemplate {
-  id                   String   @id @default(cuid())
-  name                 String
-  role                 String   @unique
-  description          String
+  id                    String     @id @default(cuid())
+  name                  String
+  role                  String     @unique
+  description           String
   defaultJobDescription String
-  defaultApprovalRules String   @default("{}") // JSON
-  defaultToolNames     String   @default("[]") // JSON array
-  version              Int      @default(1)
-  isActive             Boolean  @default(true)
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
-
-  employees Employee[]
+  defaultApprovalRules  String     @default("{}")
+  defaultToolNames      String     @default("[]")
+  version               Int        @default(1)
+  isActive              Boolean    @default(true)
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+  employees             Employee[]
 }
 
 model Employee {
-  id          String   @id @default(cuid())
-  workspaceId String
-  name        String
-  role        String
-  templateId  String?
-  status      String   @default("draft") // draft | active | paused | retired
-  state       String   @default("idle")  // idle | assigned | planning | executing | waiting_approval | completed | failed | paused | stopped
-  priorState  String?
-  jobDescription String
-  boundaries  String   @default("[]") // JSON array
-  approvalRules String @default("{}") // JSON
-  tokenUsage  Int      @default(0)
-  tokenCap    Int      @default(5000000)
-  tools       String   @default("[]") // JSON array of tool names
-  pendingApprovals Int @default(0)
-  taskCount   Int      @default(0)
-  completedTasks Int   @default(0)
-  createdBy   String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  activatedAt DateTime?
-  retiredAt   DateTime?
-
-  workspace     Workspace           @relation(fields: [workspaceId], references: [id])
-  template      EmployeeTemplate?   @relation(fields: [templateId], references: [id])
-  creator       User                @relation("EmployeeCreatedBy", fields: [createdBy], references: [id])
-  tasks         Task[]
-  approvals     Approval[]
-  documents     KnowledgeDocument[]
-  toolPermissions EmployeeToolPermission[]
-  trustScores  TrustScore[]
-  capabilities EmployeeCapability[]
+  id               String                   @id @default(cuid())
+  workspaceId      String
+  name             String
+  role             String
+  templateId       String?
+  status           String                   @default("draft")
+  state            String                   @default("idle")
+  priorState       String?
+  jobDescription   String
+  boundaries       String                   @default("[]")
+  approvalRules    String                   @default("{}")
+  tokenUsage       Int                      @default(0)
+  tokenCap         Int                      @default(5000000)
+  tools            String                   @default("[]")
+  pendingApprovals Int                      @default(0)
+  taskCount        Int                      @default(0)
+  completedTasks   Int                      @default(0)
+  createdBy        String
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+  activatedAt      DateTime?
+  retiredAt        DateTime?
+  approvals        Approval[]
+  creator          User                     @relation("EmployeeCreatedBy", fields: [createdBy], references: [id])
+  template         EmployeeTemplate?        @relation(fields: [templateId], references: [id])
+  workspace        Workspace                @relation(fields: [workspaceId], references: [id])
+  capabilities     EmployeeCapability[]
+  toolPermissions  EmployeeToolPermission[]
+  documents        KnowledgeDocument[]
+  tasks            Task[]
+  trustScores      TrustScore[]
 }
 
 model Tool {
-  id                  String   @id @default(cuid())
-  name                String   @unique
-  displayName         String
-  description         String
-  defaultCriticality  String   @default("non_critical") // non_critical | critical
-  inputSchema         String   @default("{}") // JSON
-  outputSchema        String   @default("{}") // JSON
-  version             Int      @default(1)
-  isActive            Boolean  @default(true)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-
-  permissions EmployeeToolPermission[]
+  id                 String                   @id @default(cuid())
+  name               String                   @unique
+  displayName        String
+  description        String
+  defaultCriticality String                   @default("non_critical")
+  inputSchema        String                   @default("{}")
+  outputSchema       String                   @default("{}")
+  version            Int                      @default(1)
+  isActive           Boolean                  @default(true)
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  permissions        EmployeeToolPermission[]
 }
 
 model EmployeeToolPermission {
-  id           String   @id @default(cuid())
-  employeeId   String
-  toolId       String
-  criticalityOverride String? // null = use tool default
-  grantedBy    String
-  grantedAt    DateTime @default(now())
-  revokedAt    DateTime?
-
-  employee Employee @relation(fields: [employeeId], references: [id])
-  tool     Tool     @relation(fields: [toolId], references: [id])
+  id                  String    @id @default(cuid())
+  employeeId          String
+  toolId              String
+  criticalityOverride String?
+  grantedBy           String
+  grantedAt           DateTime  @default(now())
+  revokedAt           DateTime?
+  tool                Tool      @relation(fields: [toolId], references: [id])
+  employee            Employee  @relation(fields: [employeeId], references: [id])
 }
 
-// ─── Tasks & Steps ──────────────────────────────────────────────────────────
-
 model Task {
-  id            String   @id @default(cuid())
-  workspaceId   String
-  employeeId    String
-  assignedBy    String
-  title         String
-  description   String
-  status        String   @default("assigned") // assigned | planning | executing | waiting_approval | completed | failed | paused | stopped
-  priority      String   @default("medium")   // low | medium | high
-  stepCount     Int      @default(0)
-  stepCap       Int      @default(20)
-  tokenUsage    Int      @default(0)
-  tokenCap      Int      @default(100000)
-  startedAt     DateTime?
-  completedAt   DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  workspace   Workspace  @relation(fields: [workspaceId], references: [id])
-  employee    Employee   @relation(fields: [employeeId], references: [id])
-  assigner    User       @relation("TaskAssignedBy", fields: [assignedBy], references: [id])
-  steps       TaskStep[]
+  id          String     @id @default(cuid())
+  workspaceId String
+  employeeId  String
+  assignedBy  String
+  title       String
+  description String
+  status      String     @default("assigned")
+  priority    String     @default("medium")
+  stepCount   Int        @default(0)
+  stepCap     Int        @default(20)
+  tokenUsage  Int        @default(0)
+  tokenCap    Int        @default(100000)
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
   approvals   Approval[]
+  assigner    User       @relation("TaskAssignedBy", fields: [assignedBy], references: [id])
+  employee    Employee   @relation(fields: [employeeId], references: [id])
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id])
+  steps       TaskStep[]
 }
 
 model TaskStep {
-  id         String   @id @default(cuid())
-  taskId     String
-  stepNumber Int
-  stepType   String   // plan | reasoning | tool_call | approval_gate | observed | policy_check | knowledge_used
-  input      String   @default("{}") // JSON
-  reasoning  String?
-  output     String?  // JSON
-  status     String   @default("pending") // pending | running | completed | failed | skipped
-  tokens     Int      @default(0)
-  durationMs Int      @default(0)
-  // Phase 3: explainability enrichment
-  policyRefs String?  // JSON array of policy codes checked
-  knowledgeRefs String? // JSON array of document chunks used
-  confidence Float?   // 0.0-1.0 for this step
-  startedAt  DateTime?
-  completedAt DateTime?
-  createdAt  DateTime @default(now())
-
-  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  id            String    @id @default(cuid())
+  taskId        String
+  stepNumber    Int
+  stepType      String
+  input         String    @default("{}")
+  reasoning     String?
+  output        String?
+  status        String    @default("pending")
+  tokens        Int       @default(0)
+  durationMs    Int       @default(0)
+  startedAt     DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  confidence    Float?
+  knowledgeRefs String?
+  policyRefs    String?
+  task          Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
 }
-
-// ─── Approvals ──────────────────────────────────────────────────────────────
 
 model Approval {
-  id            String   @id @default(cuid())
-  workspaceId   String
-  taskId        String
-  employeeId    String
-  tool          String
+  id              String    @id @default(cuid())
+  workspaceId     String
+  taskId          String
+  employeeId      String
+  tool            String
   toolDisplayName String
-  proposedAction String  @default("{}") // JSON
-  originalAction String? // JSON — AI's original before human edit
-  status        String   @default("pending") // pending | approved | rejected | modified | expired
-  criticality   String   @default("critical")
-  riskScore     Int      @default(50) // 0-100
-  confidence    Float    @default(0.8) // 0.0-1.0
-  businessImpact String? // text description
-  policyTrigger String?  // e.g. "POL-001: Refund Authorization Limit"
-  policyId      String?
-  timeoutAt     DateTime?
-  decidedBy     String?
-  decidedAt     DateTime?
-  decision      String?  // approved | rejected | modified
-  modifiedAction String? // JSON
-  reason        String?
-  createdAt     DateTime @default(now())
-
-  workspace Workspace @relation(fields: [workspaceId], references: [id])
-  task      Task      @relation(fields: [taskId], references: [id])
-  employee  Employee  @relation(fields: [employeeId], references: [id])
-  decider   User?     @relation("ApprovalDecidedBy", fields: [decidedBy], references: [id])
+  proposedAction  String    @default("{}")
+  originalAction  String?
+  status          String    @default("pending")
+  criticality     String    @default("critical")
+  riskScore       Int       @default(50)
+  confidence      Float     @default(0.8)
+  businessImpact  String?
+  policyTrigger   String?
+  policyId        String?
+  timeoutAt       DateTime?
+  decidedBy       String?
+  decidedAt       DateTime?
+  decision        String?
+  modifiedAction  String?
+  reason          String?
+  createdAt       DateTime  @default(now())
+  decider         User?     @relation("ApprovalDecidedBy", fields: [decidedBy], references: [id])
+  employee        Employee  @relation(fields: [employeeId], references: [id])
+  task            Task      @relation(fields: [taskId], references: [id])
+  workspace       Workspace @relation(fields: [workspaceId], references: [id])
 }
 
-// ─── Knowledge ──────────────────────────────────────────────────────────────
-
 model KnowledgeDocument {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   workspaceId String
   employeeId  String?
   filename    String
   contentType String
   sizeBytes   Int
   storageKey  String
-  status      String   @default("processing") // processing | ready | failed | removed
-  chunkCount  Int      @default(0)
+  status      String    @default("processing")
+  chunkCount  Int       @default(0)
   uploadedBy  String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   removedAt   DateTime?
-
-  workspace Workspace @relation(fields: [workspaceId], references: [id])
-  employee  Employee? @relation(fields: [employeeId], references: [id])
-  uploader  User      @relation(fields: [uploadedBy], references: [id])
+  uploader    User      @relation(fields: [uploadedBy], references: [id])
+  employee    Employee? @relation(fields: [employeeId], references: [id])
+  workspace   Workspace @relation(fields: [workspaceId], references: [id])
 }
 
-// ─── Audit ──────────────────────────────────────────────────────────────────
-
 model AuditLog {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   workspaceId    String
   sequenceNumber Int
   entryType      String
-  actorType      String   // user | employee | system
+  actorType      String
   actorId        String?
   actorName      String
   targetType     String?
   targetId       String?
-  payload        String   @default("{}") // JSON
+  payload        String    @default("{}")
   previousHash   String?
   entryHash      String
-  createdAt      DateTime @default(now())
-
-  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  createdAt      DateTime  @default(now())
+  workspace      Workspace @relation(fields: [workspaceId], references: [id])
 
   @@unique([workspaceId, sequenceNumber])
 }
 
-// ─── Notifications ──────────────────────────────────────────────────────────
-
 model Notification {
-  id           String   @id @default(cuid())
-  workspaceId  String
-  userId       String
-  type         String   // approval_pending | task_completed | task_failed | employee_paused
-  title        String
-  body         String
+  id            String    @id @default(cuid())
+  workspaceId   String
+  userId        String
+  type          String
+  title         String
+  body          String
   referenceType String?
-  referenceId  String?
-  channel      String   @default("in_app")
-  status       String   @default("pending") // pending | delivered | read | failed
-  readAt       DateTime?
-  createdAt    DateTime @default(now())
-
-  workspace Workspace @relation(fields: [workspaceId], references: [id])
-  user      User      @relation(fields: [userId], references: [id])
+  referenceId   String?
+  channel       String    @default("in_app")
+  status        String    @default("pending")
+  readAt        DateTime?
+  createdAt     DateTime  @default(now())
+  user          User      @relation(fields: [userId], references: [id])
+  workspace     Workspace @relation(fields: [workspaceId], references: [id])
 }
-
-// ─── LLM Usage ──────────────────────────────────────────────────────────────
 
 model LlmUsage {
-  id              String   @id @default(cuid())
-  workspaceId     String
-  taskId          String?
-  employeeId      String?
-  provider        String   @default("openai")
-  model           String
-  promptTokens    Int      @default(0)
-  completionTokens Int     @default(0)
-  totalTokens     Int      @default(0)
-  costCents       Int      @default(0)
-  latencyMs       Int      @default(0)
-  status          String   @default("success")
-  errorMessage    String?
-  createdAt       DateTime @default(now())
-
-  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  id               String    @id @default(cuid())
+  workspaceId      String
+  taskId           String?
+  employeeId       String?
+  provider         String    @default("openai")
+  model            String
+  promptTokens     Int       @default(0)
+  completionTokens Int       @default(0)
+  totalTokens      Int       @default(0)
+  costCents        Int       @default(0)
+  latencyMs        Int       @default(0)
+  status           String    @default("success")
+  errorMessage     String?
+  createdAt        DateTime  @default(now())
+  workspace        Workspace @relation(fields: [workspaceId], references: [id])
 }
 
-// ─── Phase 3: Trust & Governance ────────────────────────────────────────────
-
 model Policy {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   workspaceId String
   name        String
-  code        String   // e.g. POL-001
-  category    String   // financial | data_access | communication | escalation | compliance
+  code        String
+  category    String
   description String
-  rules       String   @default("[]") // JSON array of rule expressions
-  severity    String   @default("high") // low | medium | high | critical
-  status      String   @default("active") // active | draft | archived
-  appliesTo   String   @default("all") // all | role:customer_support_agent | etc.
+  rules       String    @default("[]")
+  severity    String    @default("high")
+  status      String    @default("active")
+  appliesTo   String    @default("all")
   createdBy   String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id])
 }
 
 model ApprovalRule {
-  id            String   @id @default(cuid())
-  workspaceId   String
-  name          String
-  trigger       String   // e.g. send_email, refund_above_threshold, customer_data_access
-  condition     String   // JSON: { field: "amount", op: ">", value: 2000 }
-  action        String   @default("require_approval") // require_approval | auto_approve | auto_reject | escalate
-  approverRole  String   @default("owner") // owner | manager | department_head
-  policyId      String?
-  priority      Int      @default(100)
-  status        String   @default("active")
-  createdAt     DateTime @default(now())
-
-  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  id           String    @id @default(cuid())
+  workspaceId  String
+  name         String
+  trigger      String
+  condition    String
+  action       String    @default("require_approval")
+  approverRole String    @default("owner")
+  policyId     String?
+  priority     Int       @default(100)
+  status       String    @default("active")
+  createdAt    DateTime  @default(now())
+  workspace    Workspace @relation(fields: [workspaceId], references: [id])
 }
 
 model TrustScore {
-  id              String   @id @default(cuid())
-  workspaceId     String
-  employeeId      String
-  successRate     Float    @default(1.0)    // 0.0 - 1.0
-  approvalRate    Float    @default(1.0)    // approved / total decisions
-  humanCorrections Int     @default(0)      // times human modified AI output
-  policyViolations Int     @default(0)
-  tasksCompleted  Int      @default(0)
-  moneyRecoveredCents Int  @default(0)
-  accuracyScore   Float    @default(1.0)    // 0.0 - 1.0
-  overallScore    Float    @default(85.0)   // 0 - 100
-  trend           String   @default("stable") // up | down | stable
-  trendDelta      Float    @default(0.0)
-  computedAt      DateTime @default(now())
-
-  workspace Workspace @relation(fields: [workspaceId], references: [id])
-  employee  Employee  @relation(fields: [employeeId], references: [id])
+  id                  String    @id @default(cuid())
+  workspaceId         String
+  employeeId          String
+  successRate         Float     @default(1.0)
+  approvalRate        Float     @default(1.0)
+  humanCorrections    Int       @default(0)
+  policyViolations    Int       @default(0)
+  tasksCompleted      Int       @default(0)
+  moneyRecoveredCents Int       @default(0)
+  accuracyScore       Float     @default(1.0)
+  overallScore        Float     @default(85.0)
+  trend               String    @default("stable")
+  trendDelta          Float     @default(0.0)
+  computedAt          DateTime  @default(now())
+  employee            Employee  @relation(fields: [employeeId], references: [id])
+  workspace           Workspace @relation(fields: [workspaceId], references: [id])
 }
 
 model Department {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   workspaceId String
   name        String
   description String?
   headUserId  String?
-  createdAt   DateTime @default(now())
-
-  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id])
 }
 
 model Integration {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   workspaceId String
-  provider    String   @unique // quickbooks | zoho | tally | slack | teams | outlook | gmail | sap | salesforce | hubspot
+  provider    String    @unique
   displayName String
-  category    String   // accounting | communication | crm | erp
+  category    String
   description String
-  status      String   @default("available") // available | connected | error
+  status      String    @default("available")
   logoColor   String
   connectedAt DateTime?
   connectedBy String?
-  createdAt   DateTime @default(now())
-
-  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id])
 }
 
-// ─── Finance Domain Layer ───────────────────────────────────────────────────
-// Real AR / Collections entities. The Finance Employee reasons over these
-// and mutates them through the existing runtime trust loop.
-
 model Customer {
-  id            String   @id @default(cuid())
-  workspaceId   String
-  name          String
-  email         String
-  phone         String?
-  gstin         String?   // GST Identification Number (India)
-  billingAddress String?
-  paymentTerms  Int      @default(30) // days
-  creditLimit   Int      @default(0)  // in rupees
-  status        String   @default("active") // active | inactive | blocked
-  riskLevel     String   @default("medium") // low | medium | high
-  notes         String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  workspace     Workspace  @relation(fields: [workspaceId], references: [id])
-  invoices      Invoice[]
-  payments      Payment[]
-  reminders     Reminder[]
+  id              String           @id @default(cuid())
+  workspaceId     String
+  name            String
+  email           String
+  phone           String?
+  gstin           String?
+  billingAddress  String?
+  paymentTerms    Int              @default(30)
+  creditLimit     Int              @default(0)
+  status          String           @default("active")
+  riskLevel       String           @default("medium")
+  notes           String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
   collectionCases CollectionCase[]
+  workspace       Workspace        @relation(fields: [workspaceId], references: [id])
+  invoices        Invoice[]
+  payments        Payment[]
+  reminders       Reminder[]
 }
 
 model Invoice {
-  id              String    @id @default(cuid())
+  id              String           @id @default(cuid())
   workspaceId     String
   customerId      String
-  invoiceNumber   String    @unique
+  invoiceNumber   String           @unique
   issueDate       DateTime
   dueDate         DateTime
-  subtotal        Int       // in paise (1 rupee = 100 paise)
-  tax             Int       @default(0)
-  total           Int       // subtotal + tax
-  amountPaid      Int       @default(0)
-  outstanding     Int       @default(0) // total - amountPaid
-  status          String    @default("unpaid") // unpaid | partially_paid | paid | overdue | written_off
-  paymentTerms    Int       @default(30) // days
+  subtotal        Int
+  tax             Int              @default(0)
+  total           Int
+  amountPaid      Int              @default(0)
+  outstanding     Int              @default(0)
+  status          String           @default("unpaid")
+  paymentTerms    Int              @default(30)
   notes           String?
   createdBy       String
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-
-  workspace       Workspace  @relation(fields: [workspaceId], references: [id])
-  customer        Customer   @relation(fields: [customerId], references: [id])
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  collectionCases CollectionCase[]
+  customer        Customer         @relation(fields: [customerId], references: [id])
+  workspace       Workspace        @relation(fields: [workspaceId], references: [id])
   payments        Payment[]
   reminders       Reminder[]
-  collectionCases CollectionCase[]
 }
 
 model Payment {
-  id              String   @id @default(cuid())
-  workspaceId     String
-  invoiceId       String
-  customerId      String
-  amount          Int       // in paise
-  paymentDate     DateTime
-  method          String    @default("bank_transfer") // bank_transfer | upi | cheque | cash | card
-  reference       String?   // transaction reference
-  status          String    @default("completed") // pending | completed | failed | reversed
-  notes           String?
-  recordedBy      String?
-  createdAt       DateTime @default(now())
-
-  workspace       Workspace @relation(fields: [workspaceId], references: [id])
-  invoice         Invoice   @relation(fields: [invoiceId], references: [id])
-  customer        Customer  @relation(fields: [customerId], references: [id])
+  id          String    @id @default(cuid())
+  workspaceId String
+  invoiceId   String
+  customerId  String
+  amount      Int
+  paymentDate DateTime
+  method      String    @default("bank_transfer")
+  reference   String?
+  status      String    @default("completed")
+  notes       String?
+  recordedBy  String?
+  createdAt   DateTime  @default(now())
+  customer    Customer  @relation(fields: [customerId], references: [id])
+  invoice     Invoice   @relation(fields: [invoiceId], references: [id])
+  workspace   Workspace @relation(fields: [workspaceId], references: [id])
 }
 
 model Reminder {
-  id              String   @id @default(cuid())
-  workspaceId     String
-  invoiceId       String
-  customerId      String
-  reminderType    String   @default("email") // email | sms | phone_call | letter
-  subject         String
-  body            String
-  status          String   @default("drafted") // drafted | sent | failed | responded
-  sentAt          DateTime?
-  respondedAt     DateTime?
-  responseNotes   String?
-  createdBy       String?  // employee or user who created it
-  createdAt       DateTime @default(now())
-
-  workspace       Workspace @relation(fields: [workspaceId], references: [id])
-  invoice         Invoice   @relation(fields: [invoiceId], references: [id])
-  customer        Customer  @relation(fields: [customerId], references: [id])
+  id            String    @id @default(cuid())
+  workspaceId   String
+  invoiceId     String
+  customerId    String
+  reminderType  String    @default("email")
+  subject       String
+  body          String
+  status        String    @default("drafted")
+  sentAt        DateTime?
+  respondedAt   DateTime?
+  responseNotes String?
+  createdBy     String?
+  createdAt     DateTime  @default(now())
+  customer      Customer  @relation(fields: [customerId], references: [id])
+  invoice       Invoice   @relation(fields: [invoiceId], references: [id])
+  workspace     Workspace @relation(fields: [workspaceId], references: [id])
 }
 
 model CollectionCase {
-  id              String   @id @default(cuid())
+  id              String            @id @default(cuid())
   workspaceId     String
   invoiceId       String
   customerId      String
-  status          String   @default("open") // open | escalated | resolved | closed
-  priority        String   @default("medium") // low | medium | high | critical
-  agingBucket     String   @default("current") // current | 1_30 | 31_60 | 61_90 | 90_plus
-  daysOverdue     Int      @default(0)
-  assignedTo      String?  // employee ID
-  escalationLevel Int      @default(0) // 0 = none, 1 = manager, 2 = legal
-  resolution      String?  // how it was resolved
-  openedAt        DateTime @default(now())
+  status          String            @default("open")
+  priority        String            @default("medium")
+  agingBucket     String            @default("current")
+  daysOverdue     Int               @default(0)
+  assignedTo      String?
+  escalationLevel Int               @default(0)
+  resolution      String?
+  openedAt        DateTime          @default(now())
   resolvedAt      DateTime?
-  updatedAt       DateTime @updatedAt
-
-  workspace       Workspace @relation(fields: [workspaceId], references: [id])
-  invoice         Invoice   @relation(fields: [invoiceId], references: [id])
-  customer        Customer  @relation(fields: [customerId], references: [id])
+  updatedAt       DateTime          @updatedAt
+  customer        Customer          @relation(fields: [customerId], references: [id])
+  invoice         Invoice           @relation(fields: [invoiceId], references: [id])
+  workspace       Workspace         @relation(fields: [workspaceId], references: [id])
   followUps       FollowUpHistory[]
 }
 
 model FollowUpHistory {
-  id              String   @id @default(cuid())
+  id               String         @id @default(cuid())
   collectionCaseId String
-  action          String   // reminder_sent | phone_call | email_sent | escalation | customer_responded | payment_received
-  description     String
-  performedBy     String?  // employee or user ID
-  performedAt     DateTime @default(now())
-
-  collectionCase  CollectionCase @relation(fields: [collectionCaseId], references: [id], onDelete: Cascade)
+  action           String
+  description      String
+  performedBy      String?
+  performedAt      DateTime       @default(now())
+  collectionCase   CollectionCase @relation(fields: [collectionCaseId], references: [id], onDelete: Cascade)
 }
 
-// ─── Employee Memory Layer ──────────────────────────────────────────────────
-// Generic persistent memory for ALL AI Employees (Finance, HR, Sales, etc.).
-// Records learned patterns, customer behavior, approval outcomes, and
-// strategy effectiveness. The employee retrieves this before acting and
-// updates it after every task.
-
 model EmployeeMemory {
-  id                String   @id @default(cuid())
-  workspaceId      String
-  employeeId       String
-  memoryType       String   // customer_behavior | payment_habits | negotiation_outcome | approval_history | manager_feedback | communication_preference | dispute_history | customer_promise | collection_strategy | strategy_effectiveness
-  entityType       String   // customer | invoice | task | approval | generic
-  entityId         String   // ID of the entity (customer ID, invoice ID, etc.)
-  entityLabel      String   // Human-readable label (e.g., customer name)
-  key              String   // Specific key within type (e.g., "average_payment_delay", "preferred_channel")
-  value            String   // JSON — the memory content
-  confidence       Float    @default(0.5) // 0.0–1.0, increases with reinforcement
-  source           String   @default("task") // task | approval | observation | human_feedback
-  reinforcementCount Int    @default(1) // how many times this memory has been confirmed
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-
-  workspace        Workspace @relation(fields: [workspaceId], references: [id])
+  id                 String    @id @default(cuid())
+  workspaceId        String
+  employeeId         String
+  memoryType         String
+  entityType         String
+  entityId           String
+  entityLabel        String
+  key                String
+  value              String
+  confidence         Float     @default(0.5)
+  source             String    @default("task")
+  reinforcementCount Int       @default(1)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  workspace          Workspace @relation(fields: [workspaceId], references: [id])
 
   @@unique([employeeId, memoryType, entityType, entityId, key])
   @@index([employeeId, entityType, entityId])
   @@index([employeeId, memoryType])
 }
 
-// ─── Execution Contract Engine ──────────────────────────────────────────────
-// Immutable contracts generated before ANY irreversible tool execution.
-// Every approval references a Contract (not mutable task state).
-// Contracts are versioned — modifications create V2, V3, etc.
-// Approved contracts become immutable. Rejected contracts remain searchable.
-
 model ExecutionContract {
-  id              String   @id @default(cuid())
-  workspaceId     String
-  taskId          String
-  employeeId      String
-  approvalId      String?  // linked approval (null until approval is created)
-
-  // Contract identity
-  contractNumber  String   // e.g., "EC-0001"
-  version         Int      @default(1) // 1, 2, 3... each modification = new version
-  parentContractId String? // ID of the previous version (for version chain)
-
-  // Contract content (immutable once approved)
-  status          String   @default("draft") // draft | pending_approval | approved | rejected | expired | superseded
-
-  // The 17 required fields
-  goal            String   // What the employee is trying to achieve
-  proposedAction  String   // JSON — the exact action to be executed
-  confidence      Float    // 0.0–1.0 — employee's confidence
-  evidence        String   @default("[]") // JSON array of evidence items
-  memoriesUsed    String   @default("[]") // JSON array of memory IDs used
-  policiesUsed    String   @default("[]") // JSON array of policy codes
-  businessImpact  String   // text — financial/reputational/operational impact
-  affectedSystems String   @default("[]") // JSON array of systems affected (e.g., ["invoices", "reminders"])
-  rollbackPlan    String   // text — how to undo this action if needed
-  estimatedBusinessOutcome String // text — expected business result
-  estimatedTokenCost Int   @default(0) // estimated tokens for this action
-  estimatedExecutionTime Int @default(0) // estimated milliseconds
-  requiredAuthority String @default("owner") // owner | manager | department_head
-
-  // Hash (SHA-256 of the canonical contract content)
-  contractHash    String   @unique
-
-  // Lifecycle
-  generatedAt     DateTime @default(now())
-  approvedAt      DateTime?
-  approvedBy      String?
-  rejectedAt      DateTime?
-  rejectedBy      String?
-  rejectionReason String?
-  supersededAt    DateTime?
-
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+  id                       String    @id @default(cuid())
+  workspaceId              String
+  taskId                   String
+  employeeId               String
+  approvalId               String?
+  contractNumber           String
+  version                  Int       @default(1)
+  parentContractId         String?
+  status                   String    @default("draft")
+  goal                     String
+  proposedAction           String
+  confidence               Float
+  evidence                 String    @default("[]")
+  memoriesUsed             String    @default("[]")
+  policiesUsed             String    @default("[]")
+  businessImpact           String
+  affectedSystems          String    @default("[]")
+  rollbackPlan             String
+  estimatedBusinessOutcome String
+  estimatedTokenCost       Int       @default(0)
+  estimatedExecutionTime   Int       @default(0)
+  requiredAuthority        String    @default("owner")
+  contractHash             String    @unique
+  generatedAt              DateTime  @default(now())
+  approvedAt               DateTime?
+  approvedBy               String?
+  rejectedAt               DateTime?
+  rejectedBy               String?
+  rejectionReason          String?
+  supersededAt             DateTime?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+  workspace                Workspace @relation(fields: [workspaceId], references: [id])
 
   @@unique([workspaceId, contractNumber, version])
   @@index([workspaceId, status])
@@ -646,116 +578,441 @@ model ExecutionContract {
   @@index([contractHash])
 }
 
-// ─── Capability Engine ──────────────────────────────────────────────────────
-// Enterprise-grade least-privilege authorization. Every tool execution
-// must pass through capability verification before execution.
-
 model Capability {
-  id          String   @id @default(cuid())
-  code        String   @unique // e.g., "invoice.read", "reminder.send"
+  id          String               @id @default(cuid())
+  code        String               @unique
   name        String
   description String
-  category    String   // finance | communication | data_access | system
-  riskLevel   String   @default("low") // low | medium | high | critical
-  createdAt   DateTime @default(now())
-
-  employees EmployeeCapability[]
+  category    String
+  riskLevel   String               @default("low")
+  createdAt   DateTime             @default(now())
+  employees   EmployeeCapability[]
 }
 
 model EmployeeCapability {
-  id            String   @id @default(cuid())
-  employeeId    String
-  capabilityId  String
-  grantedBy     String
-  createdAt     DateTime @default(now())
-
-  employee    Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  capability  Capability @relation(fields: [capabilityId], references: [id], onDelete: Cascade)
+  id           String     @id @default(cuid())
+  employeeId   String
+  capabilityId String
+  grantedBy    String
+  createdAt    DateTime   @default(now())
+  capability   Capability @relation(fields: [capabilityId], references: [id], onDelete: Cascade)
+  employee     Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([employeeId, capabilityId])
   @@index([employeeId])
 }
 
-// ─── Employee Profile Engine (EMP-001) ──────────────────────────────────────
-// Persistent professional profile for every AI Employee.
-// Think: LinkedIn profile + performance review + resume + trust history.
-// Automatically updated after every task, approval, memory, and capability event.
-
 model EmployeeProfile {
-  id              String   @id @default(cuid())
-  employeeId      String   @unique
-  workspaceId     String
-
-  // Professional
-  employeeType    String   @default("finance_employee") // finance_employee | hr_employee | etc.
-  department      String   @default("Finance")
-  title           String   @default("Intern") // changes with level
-  version         Int      @default(1) // increments on every update
-
-  // Experience
-  experiencePoints Int     @default(0)
-  level           Int      @default(1) // 1-7
-  completedTasks  Int      @default(0)
-  successfulTasks Int      @default(0)
-  failedTasks     Int      @default(0)
-  approvalRate    Float    @default(1.0) // approved / total decisions
-  averageConfidence Float  @default(0.85)
-  averageExecutionTime Int @default(0) // ms
-
-  // Business KPIs
-  moneyRecovered       Int @default(0) // in paise
-  invoicesProcessed    Int @default(0)
-  customersHandled     Int @default(0)
-  emailsSent           Int @default(0)
-  tasksAutomated       Int @default(0)
-  hoursSaved           Float @default(0) // estimated hours of manual work replaced
-  estimatedBusinessValue Int @default(0) // in paise
-
-  // Quality
-  trustScore          Float   @default(85.0) // 0-100
-  accuracyScore       Float   @default(0.90) // 0-1
-  consistencyScore    Float   @default(0.85) // 0-1
-  riskScore           Float   @default(30.0) // 0-100 (lower is better)
-  hallucinationRate   Float   @default(0.05) // 0-1 (lower is better)
-  humanInterventionRate Float @default(0.20) // 0-1 (lower is better)
-
-  // Learning
-  skills              String  @default("[]") // JSON array of skill objects
-  knowledgeAreas      String  @default("[]") // JSON array
-  specializations     String  @default("[]") // JSON array
-  strongestDomains    String  @default("[]") // JSON array
-  weakDomains         String  @default("[]") // JSON array
-
-  // Memory
-  memoryCount         Int     @default(0)
-  reinforcementCount  Int     @default(0)
-
-  // Capabilities
-  capabilitiesGranted Int     @default(0)
-  criticalCapabilities Int    @default(0)
-
-  // Timeline
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-  lastTaskAt          DateTime?
-
-  workspace           Workspace @relation(fields: [workspaceId], references: [id])
+  id                     String    @id @default(cuid())
+  employeeId             String    @unique
+  workspaceId            String
+  employeeType           String    @default("finance_employee")
+  department             String    @default("Finance")
+  title                  String    @default("Intern")
+  version                Int       @default(1)
+  experiencePoints       Int       @default(0)
+  level                  Int       @default(1)
+  completedTasks         Int       @default(0)
+  successfulTasks        Int       @default(0)
+  failedTasks            Int       @default(0)
+  approvalRate           Float     @default(1.0)
+  averageConfidence      Float     @default(0.85)
+  averageExecutionTime   Int       @default(0)
+  moneyRecovered         Int       @default(0)
+  invoicesProcessed      Int       @default(0)
+  customersHandled       Int       @default(0)
+  emailsSent             Int       @default(0)
+  tasksAutomated         Int       @default(0)
+  hoursSaved             Float     @default(0)
+  estimatedBusinessValue Int       @default(0)
+  trustScore             Float     @default(85.0)
+  accuracyScore          Float     @default(0.90)
+  consistencyScore       Float     @default(0.85)
+  riskScore              Float     @default(30.0)
+  hallucinationRate      Float     @default(0.05)
+  humanInterventionRate  Float     @default(0.20)
+  skills                 String    @default("[]")
+  knowledgeAreas         String    @default("[]")
+  specializations        String    @default("[]")
+  strongestDomains       String    @default("[]")
+  weakDomains            String    @default("[]")
+  memoryCount            Int       @default(0)
+  reinforcementCount     Int       @default(0)
+  capabilitiesGranted    Int       @default(0)
+  criticalCapabilities   Int       @default(0)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  lastTaskAt             DateTime?
+  workspace              Workspace @relation(fields: [workspaceId], references: [id])
 }
 
 model EmployeeSkill {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   employeeId  String
   workspaceId String
-  name        String   // e.g., "Invoice Analysis", "Collections"
-  level       Int      @default(1) // 1-10
-  confidence  Float    @default(0.5) // 0-1
-  usageCount  Int      @default(0)
-  lastUsedAt  DateTime @default(now())
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
+  name        String
+  level       Int       @default(1)
+  confidence  Float     @default(0.5)
+  usageCount  Int       @default(0)
+  lastUsedAt  DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   workspace   Workspace @relation(fields: [workspaceId], references: [id])
 
   @@unique([employeeId, name])
   @@index([employeeId])
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// EMP-002 — Autonomous Learning & Skill Evolution Engine
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// Design principles:
+//   1. NO fake learning. NO random XP. NO LLM-generated scores.
+//      Everything comes from MEASURABLE BUSINESS OUTCOMES.
+//   2. Normalized tables — no JSON blobs for core entities.
+//      Patterns, strengths, weaknesses, achievements are all queryable.
+//   3. Append-only history. Business outcomes never overwrite.
+//   4. Incremental updates only — no expensive scans.
+//   5. Generic — works for Finance, HR, Sales Ops, Procurement, etc.
+//      No domain-specific code in the engine.
+//
+// All 8 models are workspace-scoped and employee-scoped. IDs are cuid().
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ─── 1. Outcome Evaluation ───────────────────────────────────────────────────
+// One row per completed task. The deterministic "scorecard" of what happened.
+// Generated by evaluateOutcome() after task completion.
+model OutcomeEvaluation {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  employeeId      String
+  taskId          String   @unique  // one evaluation per task
+
+  // Execution quality (deterministic, from task + steps + approvals)
+  stepCount              Int     @default(0)
+  toolCallCount          Int     @default(0)
+  approvalGateCount      Int     @default(0)
+  approvalRejections     Int     @default(0)
+  humanOverrides         Int     @default(0)  // manager edited proposed action
+  capabilityDenials      Int     @default(0)
+  tokenUsage             Int     @default(0)
+  executionTimeMs        Int     @default(0)
+  rollbackNeeded         Boolean @default(false)
+
+  // Business outcome (measurable, from finance domain — null if not applicable)
+  paymentReceived        Boolean @default(false)
+  paymentAmount          Int     @default(0)  // in paise
+  invoiceResolved        Boolean @default(false)
+  customerResponded      Boolean @default(false)
+  reminderSentCount      Int     @default(0)
+
+  // SLA
+  slaAchieved            Boolean @default(false)
+  slaTargetHours         Int     @default(0)
+  slaActualHours         Float   @default(0)
+
+  // Errors
+  errorCount             Int     @default(0)
+  stepFailureCount       Int     @default(0)
+
+  // Confidence accuracy — how close was the employee's confidence to reality?
+  // Computed as: avg(step.confidence) for completed steps vs outcome success.
+  expectedSuccess        Boolean @default(true)   // employee predicted success
+  actualSuccess          Boolean @default(true)   // task actually completed
+  confidenceAccuracy     Float   @default(1.0)    // 1.0 = perfect, 0.0 = always wrong
+
+  // Overall quality score (0-100, deterministic formula in engine)
+  qualityScore           Int     @default(0)
+
+  // Human corrections count (approvals rejected + overrides + capability denials)
+  humanCorrections       Int     @default(0)
+
+  // Free-form outcome summary (deterministic, built from facts)
+  outcomeSummary         String  @default("")
+
+  createdAt              DateTime @default(now())
+
+  workspace              Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@index([employeeId, createdAt])
+  @@index([workspaceId, createdAt])
+}
+
+// ─── 2. Skill Reinforcement ──────────────────────────────────────────────────
+// Append-only ledger of every reinforcement event for a skill.
+// Instead of "skill++", we record WHY the skill was reinforced.
+// The skill's level is derived from the sum of reinforcements.
+//
+// Reinforcement values:
+//   positive (+1, +2, +3) = good outcome attributable to this skill
+//   negative (-1, -2, -3) = bad outcome attributable to this skill
+//
+// Level formula (in engine):
+//   totalReinforcement = sum of all reinforcement values for this skill
+//   level = clamp(1, 10, 1 + floor(totalReinforcement / 5))
+//   (every +5 net reinforcement = +1 level)
+model SkillReinforcement {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  employeeId      String
+  skillName       String   // e.g. "Collections", "Invoice Analysis"
+  taskId          String?  // null if not tied to a task
+  outcomeId       String?  // link to OutcomeEvaluation
+
+  // Why was this skill reinforced? (deterministic reason code)
+  reason          String   // e.g. "successful_collection", "payment_recovered",
+                           //      "reminder_approved", "rejected", "rollback"
+  reinforcement   Int      @default(0)  // +1, +2, +3, -1, -2, -3
+  notes           String   @default("") // human-readable detail
+
+  createdAt       DateTime @default(now())
+
+  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@index([employeeId, skillName, createdAt])
+  @@index([workspaceId, createdAt])
+}
+
+// ─── 3. Learning Pattern ─────────────────────────────────────────────────────
+// Detected patterns from repeated outcomes. Queryable & reusable.
+// Examples:
+//   "FastFreight always pays after second reminder"
+//   "Customer X ignores Friday emails"
+//   "Invoices above ₹5 lakh need manager approval"
+//
+// Patterns are detected by deterministic rules in the engine — no LLM.
+// Patterns are STORED ONLY — not yet integrated with the Planner.
+model LearningPattern {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  employeeId      String
+
+  patternType     String   // "customer_payment_behavior" | "reminder_effectiveness"
+                           // | "invoice_risk_indicator" | "communication_preference"
+                           // | "approval_correlation"
+  entityType      String   @default("customer")  // customer | invoice | reminder | generic
+  entityId        String   @default("")          // customerId / invoiceId / "" for generic
+  entityLabel     String   @default("")          // human-readable label
+
+  // The pattern itself (deterministic, fact-based)
+  pattern         String   // e.g. "pays_after_second_reminder"
+  description     String   // human-readable: "FastFreight pays 100% of invoices within 7 days of the 2nd reminder"
+
+  // Evidence (how many times observed)
+  observationCount Int     @default(1)
+  lastObservedAt  DateTime @default(now())
+
+  // Confidence in the pattern (0-1, increases with observations)
+  confidence      Float    @default(0.5)
+
+  // Is this pattern actionable? (can the Planner reuse it?)
+  actionable      Boolean  @default(true)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+
+  // One pattern per (employee, patternType, entityType, entityId, pattern)
+  @@unique([employeeId, patternType, entityType, entityId, pattern])
+  @@index([employeeId, patternType])
+  @@index([workspaceId, createdAt])
+}
+
+// ─── 4. Employee Weakness ────────────────────────────────────────────────────
+// Detected repeated failures. Reduces trust.
+// Examples: "High rejection rate", "Low confidence", "Frequent human edits"
+model EmployeeWeakness {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  employeeId      String
+
+  weaknessType    String   // "high_rejection_rate" | "low_confidence"
+                           // | "frequent_human_edits" | "repeated_rollbacks"
+                           // | "repeated_sla_misses" | "high_capability_denials"
+                           // | "low_accuracy" | "slow_execution"
+  description     String   // human-readable
+
+  // Measurable evidence
+  metricValue     Float    @default(0)  // e.g. rejection rate = 0.45
+  threshold       Float    @default(0)  // e.g. threshold = 0.30
+  occurrenceCount Int     @default(1)   // how many tasks triggered this
+
+  // Impact on trust (negative)
+  trustImpact     Float    @default(0)  // e.g. -5.0 trust points
+
+  // Is this weakness currently active (vs resolved)?
+  status          String   @default("active")  // active | resolved | acknowledged
+
+  firstDetectedAt DateTime @default(now())
+  lastDetectedAt  DateTime @default(now())
+  resolvedAt      DateTime?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@unique([employeeId, weaknessType])
+  @@index([employeeId, status])
+  @@index([workspaceId, createdAt])
+}
+
+// ─── 5. Employee Strength ────────────────────────────────────────────────────
+// Detected repeated success. Increases trust.
+// Examples: "Excellent collections", "High recovery rate", "Fast execution"
+model EmployeeStrength {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  employeeId      String
+
+  strengthType    String   // "excellent_collections" | "high_recovery_rate"
+                           // | "fast_execution" | "low_escalation"
+                           // | "high_approval_rate" | "high_confidence_accuracy"
+                           // | "zero_rollbacks" | "consistent_sla"
+  description     String   // human-readable
+
+  // Measurable evidence
+  metricValue     Float    @default(0)  // e.g. recovery rate = 0.85
+  threshold       Float    @default(0)  // e.g. threshold = 0.70
+  occurrenceCount Int     @default(1)   // how many tasks triggered this
+
+  // Impact on trust (positive)
+  trustImpact     Float    @default(0)  // e.g. +5.0 trust points
+
+  // Is this strength currently active?
+  status          String   @default("active")  // active | superseded
+
+  firstDetectedAt DateTime @default(now())
+  lastDetectedAt  DateTime @default(now())
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@unique([employeeId, strengthType])
+  @@index([employeeId, status])
+  @@index([workspaceId, createdAt])
+}
+
+// ─── 6. Business Outcome History (Append-Only) ───────────────────────────────
+// Every business outcome is recorded. Never overwritten.
+// This is the employee's "ledger of impact".
+model BusinessOutcome {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  employeeId      String
+  taskId          String?
+
+  outcomeType     String   // "money_recovered" | "invoice_processed"
+                           // | "customer_helped" | "hours_saved"
+                           // | "task_automated" | "email_sent"
+                           // | "approval_avoided" | "escalation_avoided"
+                           // | "rollback" | "failure" | "success_streak"
+                           // | "largest_recovery"
+  amount          Int      @default(0)  // in paise (for money outcomes)
+  count           Int      @default(1)  // for countable outcomes
+  description     String   @default("")
+
+  // Running totals at the time of this outcome (for historical charts)
+  cumulativeMoneyRecovered    Int @default(0)
+  cumulativeInvoicesProcessed Int @default(0)
+  cumulativeCustomersHelped   Int @default(0)
+  cumulativeHoursSaved        Float @default(0)
+  cumulativeTasksAutomated    Int @default(0)
+  cumulativeEmailsSent        Int @default(0)
+
+  createdAt       DateTime @default(now())
+
+  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@index([employeeId, outcomeType, createdAt])
+  @@index([workspaceId, createdAt])
+}
+
+// ─── 7. Career Timeline Entry ────────────────────────────────────────────────
+// Chronological log of every career event. The "LinkedIn activity feed".
+model CareerTimelineEntry {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  employeeId      String
+
+  entryType       String   // "level_up" | "skill_promoted" | "skill_learned"
+                           // | "strength_detected" | "weakness_detected"
+                           // | "weakness_resolved" | "achievement_unlocked"
+                           // | "pattern_learned" | "task_completed"
+                           // | "task_failed" | "milestone_reached"
+                           // | "trust_change" | "major_recovery"
+  title           String   // short title
+  description     String   // human-readable detail
+  metadata        String   @default("{}")  // JSON for extra context (rarely used)
+
+  // The state of the employee at this moment (snapshot)
+  levelAtTime     Int      @default(0)
+  xpAtTime        Int      @default(0)
+  trustAtTime     Float    @default(0)
+
+  taskId          String?  // if related to a task
+  outcomeId       String?  // if related to an outcome evaluation
+
+  createdAt       DateTime @default(now())
+
+  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@index([employeeId, createdAt])
+  @@index([workspaceId, createdAt])
+}
+
+// ─── 8. Achievement + EmployeeAchievement (unlock ledger) ────────────────────
+// Achievement = a definable milestone (workspace-scoped, definable by admins)
+// EmployeeAchievement = the unlock ledger (who earned it, when, evidence)
+model Achievement {
+  id              String   @id @default(cuid())
+  workspaceId     String
+
+  code            String   // e.g. "first_collection", "ten_invoices", "level_5"
+  name            String   // "First Collection"
+  description     String   // "Successfully collected on the first overdue invoice"
+  category        String   @default("performance")  // performance | milestone | quality | learning
+  icon            String   @default("award")        // lucide icon name
+
+  // Trigger condition (deterministic, evaluated by the engine)
+  triggerType     String   // "task_count" | "money_recovered" | "level_reached"
+                           // | "skill_level" | "streak" | "perfect_quality"
+  triggerThreshold Int     @default(1)  // e.g. 10 for "10 invoices processed"
+  triggerSkillName String  @default("") // for skill_level triggers
+
+  // Trust impact (positive)
+  trustImpact     Float    @default(0)  // e.g. +3.0 trust points
+
+  createdAt       DateTime @default(now())
+
+  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+  unlocks         EmployeeAchievement[]
+
+  @@unique([workspaceId, code])
+  @@index([workspaceId, category])
+}
+
+model EmployeeAchievement {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  employeeId      String
+  achievementId   String
+
+  // Evidence (why was this unlocked?)
+  evidence        String   @default("")  // human-readable
+  taskId          String?
+  outcomeId       String?
+
+  unlockedAt      DateTime @default(now())
+
+  achievement     Achievement @relation(fields: [achievementId], references: [id])
+  workspace       Workspace  @relation(fields: [workspaceId], references: [id])
+
+  @@unique([employeeId, achievementId])
+  @@index([employeeId, unlockedAt])
+  @@index([workspaceId, unlockedAt])
 }

@@ -36,11 +36,20 @@ import {
   TrendingUp,
   Brain,
   Sparkles,
+  GitBranch,
+  Trophy,
+  AlertTriangle,
+  Lightbulb,
+  BarChart3,
+  History,
+  CheckCircle,
 } from "lucide-react";
 
 const TABS = [
   { id: "overview", label: "Overview", icon: Activity },
   { id: "career", label: "Career", icon: Award },
+  { id: "timeline", label: "Timeline", icon: History },
+  { id: "learning", label: "Learning", icon: Brain },
   { id: "tasks", label: "Tasks", icon: ListTodo },
   { id: "tools", label: "Tools", icon: Shield },
   { id: "knowledge", label: "Knowledge", icon: BookOpen },
@@ -63,6 +72,46 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
     queryKey: ["employee", employeeId, "profile"],
     queryFn: () => api.employees.profile(employeeId),
     enabled: tab === "career",
+  });
+
+  // Career Timeline (EMP-002) — chronological log of every career event.
+  const { data: timeline, isLoading: timelineLoading } = useQuery({
+    queryKey: ["employee", employeeId, "career-timeline"],
+    queryFn: () => api.employees.careerTimeline(employeeId, 100),
+    enabled: tab === "timeline",
+  });
+
+  // Learning data (EMP-002) — patterns, strengths, weaknesses, achievements,
+  // outcome history, business impact. All loaded together for the Learning tab.
+  const { data: patterns, isLoading: patternsLoading } = useQuery({
+    queryKey: ["employee", employeeId, "patterns"],
+    queryFn: () => api.employees.patterns(employeeId),
+    enabled: tab === "learning",
+  });
+  const { data: strengths, isLoading: strengthsLoading } = useQuery({
+    queryKey: ["employee", employeeId, "strengths"],
+    queryFn: () => api.employees.strengths(employeeId),
+    enabled: tab === "learning",
+  });
+  const { data: weaknesses, isLoading: weaknessesLoading } = useQuery({
+    queryKey: ["employee", employeeId, "weaknesses"],
+    queryFn: () => api.employees.weaknesses(employeeId),
+    enabled: tab === "learning",
+  });
+  const { data: achievements, isLoading: achievementsLoading } = useQuery({
+    queryKey: ["employee", employeeId, "achievements"],
+    queryFn: () => api.employees.achievements(employeeId),
+    enabled: tab === "learning",
+  });
+  const { data: outcomeHistory, isLoading: outcomeLoading } = useQuery({
+    queryKey: ["employee", employeeId, "outcome-history"],
+    queryFn: () => api.employees.outcomeHistory(employeeId, 20),
+    enabled: tab === "learning",
+  });
+  const { data: businessImpact } = useQuery({
+    queryKey: ["employee", employeeId, "business-impact"],
+    queryFn: () => api.employees.businessImpact(employeeId),
+    enabled: tab === "learning",
   });
 
   const pauseMutation = useMutation({
@@ -288,6 +337,24 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
         {/* Career tab — Employee Profile Engine (EMP-001) */}
         {tab === "career" && (
           <CareerPanel profile={profile ?? undefined} loading={profileLoading} />
+        )}
+
+        {/* Timeline tab — Career Timeline (EMP-002) */}
+        {tab === "timeline" && (
+          <TimelinePanel entries={timeline ?? []} loading={timelineLoading} />
+        )}
+
+        {/* Learning tab — Autonomous Learning & Skill Evolution (EMP-002) */}
+        {tab === "learning" && (
+          <LearningPanel
+            patterns={patterns ?? []}
+            strengths={strengths ?? []}
+            weaknesses={weaknesses ?? []}
+            achievements={achievements ?? []}
+            outcomeHistory={outcomeHistory ?? []}
+            businessImpact={businessImpact}
+            loading={patternsLoading || strengthsLoading || weaknessesLoading || achievementsLoading || outcomeLoading}
+          />
         )}
 
         {/* Tasks tab */}
@@ -761,6 +828,442 @@ function StatRow({
       <span className={cn("font-medium", highlight === "amber" ? "text-amber-400" : "text-zinc-100")}>
         {value}
       </span>
+    </div>
+  );
+}
+
+// ─── Timeline Panel (EMP-002 — Career Timeline) ──────────────────────────────
+
+interface TimelineEntry {
+  id: string;
+  entryType: string;
+  title: string;
+  description: string;
+  metadata: string;
+  levelAtTime: number;
+  xpAtTime: number;
+  trustAtTime: number;
+  taskId?: string | null;
+  outcomeId?: string | null;
+  createdAt: string;
+}
+
+const ENTRY_TYPE_CONFIG: Record<string, { icon: any; color: string; bg: string }> = {
+  task_completed:      { icon: CheckCircle,  color: "text-emerald-400", bg: "bg-emerald-500/10" },
+  task_failed:         { icon: AlertTriangle, color: "text-red-400",    bg: "bg-red-500/10" },
+  level_up:            { icon: TrendingUp,    color: "text-emerald-400", bg: "bg-emerald-500/10" },
+  skill_promoted:      { icon: Sparkles,      color: "text-violet-400",  bg: "bg-violet-500/10" },
+  skill_learned:       { icon: Brain,         color: "text-violet-400",  bg: "bg-violet-500/10" },
+  strength_detected:   { icon: Trophy,        color: "text-amber-400",   bg: "bg-amber-500/10" },
+  weakness_detected:   { icon: AlertTriangle, color: "text-red-400",    bg: "bg-red-500/10" },
+  weakness_resolved:   { icon: CheckCircle,   color: "text-emerald-400", bg: "bg-emerald-500/10" },
+  achievement_unlocked:{ icon: Trophy,        color: "text-amber-400",   bg: "bg-amber-500/10" },
+  pattern_learned:     { icon: Lightbulb,     color: "text-sky-400",     bg: "bg-sky-500/10" },
+  major_recovery:      { icon: Award,         color: "text-emerald-400", bg: "bg-emerald-500/10" },
+  milestone_reached:   { icon: GitBranch,     color: "text-emerald-400", bg: "bg-emerald-500/10" },
+  trust_change:        { icon: Activity,      color: "text-zinc-400",    bg: "bg-zinc-500/10" },
+};
+
+function TimelinePanel({ entries, loading }: { entries: TimelineEntry[]; loading: boolean }) {
+  if (loading) {
+    return (
+      <div className="space-y-2">
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="h-16 animate-pulse rounded-lg border border-zinc-800 bg-zinc-900/50" />
+        ))}
+      </div>
+    );
+  }
+  if (entries.length === 0) {
+    return (
+      <EmptyState
+        icon={History}
+        title="No career events yet"
+        description="Career timeline entries appear here as the employee completes tasks, learns skills, and unlocks achievements."
+      />
+    );
+  }
+
+  // Group entries by day
+  const grouped: Record<string, TimelineEntry[]> = {};
+  for (const e of entries) {
+    const day = new Date(e.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+    if (!grouped[day]) grouped[day] = [];
+    grouped[day].push(e);
+  }
+
+  return (
+    <div className="space-y-5">
+      {Object.entries(grouped).map(([day, dayEntries]) => (
+        <div key={day}>
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">{day}</div>
+          <div className="space-y-2">
+            {dayEntries.map((entry) => {
+              const config = ENTRY_TYPE_CONFIG[entry.entryType] || ENTRY_TYPE_CONFIG.trust_change;
+              const Icon = config.icon;
+              return (
+                <div key={entry.id} className="flex gap-3 rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
+                  <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", config.bg)}>
+                    <Icon className={cn("h-4 w-4", config.color)} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium text-zinc-100">{entry.title}</span>
+                      <span className="shrink-0 text-xs text-zinc-500">
+                        {new Date(entry.createdAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs leading-relaxed text-zinc-400">{entry.description}</p>
+                    {(entry.levelAtTime > 0 || entry.xpAtTime > 0) && (
+                      <div className="mt-2 flex gap-3 text-[0.65rem] text-zinc-500">
+                        {entry.levelAtTime > 0 && <span>Lv{entry.levelAtTime}</span>}
+                        {entry.xpAtTime > 0 && <span>{entry.xpAtTime} XP</span>}
+                        {entry.trustAtTime > 0 && <span>Trust {entry.trustAtTime.toFixed(0)}</span>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Learning Panel (EMP-002 — Autonomous Learning & Skill Evolution) ─────────
+
+interface Pattern {
+  id: string;
+  patternType: string;
+  entityType: string;
+  entityId: string;
+  entityLabel: string;
+  pattern: string;
+  description: string;
+  observationCount: number;
+  confidence: number;
+  actionable: boolean;
+  updatedAt: string;
+}
+
+interface Strength {
+  id: string;
+  strengthType: string;
+  description: string;
+  metricValue: number;
+  threshold: number;
+  occurrenceCount: number;
+  trustImpact: number;
+  status: string;
+  lastDetectedAt: string;
+}
+
+interface Weakness {
+  id: string;
+  weaknessType: string;
+  description: string;
+  metricValue: number;
+  threshold: number;
+  occurrenceCount: number;
+  trustImpact: number;
+  status: string;
+  lastDetectedAt: string;
+  resolvedAt?: string | null;
+}
+
+interface Achievement {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  category: string;
+  icon: string;
+  trustImpact: number;
+  unlocked: boolean;
+  unlockedAt?: string | null;
+  evidence?: string | null;
+}
+
+interface OutcomeEvaluation {
+  id: string;
+  taskId: string;
+  qualityScore: number;
+  actualSuccess: boolean;
+  humanCorrections: number;
+  paymentReceived: boolean;
+  paymentAmount: number;
+  slaAchieved: boolean;
+  slaActualHours: number;
+  approvalRejections: number;
+  humanOverrides: number;
+  stepCount: number;
+  toolCallCount: number;
+  outcomeSummary: string;
+  createdAt: string;
+}
+
+interface BusinessImpact {
+  byType: Record<string, { count: number; totalAmount: number; lastAt: string | null }>;
+  cumulative: {
+    moneyRecovered: number;
+    invoicesProcessed: number;
+    customersHelped: number;
+    hoursSaved: number;
+    tasksAutomated: number;
+    emailsSent: number;
+  } | null;
+  currentStreak: number;
+  largestRecovery: { amount: number; taskId: string; at: string } | null;
+  totalOutcomes: number;
+}
+
+function LearningPanel({
+  patterns,
+  strengths,
+  weaknesses,
+  achievements,
+  outcomeHistory,
+  businessImpact,
+  loading,
+}: {
+  patterns: Pattern[];
+  strengths: Strength[];
+  weaknesses: Weakness[];
+  achievements: Achievement[];
+  outcomeHistory: OutcomeEvaluation[];
+  businessImpact?: BusinessImpact;
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <div className="h-32 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50" />
+        <div className="h-48 animate-pulse rounded-xl border border-zinc-800 bg-zinc-900/50" />
+      </div>
+    );
+  }
+
+  const unlockedAchievements = achievements.filter((a) => a.unlocked);
+  const lockedAchievements = achievements.filter((a) => !a.unlocked);
+  const activeStrengths = strengths.filter((s) => s.status === "active");
+  const activeWeaknesses = weaknesses.filter((w) => w.status === "active");
+
+  return (
+    <div className="space-y-4">
+      {/* ─── Business Impact Summary ─── */}
+      {businessImpact && businessImpact.cumulative && (
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+          <div className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-zinc-100">
+            <BarChart3 className="h-4 w-4 text-emerald-400" /> Business Impact
+            <span className="ml-auto text-xs font-normal text-zinc-500">
+              {businessImpact.totalOutcomes} outcomes recorded · {businessImpact.currentStreak} streak
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+            <ImpactCell label="Money Recovered" value={`₹${((businessImpact.cumulative.moneyRecovered / 100) / 100000).toFixed(2)}L`} highlight="emerald" />
+            <ImpactCell label="Invoices" value={businessImpact.cumulative.invoicesProcessed} />
+            <ImpactCell label="Customers" value={businessImpact.cumulative.customersHelped} />
+            <ImpactCell label="Hours Saved" value={`${businessImpact.cumulative.hoursSaved.toFixed(1)}h`} />
+            <ImpactCell label="Tasks Auto" value={businessImpact.cumulative.tasksAutomated} />
+            <ImpactCell label="Emails" value={businessImpact.cumulative.emailsSent} />
+          </div>
+          {businessImpact.largestRecovery && (
+            <div className="mt-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 text-xs">
+              <span className="text-zinc-500">Largest single recovery: </span>
+              <span className="font-bold text-emerald-400">₹${(businessImpact.largestRecovery.amount / 100).toFixed(2)}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── Achievements ─── */}
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+        <div className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-zinc-100">
+          <Trophy className="h-4 w-4 text-amber-400" /> Achievements
+          <span className="ml-auto text-xs font-normal text-zinc-500">
+            {unlockedAchievements.length} / {achievements.length} unlocked
+          </span>
+        </div>
+        {achievements.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500">
+            No achievements defined yet. They are seeded automatically on the first task completion.
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {unlockedAchievements.map((a) => (
+              <div key={a.id} className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+                <div className="flex items-center gap-2">
+                  <Trophy className="h-4 w-4 text-amber-400" />
+                  <span className="text-sm font-medium text-zinc-100">{a.name}</span>
+                </div>
+                <p className="mt-1 text-[0.65rem] leading-relaxed text-zinc-500">{a.description}</p>
+                {a.unlockedAt && (
+                  <div className="mt-1.5 text-[0.6rem] text-amber-400/70">
+                    Unlocked {formatDate(a.unlockedAt)}
+                  </div>
+                )}
+              </div>
+            ))}
+            {lockedAchievements.map((a) => (
+              <div key={a.id} className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3 opacity-60">
+                <div className="flex items-center gap-2">
+                  <Trophy className="h-4 w-4 text-zinc-600" />
+                  <span className="text-sm font-medium text-zinc-400">{a.name}</span>
+                </div>
+                <p className="mt-1 text-[0.65rem] leading-relaxed text-zinc-600">{a.description}</p>
+                <div className="mt-1.5 text-[0.6rem] text-zinc-600">Locked</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ─── Strengths + Weaknesses ─── */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* Strengths */}
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+          <div className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-zinc-100">
+            <TrendingUp className="h-4 w-4 text-emerald-400" /> Strengths
+            <span className="ml-auto text-xs font-normal text-zinc-500">{activeStrengths.length} active</span>
+          </div>
+          {activeStrengths.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-zinc-800 p-4 text-center text-xs text-zinc-500">
+              No strengths detected yet. Strengths appear after 3+ successful tasks.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {activeStrengths.map((s) => (
+                <div key={s.id} className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-zinc-100">{s.strengthType.replace(/_/g, " ")}</span>
+                    <span className="text-xs font-bold text-emerald-400">+{s.trustImpact.toFixed(1)} trust</span>
+                  </div>
+                  <p className="mt-1 text-xs text-zinc-400">{s.description}</p>
+                  <div className="mt-1.5 text-[0.6rem] text-zinc-500">
+                    Detected {s.occurrenceCount}× · last {formatDate(s.lastDetectedAt)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Weaknesses */}
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+          <div className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-zinc-100">
+            <AlertTriangle className="h-4 w-4 text-red-400" /> Weaknesses
+            <span className="ml-auto text-xs font-normal text-zinc-500">{activeWeaknesses.length} active</span>
+          </div>
+          {activeWeaknesses.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-zinc-800 p-4 text-center text-xs text-zinc-500">
+              No weaknesses detected. The employee is performing within acceptable thresholds.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {activeWeaknesses.map((w) => (
+                <div key={w.id} className="rounded-lg border border-red-500/20 bg-red-500/5 p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-zinc-100">{w.weaknessType.replace(/_/g, " ")}</span>
+                    <span className="text-xs font-bold text-red-400">{w.trustImpact.toFixed(1)} trust</span>
+                  </div>
+                  <p className="mt-1 text-xs text-zinc-400">{w.description}</p>
+                  <div className="mt-1.5 text-[0.6rem] text-zinc-500">
+                    Detected {w.occurrenceCount}× · last {formatDate(w.lastDetectedAt)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ─── Patterns ─── */}
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+        <div className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-zinc-100">
+          <Lightbulb className="h-4 w-4 text-sky-400" /> Learning Patterns
+          <span className="ml-auto text-xs font-normal text-zinc-500">
+            {patterns.length} patterns · reusable by the Planner
+          </span>
+        </div>
+        {patterns.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-zinc-800 p-4 text-center text-xs text-zinc-500">
+            No patterns detected yet. Patterns emerge as the employee processes more tasks with measurable outcomes.
+          </div>
+        ) : (
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {patterns.map((p) => (
+              <div key={p.id} className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-sky-500/10 px-2 py-0.5 text-[0.6rem] font-medium text-sky-400">
+                      {p.patternType.replace(/_/g, " ")}
+                    </span>
+                    <span className="text-sm font-medium text-zinc-100">{p.entityLabel}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-[0.6rem] text-zinc-500">
+                    <span>{p.observationCount} observations</span>
+                    <span>{(p.confidence * 100).toFixed(0)}% conf</span>
+                  </div>
+                </div>
+                <p className="mt-1 text-xs text-zinc-400">{p.description}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ─── Recent Outcome Evaluations ─── */}
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+        <div className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-zinc-100">
+          <Activity className="h-4 w-4 text-violet-400" /> Recent Outcome Evaluations
+          <span className="ml-auto text-xs font-normal text-zinc-500">{outcomeHistory.length} evaluations</span>
+        </div>
+        {outcomeHistory.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-zinc-800 p-4 text-center text-xs text-zinc-500">
+            No outcome evaluations yet. Each completed task generates a deterministic scorecard.
+          </div>
+        ) : (
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {outcomeHistory.map((e) => (
+              <div key={e.id} className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className={cn(
+                      "rounded-full px-2 py-0.5 text-[0.6rem] font-bold",
+                      e.qualityScore >= 80 ? "bg-emerald-500/15 text-emerald-400" :
+                      e.qualityScore >= 50 ? "bg-amber-500/15 text-amber-400" :
+                      "bg-red-500/15 text-red-400"
+                    )}>
+                      Q{e.qualityScore}
+                    </span>
+                    <span className="text-xs text-zinc-400">{formatDateTime(e.createdAt)}</span>
+                  </div>
+                  <div className="flex gap-2 text-[0.6rem] text-zinc-500">
+                    {e.actualSuccess && <span className="text-emerald-400">✓ success</span>}
+                    {e.humanCorrections > 0 && <span className="text-amber-400">{e.humanCorrections} corrections</span>}
+                    {e.paymentReceived && <span className="text-emerald-400">₹{(e.paymentAmount / 100).toFixed(0)}</span>}
+                    {e.slaAchieved && <span className="text-sky-400">SLA ✓</span>}
+                  </div>
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-zinc-500">{e.outcomeSummary}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ImpactCell({ label, value, highlight }: { label: string; value: string | number; highlight?: "emerald" }) {
+  return (
+    <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
+      <div className="text-[0.6rem] uppercase tracking-wider text-zinc-500">{label}</div>
+      <div className={cn("mt-1 text-lg font-bold", highlight === "emerald" ? "text-emerald-400" : "text-zinc-50")}>
+        {value}
+      </div>
     </div>
   );
 }

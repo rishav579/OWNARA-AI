@@ -892,6 +892,28 @@ async function completeTask(task: any): Promise<ExecutionResult> {
     console.error(`[Executor] Profile update failed for task ${task.id}:`, err);
   }
 
+  // ─── Autonomous Learning & Skill Evolution (EMP-002) ──────────────────────
+  // After the profile is updated, run the learning engine to:
+  //   1. Build a deterministic OutcomeEvaluation scorecard
+  //   2. Reinforce skills based on real outcomes (not usage++)
+  //   3. Detect reusable patterns (customer behavior, reminder effectiveness)
+  //   4. Detect weaknesses (high rejection rate, low confidence, etc.)
+  //   5. Detect strengths (high approval rate, fast execution, etc.)
+  //   6. Record business outcomes (append-only ledger)
+  //   7. Append career timeline entries
+  //   8. Check for achievement unlocks
+  // All best-effort — learning failures NEVER break task completion.
+  try {
+    const { evaluateAndLearn } = await import("@/lib/learning/engine");
+    await evaluateAndLearn({
+      taskId: task.id,
+      employeeId: employee.id,
+      workspaceId: task.workspaceId,
+    });
+  } catch (err) {
+    console.error(`[Executor] Learning engine failed for task ${task.id}:`, err);
+  }
+
   return { action: "completed", message: "Task completed" };
 }
 
