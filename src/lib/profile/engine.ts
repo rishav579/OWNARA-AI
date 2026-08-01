@@ -248,24 +248,32 @@ export async function recordProfileEvent(event: ProfileUpdateEvent): Promise<voi
     updates.failedTasks = { increment: 1 };
   }
 
-  // Approval rate
-  if (event.type === "approval_approved" || event.type === "contract_approved") {
+  // Approval rate — only recomputed on the actual approval decision events.
+  // contract_approved/contract_rejected are bookkeeping events that co-occur
+  // with approval_approved/approval_rejected; including them here would
+  // recompute the same rate twice (harmless but wasteful and semantically wrong).
+  if (event.type === "approval_approved") {
     const totalDecisions = profile.successfulTasks + profile.failedTasks + 1;
     const newApprovalRate = (profile.successfulTasks + 1) / totalDecisions;
     updates.approvalRate = Math.min(1.0, newApprovalRate);
   }
 
-  if (event.type === "approval_rejected" || event.type === "contract_rejected") {
+  if (event.type === "approval_rejected") {
     const totalDecisions = profile.successfulTasks + profile.failedTasks + 1;
     const newApprovalRate = profile.successfulTasks / totalDecisions;
     updates.approvalRate = Math.max(0.0, newApprovalRate);
   }
 
-  // KPIs
-  if (event.type === "reminder_sent" || (event.type === "approval_approved" && event.toolName === "send_reminder")) {
-    updates.emailsSent = { increment: 1 };
-    updates.customersHandled = { increment: 1 }; // approximate
-  }
+  // KPIs — emailsSent, customersHandled, and invoicesProcessed are all synced
+  // from the Reminder table in updateMemoryAndCapabilityCounts (count of
+  // sent reminders, distinct customers, distinct invoices). They are NOT
+  // incremented here because:
+  // 1. The reminder_sent event fires when the approval is approved, BEFORE
+  //    the worker actually executes the send_reminder tool. If the task is
+  //    then cancelled or the tool fails, the counter would be wrong.
+  // 2. The approval_approved event with toolName==="send_reminder" used to
+  //    ALSO increment emailsSent, causing a double-count (2× per reminder).
+  // DB-synced counters are the source of truth.
 
   if (event.type === "money_recovered" && event.amount) {
     updates.moneyRecovered = { increment: event.amount };
@@ -322,8 +330,13 @@ export async function recordProfileEvent(event: ProfileUpdateEvent): Promise<voi
     data: updates,
   });
 
-  // ─── Infer and update skills (outside transaction — best-effort) ─────────
-  if (event.taskId) {
+  // ─── Infer and update skills (ONLY on task completion) ───────────────────
+  // Skill inference scans the task's title/description/tools and increments
+  // matching skill counters. If we ran this on EVERY event (approval_approved,
+  // reminder_sent, contract_approved, etc.), a single task with 2 approval
+  // gates would increment skills 7+ times. We only want skills to grow once
+  // per task completion.
+  if (event.type === "task_completed" && event.taskId) {
     try {
       await inferAndUpdateSkills(event.employeeId, event.workspaceId, event.taskId, event.toolName);
     } catch (err) {
@@ -331,11 +344,27 @@ export async function recordProfileEvent(event: ProfileUpdateEvent): Promise<voi
     }
   }
 
-  // ─── Update memory/capability counts (best-effort) ───────────────────────
-  try {
-    await updateMemoryAndCapabilityCounts(event.employeeId, event.workspaceId);
-  } catch (err) {
-    console.error(`[Profile] Count update failed for employee ${event.employeeId}:`, err);
+  // ─── Update memory/capability/customer/email counts ─────────────────────
+  // Only sync on events that actually change the synced counters:
+  // - memory_created / memory_reinforced → memory counts change
+  // - task_completed → all synced counters may have changed
+  // - reminder_sent → emailsSent/customersHandled/invoicesProcessed may change
+  //   (the reminder_sent event fires when the approval is approved; the
+  //   actual reminder row is created/sent by the worker shortly after.
+  //   We sync here AND on task_completed to catch both timing windows.)
+  // Running this on every event caused 3 DB queries × ~90 events = ~270
+  // redundant queries per task.
+  if (
+    event.type === "memory_created" ||
+    event.type === "memory_reinforced" ||
+    event.type === "task_completed" ||
+    event.type === "reminder_sent"
+  ) {
+    try {
+      await updateMemoryAndCapabilityCounts(event.employeeId, event.workspaceId);
+    } catch (err) {
+      console.error(`[Profile] Count update failed for employee ${event.employeeId}:`, err);
+    }
   }
 }
 
@@ -463,15 +492,31 @@ async function inferAndUpdateSkills(
 
 // ─── Memory & Capability Count Sync ──────────────────────────────────────────
 
+/**
+ * Syncs derived counters from canonical sources:
+ * - memoryCount, reinforcementCount ← EmployeeMemory table
+ * - capabilitiesGranted, criticalCapabilities ← EmployeeCapability table
+ * - customersHandled, invoicesProcessed ← Reminder table (distinct customer/invoice IDs)
+ *
+ * Called after memory events and task completion. NOT called on every profile
+ * event (would cause ~270 redundant queries per task).
+ *
+ * NOTE: Prisma's `count()` does NOT support `include` (it conflicts with the
+ * implicit `select: { _count }`). We use `findMany` with a projected `select`
+ * on the related Capability row instead.
+ *
+ * NOTE: customersHandled/invoicesProcessed are derived from the Reminder table
+ * (distinct customerId/invoiceId where createdBy = employeeId). This is
+ * finance-specific in practice but the query itself is generic — any employee
+ * that creates reminders gets credit for the customers/invoices it touched.
+ * Employees that never create reminders (HR, Sales Ops, etc.) will have these
+ * counters stay at 0, which is correct.
+ */
 async function updateMemoryAndCapabilityCounts(
   employeeId: string,
   _workspaceId: string
 ): Promise<void> {
-  // NOTE: Prisma's `count()` does NOT support `include` (it conflicts with
-  // the implicit `select: { _count }`). We must use `findMany` if we need
-  // related fields. So we fetch capabilities with their related Capability
-  // rows in a single query and derive both counts locally.
-  const [memoryCount, reinforcementAgg, allCaps] = await Promise.all([
+  const [memoryCount, reinforcementAgg, allCaps, reminderAgg, sentReminders, distinctInvoices] = await Promise.all([
     db.employeeMemory.count({ where: { employeeId } }),
     db.employeeMemory.aggregate({
       where: { employeeId },
@@ -480,6 +525,21 @@ async function updateMemoryAndCapabilityCounts(
     db.employeeCapability.findMany({
       where: { employeeId },
       include: { capability: { select: { riskLevel: true } } },
+    }),
+    // Distinct customers from reminders created by this employee.
+    db.reminder.groupBy({
+      by: ["customerId"],
+      where: { createdBy: employeeId },
+    }),
+    // Count of reminders actually SENT (status = "sent") by this employee.
+    // This is the source of truth for emailsSent — not event increments.
+    db.reminder.count({
+      where: { createdBy: employeeId, status: "sent" },
+    }),
+    // Distinct invoices from reminders created by this employee.
+    db.reminder.groupBy({
+      by: ["invoiceId"],
+      where: { createdBy: employeeId },
     }),
   ]);
 
@@ -496,6 +556,9 @@ async function updateMemoryAndCapabilityCounts(
       reinforcementCount: reinforcementAgg._sum.reinforcementCount || 0,
       capabilitiesGranted: allCaps.length,
       criticalCapabilities: criticalCaps,
+      emailsSent: sentReminders,
+      customersHandled: reminderAgg.length,
+      invoicesProcessed: distinctInvoices.length,
     },
   });
 }

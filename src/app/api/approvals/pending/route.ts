@@ -97,22 +97,33 @@ export async function GET(request: NextRequest) {
           granted: capCheck.allowed,
           reason: capCheck.reason,
         },
-        // Employee profile
+        // Employee profile — includes all fields the Decision Center needs
+        // to show the employee's career standing before the manager decides.
         profile: profile ? {
           level: profile.level,
           title: profile.title,
           experiencePoints: profile.experiencePoints,
+          version: profile.version,
           trustScore: profile.trustScore,
+          riskScore: profile.riskScore,
+          accuracyScore: profile.accuracyScore,
+          approvalRate: profile.approvalRate,
+          averageConfidence: profile.averageConfidence,
           completedTasks: profile.completedTasks,
           failedTasks: profile.failedTasks,
-          approvalRate: profile.approvalRate,
-          moneyRecovered: profile.moneyRecovered,
-          emailsSent: profile.emailsSent,
           tasksAutomated: profile.tasksAutomated,
           hoursSaved: profile.hoursSaved,
+          emailsSent: profile.emailsSent,
+          customersHandled: profile.customersHandled,
+          invoicesProcessed: profile.invoicesProcessed,
+          moneyRecovered: profile.moneyRecovered,
           estimatedBusinessValue: profile.estimatedBusinessValue,
           memoryCount: profile.memoryCount,
+          reinforcementCount: profile.reinforcementCount,
           capabilitiesGranted: profile.capabilitiesGranted,
+          criticalCapabilities: profile.criticalCapabilities,
+          humanInterventionRate: profile.humanInterventionRate,
+          hallucinationRate: profile.hallucinationRate,
         } : null,
       };
     }));
