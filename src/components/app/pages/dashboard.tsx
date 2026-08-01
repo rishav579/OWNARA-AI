@@ -16,6 +16,7 @@ import {
   SeverityDot,
   CategoryBadge,
   TrustScoreBadge,
+  EmptyState,
 } from "@/components/app/ui";
 import {
   Bot,
@@ -31,6 +32,12 @@ import {
   IndianRupee,
   Clock,
   AlertTriangle,
+  Sparkles,
+  TrendingUp,
+  Users,
+  Mail,
+  Bot as BotIcon,
+  Activity,
 } from "lucide-react";
 
 function formatINRfinance(paise: number): string {
@@ -57,6 +64,48 @@ export function DashboardPage() {
   const recentAudit = data.recentActivity;
   const barData = data.taskActivity.map((d: any) => ({ label: d.day.replace("Jan ", ""), value: d.tasks }));
   const tokenPct = (data.tokens.usedThisMonth / 10000000) * 100;
+
+  // ─── Onboarding CTA ───────────────────────────────────────────────────────
+  // If the workspace has no employees, show the onboarding call-to-action
+  // instead of the empty dashboard.
+  if (data.needsOnboarding) {
+    return (
+      <div>
+        <PageHeader
+          title="Welcome to BIHARI AI"
+          description="Hire your first AI Employee to get started"
+        />
+        <EmptyState
+          icon={Bot}
+          title="No AI Employees yet"
+          description="Your workspace is ready. Hire a Finance Employee to start processing overdue invoices, generating reminders, and recovering payments — all under your approval."
+          action={
+            <button
+              onClick={() => navigate("onboarding")}
+              className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 hover:bg-emerald-400"
+            >
+              <Sparkles className="h-4 w-4" />
+              Start Onboarding
+            </button>
+          }
+        />
+      </div>
+    );
+  }
+
+  // ─── Business Impact KPIs ────────────────────────────────────────────────
+  const impact = data.businessImpact || {
+    moneyPending: 0,
+    moneyRecovered: 0,
+    invoicesProcessed: 0,
+    customersContacted: 0,
+    hoursSaved: 0,
+    emailsSent: 0,
+    tasksAutomated: 0,
+    automationRate: 0,
+    humanApprovalRate: 0,
+    avgTrustScore: 0,
+  };
 
   return (
     <div>
@@ -101,12 +150,76 @@ export function DashboardPage() {
         </div>
       )}
 
-      {/* Stat cards */}
+      {/* ─── Business Impact KPIs (MVP-001) ─── */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        <StatCard label="Active Employees" value={String(data.employees.active)} icon={Bot} trend="up" trendValue="+1 this week" accent="emerald" />
-        <StatCard label="Pending Approvals" value={String(data.approvals.pending)} icon={ShieldCheck} trend="flat" trendValue={`${data.approvals.pending} awaiting`} accent="amber" />
-        <StatCard label="Tasks This Month" value={String(data.tasks.total)} icon={ListTodo} trend="up" trendValue="+12%" accent="violet" />
-        <StatCard label="Token Cost" value={formatINR(data.tokens.costCentsThisMonth)} icon={Zap} trend="down" trendValue="-8%" accent="sky" />
+        <StatCard
+          label="Money Pending"
+          value={formatINRfinance(impact.moneyPending)}
+          icon={IndianRupee}
+          trend={impact.moneyPending > 0 ? "flat" : undefined}
+          trendValue={impact.moneyPending > 0 ? "outstanding" : undefined}
+          accent="emerald"
+        />
+        <StatCard
+          label="Invoices Processed"
+          value={String(impact.invoicesProcessed)}
+          icon={FileText}
+          trend="up"
+          trendValue={`${data.finance?.totalInvoices || 0} total`}
+          accent="violet"
+        />
+        <StatCard
+          label="Customers Contacted"
+          value={String(impact.customersContacted)}
+          icon={Users}
+          trend="up"
+          trendValue={`${impact.emailsSent} emails sent`}
+          accent="sky"
+        />
+        <StatCard
+          label="Hours Saved"
+          value={`${impact.hoursSaved.toFixed(1)}h`}
+          icon={Clock}
+          trend="up"
+          trendValue={`${impact.tasksAutomated} tasks automated`}
+          accent="emerald"
+        />
+      </div>
+
+      {/* ─── Automation & Trust KPIs ─── */}
+      <div className="mt-3 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <StatCard
+          label="Automation Rate"
+          value={`${(impact.automationRate * 100).toFixed(0)}%`}
+          icon={Zap}
+          trend={impact.automationRate >= 0.8 ? "up" : "flat"}
+          trendValue={`${data.tasks.completed} completed`}
+          accent="emerald"
+        />
+        <StatCard
+          label="Human Approval Rate"
+          value={`${(impact.humanApprovalRate * 100).toFixed(0)}%`}
+          icon={ShieldCheck}
+          trend={impact.humanApprovalRate >= 0.8 ? "up" : "flat"}
+          trendValue={`${data.approvals.pending} pending`}
+          accent="amber"
+        />
+        <StatCard
+          label="Avg Trust Score"
+          value={impact.avgTrustScore.toFixed(1)}
+          icon={Scale}
+          trend={impact.avgTrustScore >= 80 ? "up" : "flat"}
+          trendValue="/ 100"
+          accent="emerald"
+        />
+        <StatCard
+          label="Money Recovered"
+          value={formatINRfinance(impact.moneyRecovered)}
+          icon={TrendingUp}
+          trend={impact.moneyRecovered > 0 ? "up" : "flat"}
+          trendValue={impact.moneyRecovered > 0 ? "recovered" : "pending"}
+          accent="emerald"
+        />
       </div>
 
       {/* Finance metrics (live data) */}
@@ -137,53 +250,109 @@ export function DashboardPage() {
             </div>
             <span className="rounded-md bg-zinc-800 px-2 py-1 text-xs text-zinc-400">14d</span>
           </div>
-          <BarChart data={barData} color="#10b981" height={160} />
+          {barData.length > 0 ? (
+            <BarChart data={barData} color="#10b981" height={160} />
+          ) : (
+            <div className="flex h-40 items-center justify-center text-xs text-zinc-500">
+              No task activity yet
+            </div>
+          )}
         </div>
 
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
           <h3 className="text-sm font-semibold text-zinc-100">Token Usage</h3>
           <p className="text-xs text-zinc-500">By employee — this month</p>
           <div className="mt-5 flex justify-center">
-            <DonutChart data={data.tokens.byEmployee} />
+            {data.tokens.byEmployee.length > 0 ? (
+              <DonutChart data={data.tokens.byEmployee} />
+            ) : (
+              <div className="flex h-32 items-center justify-center text-xs text-zinc-500">
+                No token usage yet
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Trust Scores */}
-      {data.trustScores && data.trustScores.length > 0 && (
-        <div className="mt-6 rounded-xl border border-zinc-800 bg-zinc-900/50">
-          <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-3.5">
-            <h3 className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
-              <Scale className="h-4 w-4 text-emerald-400" />
-              AI Employee Trust Scores
-            </h3>
-            <span className="text-xs text-zinc-500">{data.activePolicies || 0} active policies</span>
-          </div>
-          <div className="grid divide-y divide-zinc-800/50 sm:grid-cols-2 sm:divide-y-0 sm:divide-x sm:divide-zinc-800/50">
-            {data.trustScores.slice(0, 4).map((ts: any) => (
+      {/* ─── Employee Status (business metrics first, not XP) ─── */}
+      <div className="mt-6 rounded-xl border border-zinc-800 bg-zinc-900/50">
+        <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-3.5">
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+            <Bot className="h-4 w-4 text-emerald-400" />
+            Employee Status
+          </h3>
+          <button onClick={() => navigate("employees")} className="text-xs text-emerald-400 hover:text-emerald-300">View all →</button>
+        </div>
+        <div className="divide-y divide-zinc-800/50">
+          {activeEmployees.length === 0 ? (
+            <div className="px-5 py-8 text-center">
+              <Bot className="mx-auto h-8 w-8 text-zinc-700" />
+              <p className="mt-2 text-sm font-medium text-zinc-300">No active employees</p>
+              <p className="text-xs text-zinc-500">Hire your first AI Employee to get started.</p>
               <button
-                key={ts.employeeId}
-                onClick={() => navigate(`employees/${ts.employeeId}`)}
-                className="flex items-center gap-3 p-4 text-left transition-colors hover:bg-zinc-800/30"
+                onClick={() => navigate("onboarding")}
+                className="mt-3 flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-emerald-950 hover:bg-emerald-400 mx-auto"
               >
-                <Avatar name={ts.employeeName} color={ts.avatarColor} size="md" />
+                <Sparkles className="h-3.5 w-3.5" />
+                Hire Employee
+              </button>
+            </div>
+          ) : (
+            activeEmployees.map((e: any) => (
+              <button
+                key={e.id}
+                onClick={() => navigate(`employees/${e.id}`)}
+                className="flex w-full items-center gap-3 px-5 py-4 text-left transition-colors hover:bg-zinc-800/30"
+              >
+                <Avatar name={e.name} color={e.avatarColor} size="md" />
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium text-zinc-200">{ts.employeeName}</div>
-                  <div className="flex items-center gap-1.5 text-xs text-zinc-500">
-                    <span>{Math.round(ts.successRate * 100)}% success</span>
-                    <span>·</span>
-                    <span>{ts.policyViolations} violations</span>
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-sm font-semibold text-zinc-100">{e.name}</span>
+                    <EmployeeStatusBadge status={e.status} />
+                  </div>
+                  <div className="mt-0.5 flex items-center gap-2 text-xs text-zinc-500">
+                    <span>{e.roleName}</span>
+                    {e.currentTaskTitle ? (
+                      <>
+                        <span>·</span>
+                        <span className="truncate text-emerald-400">{e.currentTaskTitle}</span>
+                      </>
+                    ) : (
+                      <EmployeeStateBadge state={e.state} />
+                    )}
                   </div>
                 </div>
-                <TrustScoreBadge score={ts.overallScore} trend={ts.trend} delta={ts.trendDelta} />
+                {/* Business metrics — not XP */}
+                <div className="hidden items-center gap-4 sm:flex">
+                  <div className="text-right">
+                    <div className="text-xs text-zinc-500">Trust</div>
+                    <div className={`text-sm font-bold ${e.trustScore >= 80 ? "text-emerald-400" : e.trustScore >= 60 ? "text-amber-400" : "text-red-400"}`}>
+                      {e.trustScore.toFixed(0)}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs text-zinc-500">Automated</div>
+                    <div className="text-sm font-bold text-zinc-200">{e.tasksAutomated}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs text-zinc-500">Recovered</div>
+                    <div className="text-sm font-bold text-emerald-400">{formatINRfinance(e.moneyRecovered)}</div>
+                  </div>
+                </div>
+                {e.pendingApprovals > 0 && (
+                  <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[0.65rem] font-medium text-amber-400">
+                    {e.pendingApprovals} pending
+                  </span>
+                )}
               </button>
-            ))}
-          </div>
+            ))
+          )}
         </div>
-      )}
+      </div>
 
-      {/* Two-column: approvals + employees */}
+      {/* Two-column: approvals + recent activity */}
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
+        {/* Pending Approvals */}
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50">
           <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-3.5">
             <h3 className="text-sm font-semibold text-zinc-100">Pending Approvals</h3>
@@ -191,7 +360,11 @@ export function DashboardPage() {
           </div>
           <div className="divide-y divide-zinc-800/50">
             {pendingApprovals.length === 0 ? (
-              <div className="px-5 py-8 text-center text-sm text-zinc-500">No pending approvals</div>
+              <div className="px-5 py-8 text-center">
+                <CheckCircle2 className="mx-auto h-8 w-8 text-emerald-500/50" />
+                <p className="mt-2 text-sm font-medium text-zinc-300">No pending approvals</p>
+                <p className="text-xs text-zinc-500">Your AI Employees are working autonomously.</p>
+              </div>
             ) : (
               pendingApprovals.map((a: any) => (
                 <button key={a.id} onClick={() => navigate("approvals")} className="flex w-full items-center gap-3 px-5 py-3.5 text-left transition-colors hover:bg-zinc-800/30">
@@ -207,51 +380,37 @@ export function DashboardPage() {
           </div>
         </div>
 
+        {/* Business Activity Feed */}
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50">
           <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-3.5">
-            <h3 className="text-sm font-semibold text-zinc-100">Employee Status</h3>
-            <button onClick={() => navigate("employees")} className="text-xs text-emerald-400 hover:text-emerald-300">View all →</button>
+            <h3 className="text-sm font-semibold text-zinc-100">Recent Activity</h3>
+            <button onClick={() => navigate("audit")} className="text-xs text-emerald-400 hover:text-emerald-300">Full audit trail →</button>
           </div>
           <div className="divide-y divide-zinc-800/50">
-            {activeEmployees.map((e: any) => (
-              <button key={e.id} onClick={() => navigate(`employees/${e.id}`)} className="flex w-full items-center gap-3 px-5 py-3.5 text-left transition-colors hover:bg-zinc-800/30">
-                <Avatar name={e.name} color={e.avatarColor} size="sm" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-medium text-zinc-200">{e.name}</span>
-                    <EmployeeStatusBadge status={e.status} />
-                  </div>
-                  <div className="truncate text-xs text-zinc-500">{e.roleName}</div>
-                </div>
-                <EmployeeStateBadge state={e.state} />
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Business Activity Feed */}
-      <div className="mt-6 rounded-xl border border-zinc-800 bg-zinc-900/50">
-        <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-3.5">
-          <h3 className="text-sm font-semibold text-zinc-100">Business Activity</h3>
-          <button onClick={() => navigate("audit")} className="text-xs text-emerald-400 hover:text-emerald-300">Full audit trail →</button>
-        </div>
-        <div className="divide-y divide-zinc-800/50">
-          {(data.businessFeed || recentAudit).map((entry: any) => (
-            <div key={entry.id} className="flex items-start gap-3 px-5 py-3">
-              <SeverityDot severity={entry.severity || "info"} />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-zinc-200">{entry.businessEvent || entry.entryType.replace(/_/g, " ")}</span>
-                  <CategoryBadge category={entry.category || "system"} />
-                </div>
-                <div className="mt-0.5 text-xs leading-relaxed text-zinc-400">
-                  {entry.businessDescription || `${entry.actorName} performed an action`}
-                </div>
+            {(data.businessFeed || recentAudit).length === 0 ? (
+              <div className="px-5 py-8 text-center">
+                <Activity className="mx-auto h-8 w-8 text-zinc-700" />
+                <p className="mt-2 text-sm font-medium text-zinc-300">No activity yet</p>
+                <p className="text-xs text-zinc-500">Activity will appear here as your AI Employees work.</p>
               </div>
-              <span className="shrink-0 text-xs text-zinc-500">{formatRelativeTime(entry.createdAt)}</span>
-            </div>
-          ))}
+            ) : (
+              (data.businessFeed || recentAudit).map((entry: any) => (
+                <div key={entry.id} className="flex items-start gap-3 px-5 py-3">
+                  <SeverityDot severity={entry.severity || "info"} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-zinc-200">{entry.businessEvent || entry.entryType.replace(/_/g, " ")}</span>
+                      <CategoryBadge category={entry.category || "system"} />
+                    </div>
+                    <div className="mt-0.5 text-xs leading-relaxed text-zinc-400">
+                      {entry.businessDescription || `${entry.actorName} performed an action`}
+                    </div>
+                  </div>
+                  <span className="shrink-0 text-xs text-zinc-500">{formatRelativeTime(entry.createdAt)}</span>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </div>
 

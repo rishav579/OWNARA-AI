@@ -32,6 +32,12 @@ export async function GET(request: NextRequest) {
       db.collectionCase.findMany({ where: { workspaceId, status: { in: ["open", "escalated"] } } }),
     ]);
 
+    // Employee profiles (for business impact KPIs — MVP-001)
+    const employeeProfiles = await db.employeeProfile.findMany({
+      where: { workspaceId },
+    });
+    const profileByEmployee = new Map(employeeProfiles.map((p) => [p.employeeId, p]));
+
     // Calculate finance metrics
     const outstandingReceivables = invoices.reduce((sum, inv) => sum + inv.outstanding, 0);
     const overdueInvoices = invoices.filter((inv) => {
@@ -53,6 +59,29 @@ export async function GET(request: NextRequest) {
       return due < now && inv.outstanding > 0;
     }).length >= 2).length;
 
+    // ─── Business Impact KPIs (MVP-001) ────────────────────────────────────
+    // Aggregate from employee profiles — these are the metrics that matter
+    // to a business owner, not XP or token usage.
+    const totalMoneyPending = outstandingReceivables;
+    const totalInvoicesProcessed = employeeProfiles.reduce((s, p) => s + p.invoicesProcessed, 0);
+    const totalCustomersContacted = employeeProfiles.reduce((s, p) => s + p.customersHandled, 0);
+    const totalHoursSaved = employeeProfiles.reduce((s, p) => s + p.hoursSaved, 0);
+    const totalEmailsSent = employeeProfiles.reduce((s, p) => s + p.emailsSent, 0);
+    const totalMoneyRecovered = employeeProfiles.reduce((s, p) => s + p.moneyRecovered, 0);
+    const totalTasksAutomated = employeeProfiles.reduce((s, p) => s + p.tasksAutomated, 0);
+
+    // Automation % = tasks that completed without human corrections / total tasks
+    // Human Approval % = approvals that were approved / total decisions
+    const totalDecisions = approvals.filter((a) => a.status !== "pending").length;
+    const approvedDecisions = approvals.filter((a) => a.status === "approved" || a.status === "modified").length;
+    const humanApprovalRate = totalDecisions > 0 ? approvedDecisions / totalDecisions : 0;
+
+    // Average trust score across all employees with profiles
+    const employeesWithProfiles = employees.filter((e) => profileByEmployee.has(e.id));
+    const avgTrustScore = employeesWithProfiles.length > 0
+      ? employeesWithProfiles.reduce((s, e) => s + (profileByEmployee.get(e.id)?.trustScore || 0), 0) / employeesWithProfiles.length
+      : 0;
+
     const activeEmployees = employees.filter((e) => e.status === "active").length;
     const pausedEmployees = employees.filter((e) => e.status === "paused").length;
     const retiredEmployees = employees.filter((e) => e.status === "retired").length;
@@ -62,6 +91,11 @@ export async function GET(request: NextRequest) {
     const stoppedTasks = tasks.filter((t) => t.status === "stopped").length;
     const inProgress = tasks.filter((t) => ["assigned", "planning", "executing"].includes(t.status)).length;
     const waitingApproval = tasks.filter((t) => t.status === "waiting_approval").length;
+
+    // Automation rate = completed tasks / (completed + failed + stopped)
+    const automationRate = completedTasks + failedTasks + stoppedTasks > 0
+      ? completedTasks / (completedTasks + failedTasks + stoppedTasks)
+      : 0;
 
     const pendingApprovals = approvals.filter((a) => a.status === "pending");
     const decidedToday = approvals.filter((a) => a.decidedAt && isToday(a.decidedAt)).length;
@@ -118,16 +152,35 @@ export async function GET(request: NextRequest) {
         active: activeEmployees,
         paused: pausedEmployees,
         retired: retiredEmployees,
-        list: employees.filter((e) => e.status === "active").map((e) => ({
-          id: e.id,
-          name: e.name,
-          role: e.role,
-          roleName: ROLE_LABELS[e.role as keyof typeof ROLE_LABELS] || e.role,
-          status: e.status,
-          state: e.state,
-          avatarColor: AVATAR_COLORS[e.name] || "#10b981",
-          pendingApprovals: e.pendingApprovals,
-        })),
+        list: employees.filter((e) => e.status === "active").map((e) => {
+          const profile = profileByEmployee.get(e.id);
+          // Find the employee's current active task (if any)
+          const currentTask = tasks.find((t) => t.employeeId === e.id && ["queued", "planning", "executing", "waiting_approval"].includes(t.status));
+          return {
+            id: e.id,
+            name: e.name,
+            role: e.role,
+            roleName: ROLE_LABELS[e.role as keyof typeof ROLE_LABELS] || e.role,
+            status: e.status,
+            state: e.state,
+            avatarColor: AVATAR_COLORS[e.name] || "#10b981",
+            pendingApprovals: e.pendingApprovals,
+            // Business metrics from the profile (MVP-001)
+            trustScore: profile?.trustScore || 0,
+            level: profile?.level || 1,
+            title: profile?.title || "Intern",
+            completedTasks: profile?.completedTasks || 0,
+            tasksAutomated: profile?.tasksAutomated || 0,
+            emailsSent: profile?.emailsSent || 0,
+            customersHandled: profile?.customersHandled || 0,
+            hoursSaved: profile?.hoursSaved || 0,
+            moneyRecovered: profile?.moneyRecovered || 0,
+            approvalRate: profile?.approvalRate || 1,
+            // Current task info
+            currentTaskId: currentTask?.id || null,
+            currentTaskTitle: currentTask?.title || null,
+          };
+        }),
       },
       tasks: {
         total: tasks.length,
@@ -185,6 +238,24 @@ export async function GET(request: NextRequest) {
         totalInvoices: invoices.length,
         totalRemindersSent: reminders.filter((r) => r.status === "sent").length,
       },
+      // ─── Business Impact KPIs (MVP-001) ────────────────────────────────────
+      // These are the metrics that matter to a business owner.
+      // Aggregated from employee profiles + finance domain + approvals.
+      businessImpact: {
+        moneyPending: totalMoneyPending,
+        moneyRecovered: totalMoneyRecovered,
+        invoicesProcessed: totalInvoicesProcessed,
+        customersContacted: totalCustomersContacted,
+        hoursSaved: totalHoursSaved,
+        emailsSent: totalEmailsSent,
+        tasksAutomated: totalTasksAutomated,
+        automationRate,          // 0-1: completed / (completed + failed + stopped)
+        humanApprovalRate,       // 0-1: approved / total decisions
+        avgTrustScore,           // 0-100: average across all employees
+      },
+      // Onboarding state (MVP-001) — used by the dashboard to show
+      // the "Hire your first AI Employee" CTA when the workspace is empty.
+      needsOnboarding: employees.length === 0,
       // Task activity over 14 days (from LLM usage as proxy)
       taskActivity: llmUsage.slice(-14).map((u, i) => ({
         day: `Jan ${15 + i}`,

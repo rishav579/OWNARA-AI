@@ -40,9 +40,9 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     label: "Workspace",
     items: [
       { path: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-      { path: "employees", label: "AI Employees", icon: Bot },
-      { path: "tasks", label: "Tasks", icon: ListTodo },
+      { path: "employees", label: "Employees", icon: Bot },
       { path: "approvals", label: "Decision Center", icon: ShieldCheck, badge: 2 },
+      { path: "tasks", label: "Tasks", icon: ListTodo },
     ],
   },
   {
@@ -52,19 +52,19 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     ],
   },
   {
-    label: "Trust & Governance",
+    label: "Trust & Audit",
     items: [
+      { path: "audit", label: "Audit Timeline", icon: ScrollText },
       { path: "governance", label: "Governance", icon: Scale },
       { path: "knowledge", label: "Knowledge Base", icon: BookOpen },
-      { path: "audit", label: "Audit Timeline", icon: ScrollText },
     ],
   },
   {
-    label: "Administration",
+    label: "Settings",
     items: [
+      { path: "settings", label: "Settings", icon: Settings },
       { path: "integrations", label: "Integrations", icon: Plug },
       { path: "workspace-admin", label: "Administration", icon: Building2 },
-      { path: "settings", label: "Settings", icon: Settings },
       { path: "billing", label: "Billing", icon: CreditCard },
     ],
   },

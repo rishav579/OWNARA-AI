@@ -6,6 +6,7 @@ import { QueryProvider } from "@/components/app/query-provider";
 import { AppShell } from "@/components/app/shell";
 import { LandingPage } from "@/components/app/pages/landing";
 import { AuthPage } from "@/components/app/pages/auth";
+import { OnboardingPage } from "@/components/app/pages/onboarding";
 import { DashboardPage } from "@/components/app/pages/dashboard";
 import { EmployeesPage } from "@/components/app/pages/employees";
 import { EmployeeDetailPage } from "@/components/app/pages/employee-detail";
@@ -35,7 +36,7 @@ function AppRouter() {
       navigate("dashboard");
     }
     // If on a protected page but not authenticated, go to login
-    if (path !== "" && path !== "login" && !user) {
+    if (path !== "" && path !== "login" && path !== "onboarding" && !user) {
       navigate("login");
     }
   }, [loading, path, user, navigate]);
@@ -52,6 +53,12 @@ function AppRouter() {
   if (path === "login") {
     if (user) return <LoadingScreen />;
     return <AuthPage />;
+  }
+
+  // Onboarding page — auth required, but rendered outside AppShell (full-screen wizard)
+  if (path === "onboarding") {
+    if (!user) return <LoadingScreen />;
+    return <OnboardingPage />;
   }
 
   // Protected pages — require auth

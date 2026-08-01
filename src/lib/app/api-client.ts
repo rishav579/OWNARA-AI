@@ -114,6 +114,34 @@ export const api = {
       apiFetch("/auth/logout", { method: "POST", body: JSON.stringify({ refreshToken }) }),
   },
 
+  // Onboarding (MVP-001) — Customer Onboarding & First Value Experience
+  onboarding: {
+    // GET /api/onboarding/state — check if onboarding is complete
+    state: () => apiFetch<any>("/onboarding/state"),
+    // POST /api/onboarding/setup — hire finance employee + import invoices + generate first task
+    setup: (data: {
+      industry?: string;
+      country?: string;
+      currency?: string;
+      invoices?: Array<{
+        customerName: string;
+        customerEmail: string;
+        invoiceNumber: string;
+        issueDate: string;
+        dueDate: string;
+        subtotal: number;
+        tax: number;
+      }>;
+      useDemoData?: boolean;
+    }) => apiFetch<any>("/onboarding/setup", { method: "POST", body: JSON.stringify(data) }),
+    // POST /api/onboarding/demo — create a complete demo company instantly
+    demo: (data?: { email?: string; password?: string; workspaceName?: string }) =>
+      apiFetch<{ user: any; workspace: any; accessToken: string; refreshToken: string; expiresIn: number; isExistingDemo: boolean }>("/onboarding/demo", {
+        method: "POST",
+        body: JSON.stringify(data ?? {}),
+      }),
+  },
+
   // Dashboard
   dashboard: {
     get: () => apiFetch<any>("/dashboard"),

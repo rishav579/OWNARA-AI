@@ -15,32 +15,60 @@ import {
   EmployeeGridSkeleton,
 } from "@/components/app/ui";
 import { cn } from "@/lib/utils";
-import { Bot, Plus, Search, MoreVertical } from "lucide-react";
+import { Bot, Plus, Search, MoreVertical, Sparkles, Mail, Clock, CheckCircle2 } from "lucide-react";
+
+function formatINRfinance(paise: number): string {
+  const rupees = paise / 100;
+  if (rupees >= 10000000) return `₹${(rupees / 10000000).toFixed(2)} Cr`;
+  if (rupees >= 100000) return `₹${(rupees / 100000).toFixed(2)} L`;
+  if (rupees >= 1000) return `₹${(rupees / 1000).toFixed(1)}K`;
+  return `₹${rupees.toLocaleString("en-IN")}`;
+}
 
 const TEMPLATES = [
   {
+    id: "finance",
+    name: "Finance Employee",
+    role: "finance_employee",
+    description: "Processes overdue invoices, generates collection reminders, and manages accounts receivable — all under human approval.",
+    defaultJobDescription: "Review overdue invoices, assess customer risk, calculate aging, and generate collection reminders. Always require human approval before sending any customer communication.",
+    tools: ["generate_reminder", "send_reminder", "update_collection_case", "search_knowledge"],
+    approvalRules: { generate_reminder: "non_critical", send_reminder: "critical", update_collection_case: "non_critical", search_knowledge: "non_critical" },
+    enabled: true,
+    badge: "Available now",
+  },
+  {
     id: "t_csa",
     name: "Customer Support Agent",
+    role: "customer_support_agent",
     description: "Drafts and routes customer replies under human approval.",
     defaultJobDescription: "Draft replies to customer queries about orders, returns, and product information. Route complex billing issues to the finance team.",
     tools: ["draft_response", "send_email", "search_knowledge", "summarize"],
     approvalRules: { send_email: "critical", draft_response: "non_critical", search_knowledge: "non_critical", summarize: "non_critical" },
+    enabled: false,
+    badge: "Coming soon",
   },
   {
     id: "t_sdr",
     name: "Sales Development Rep",
+    role: "sales_development_representative",
     description: "Researches prospects and drafts personalized outreach emails.",
     defaultJobDescription: "Research prospects and draft personalized outreach emails. Follow up on replies and schedule demos.",
     tools: ["draft_response", "send_email", "search_knowledge", "summarize"],
     approvalRules: { send_email: "critical", draft_response: "non_critical", search_knowledge: "non_critical", summarize: "non_critical" },
+    enabled: false,
+    badge: "Coming soon",
   },
   {
     id: "t_ra",
     name: "Research Analyst",
+    role: "research_analyst",
     description: "Researches market trends and produces briefings for leadership.",
     defaultJobDescription: "Research market trends, competitor moves, and industry reports. Summarize findings into briefings for the leadership team.",
     tools: ["search_knowledge", "summarize", "draft_response"],
     approvalRules: { draft_response: "non_critical", search_knowledge: "non_critical", summarize: "non_critical" },
+    enabled: false,
+    badge: "Coming soon",
   },
 ];
 
@@ -127,14 +155,14 @@ export function EmployeesPage() {
       ) : employees.length === 0 ? (
         <EmptyState
           icon={Bot}
-          title="No employees found"
-          description="Try adjusting your filters or hire a new AI Employee."
+          title="No AI Employees yet"
+          description="Hire your first AI Employee to start automating work. Finance Employees process overdue invoices, generate reminders, and recover payments — all under your approval."
           action={
             <button
-              onClick={() => setShowHire(true)}
-              className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-emerald-950 hover:bg-emerald-400"
+              onClick={() => navigate("onboarding")}
+              className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 hover:bg-emerald-400"
             >
-              <Plus className="h-4 w-4" /> Hire Employee
+              <Sparkles className="h-4 w-4" /> Start Onboarding
             </button>
           }
         />
@@ -149,50 +177,71 @@ export function EmployeesPage() {
               onKeyDown={(ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); navigate(`employees/${e.id}`); } }}
               className="group cursor-pointer rounded-xl border border-zinc-800 bg-zinc-900/50 p-5 text-left transition-all hover:border-zinc-700 hover:bg-zinc-900"
             >
+              {/* Header: Avatar + Name + Role + Status */}
               <div className="flex items-start gap-3">
                 <Avatar name={e.name} color={e.avatarColor} size="lg" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <h3 className="truncate text-sm font-semibold text-zinc-100">{e.name}</h3>
+                    <EmployeeStatusBadge status={e.status} />
                   </div>
                   <p className="truncate text-xs text-zinc-500">{e.roleName}</p>
                   <div className="mt-1.5 flex items-center gap-2">
-                    <EmployeeStatusBadge status={e.status} />
+                    {e.currentTaskTitle ? (
+                      <span className="truncate text-[0.7rem] text-emerald-400">
+                        ● {e.currentTaskTitle}
+                      </span>
+                    ) : (
+                      <EmployeeStateBadge state={e.state} />
+                    )}
                   </div>
                 </div>
-                <span
-                  onClick={(ev) => ev.stopPropagation()}
-                  className="text-zinc-500 opacity-0 transition-opacity hover:text-zinc-300 group-hover:opacity-100"
-                >
-                  <MoreVertical className="h-4 w-4" />
-                </span>
-              </div>
-
-              <div className="mt-4 flex items-center justify-between">
-                <EmployeeStateBadge state={e.state} />
                 {e.pendingApprovals > 0 && (
-                  <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[0.65rem] font-medium text-amber-400">
+                  <span className="shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-[0.65rem] font-medium text-amber-400">
                     {e.pendingApprovals} pending
                   </span>
                 )}
               </div>
 
-              <div className="mt-4 border-t border-zinc-800 pt-3">
-                <div className="mb-1.5 flex items-center justify-between text-xs">
-                  <span className="text-zinc-500">Token usage</span>
-                  <span className="font-mono text-zinc-400">
-                    {formatNumber(e.tokenUsage)} / {formatNumber(e.tokenCap)}
-                  </span>
+              {/* ─── Business Metrics (FIRST, not XP/token) ─── */}
+              <div className="mt-4 grid grid-cols-3 gap-2 border-t border-zinc-800 pt-3">
+                <div className="text-center">
+                  <div className="text-[0.6rem] uppercase tracking-wider text-zinc-500">Trust</div>
+                  <div className={`mt-0.5 text-base font-bold ${e.trustScore >= 80 ? "text-emerald-400" : e.trustScore >= 60 ? "text-amber-400" : "text-red-400"}`}>
+                    {e.trustScore.toFixed(0)}
+                  </div>
                 </div>
-                <ProgressBar
-                  value={e.tokenUsage}
-                  max={e.tokenCap}
-                  color={e.tokenUsage / e.tokenCap > 0.8 ? "#f59e0b" : "#10b981"}
-                />
+                <div className="text-center">
+                  <div className="text-[0.6rem] uppercase tracking-wider text-zinc-500">Automated</div>
+                  <div className="mt-0.5 text-base font-bold text-zinc-100">{e.tasksAutomated}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-[0.6rem] uppercase tracking-wider text-zinc-500">Recovered</div>
+                  <div className="mt-0.5 text-base font-bold text-emerald-400">
+                    {e.moneyRecovered > 0 ? formatINRfinance(e.moneyRecovered) : "—"}
+                  </div>
+                </div>
               </div>
 
-              <div className="mt-3 flex items-center justify-between text-xs text-zinc-500">
-                <span>{e.completedTasks} tasks completed</span>
+              {/* Secondary metrics */}
+              <div className="mt-3 flex items-center justify-between text-[0.65rem] text-zinc-500">
+                <span className="flex items-center gap-1">
+                  <Mail className="h-3 w-3" />
+                  {e.emailsSent} emails
+                </span>
+                <span className="flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  {e.hoursSaved.toFixed(1)}h saved
+                </span>
+                <span className="flex items-center gap-1">
+                  <CheckCircle2 className="h-3 w-3" />
+                  {(e.approvalRate * 100).toFixed(0)}% approved
+                </span>
+              </div>
+
+              {/* Footer */}
+              <div className="mt-3 flex items-center justify-between border-t border-zinc-800 pt-3 text-xs text-zinc-500">
+                <span>Lv{e.level} {e.title}</span>
                 <span>Hired {formatDate(e.createdAt)}</span>
               </div>
             </div>
@@ -220,24 +269,45 @@ export function EmployeesPage() {
                   <button
                     key={t.id}
                     onClick={() => {
+                      if (!t.enabled) return;
                       createMutation.mutate({
-                        name: t.name.split(" ").map((w: string) => w[0]).join("") + " " + (Math.floor(Math.random() * 100)),
-                        templateId: t.id,
+                        name: t.name === "Finance Employee" ? "Kavya" : t.name.split(" ").map((w: string) => w[0]).join("") + " " + (Math.floor(Math.random() * 100)),
+                        role: t.role,
                         jobDescription: t.defaultJobDescription,
-                        operatingBoundaries: ["Set boundaries during configuration"],
+                        operatingBoundaries: t.role === "finance_employee" ? [
+                          "Never send a reminder without human approval",
+                          "Never modify invoice amounts or payment records",
+                          "Always cite invoice number and outstanding amount in reminders",
+                          "Escalate to manager after 3 unanswered reminders",
+                          "Never write off an invoice without explicit owner approval",
+                        ] : ["Set boundaries during configuration"],
                         approvalRules: t.approvalRules,
                         toolNames: t.tools,
                       });
                     }}
-                    disabled={createMutation.isPending}
-                    className="flex w-full items-start gap-3 rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 text-left transition-colors hover:border-emerald-500/40 hover:bg-zinc-900 disabled:opacity-50"
+                    disabled={createMutation.isPending || !t.enabled}
+                    className={cn(
+                      "flex w-full items-start gap-3 rounded-xl border p-4 text-left transition-colors",
+                      t.enabled
+                        ? "border-zinc-800 bg-zinc-900/50 hover:border-emerald-500/40 hover:bg-zinc-900"
+                        : "border-zinc-800/50 bg-zinc-900/30 opacity-60 cursor-not-allowed"
+                    )}
                   >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400">
+                    <div className={cn(
+                      "flex h-10 w-10 items-center justify-center rounded-lg",
+                      t.enabled ? "bg-emerald-500/10 text-emerald-400" : "bg-zinc-800 text-zinc-500"
+                    )}>
                       <Bot className="h-5 w-5" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <h3 className="text-sm font-semibold text-zinc-100">{t.name}</h3>
+                        <span className={cn(
+                          "rounded-full px-2 py-0.5 text-[0.6rem] font-medium",
+                          t.enabled ? "bg-emerald-500/15 text-emerald-400" : "bg-zinc-800 text-zinc-500"
+                        )}>
+                          {t.badge}
+                        </span>
                       </div>
                       <p className="mt-0.5 text-xs text-zinc-400">{t.description}</p>
                       <div className="mt-2 flex flex-wrap gap-1">
@@ -253,7 +323,7 @@ export function EmployeesPage() {
               </div>
             </div>
             <div className="flex items-center justify-between border-t border-zinc-800 px-6 py-3">
-              <span className="text-xs text-zinc-500">3 templates available</span>
+              <span className="text-xs text-zinc-500">1 available · 3 coming soon</span>
               <button
                 onClick={() => setShowHire(false)}
                 className="rounded-lg px-3 py-1.5 text-sm font-medium text-zinc-400 hover:text-zinc-200"

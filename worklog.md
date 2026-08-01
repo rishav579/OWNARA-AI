@@ -368,3 +368,125 @@ Stage Summary:
 - ✅ Browser-verified: Timeline + Learning tabs render correctly
 - ✅ All 6 audit event types emitted correctly
 - ✅ No regressions in existing functionality
+
+---
+Task ID: MVP-001
+Agent: Z.ai Code (main)
+Task: Build the Customer Onboarding & First Value Experience. A brand-new customer should experience value in less than 10 minutes. The experience should feel like hiring an employee, not configuring software.
+
+Work Log:
+- Read the entire codebase via a subagent (app entry, routing, auth flow, shell, dashboard, employees page, finance domain, tasks API, UI components, landing page, query provider, seed data). Produced a detailed architecture report identifying every integration point.
+- Designed the onboarding flow: Workspace Onboarding Wizard (4 steps) → First Task Generation → Empty States → Dashboard → Employee Cards → Navigation → Demo Mode.
+- Built 3 new API routes (all reuse existing architecture — no duplication):
+  - `POST /api/onboarding/setup` — the core onboarding endpoint. Hires a Finance Employee (reuses `grantFinanceCapabilities()` + `initProfile()` + tool permissions from seed.ts logic), imports customers + invoices from CSV (or seeds demo data), and auto-generates the first task "Process overdue invoices". Writes audit entries via the shared `appendAudit()`. Idempotent (returns 409 if onboarding already completed).
+  - `POST /api/onboarding/demo` — creates a complete demo company in one shot (user + workspace + Finance Employee + 5 customers + 8 invoices + first task). Returns access + refresh tokens so the frontend can log in immediately. Idempotent per-email (returns existing demo workspace if the email already exists). Invoice numbers are timestamped to avoid unique constraint conflicts.
+  - `GET /api/onboarding/state` — returns whether onboarding is complete (used by the dashboard to show the "Hire your first AI Employee" CTA when the workspace is empty).
+- Added `api.onboarding` namespace to the api-client with 3 methods: `state()`, `setup(data)`, `demo(data)`.
+- Built the 4-step Onboarding Wizard (`src/components/app/pages/onboarding.tsx`, ~600 lines):
+  - **Step 1: Company** — Industry (8 options), Country (6 options), Currency (5 options)
+  - **Step 2: Choose AI Employee** — Finance Employee (enabled), Back Office/HR/Sales Ops (coming soon, disabled)
+  - **Step 3: Upload Invoices** — "Use sample data" toggle OR CSV upload (drag & drop, file picker, paste-into-textarea) with live parsing preview (table showing invoice#, customer, due date, amount, overdue status). Includes a "Load sample CSV format" helper. Converts rupee amounts to paise automatically.
+  - **Step 4: Review** — Summary of company details, selected employee, invoice count + overdue count, and a "What happens next" section explaining the automatic task generation.
+  - Includes a "Load Demo Company" banner at the top for instant demo access.
+  - Full-screen wizard (rendered outside AppShell) with a stepper showing progress.
+  - CSV parser handles quoted fields, validates required columns, converts amounts to paise.
+- Wired the onboarding route into `src/app/page.tsx` as `case "onboarding"` — auth-required, rendered outside AppShell.
+- Updated the signup flow in `src/components/app/pages/auth.tsx` to redirect new users to `#/onboarding` instead of `#/dashboard`. Existing users (login) still go to dashboard.
+- Added "Load Demo Company" button to the auth page (below "Continue with Google") — creates a demo workspace and logs in instantly.
+- Updated the landing page "Start free" button to deep-link to `#/login?signup=1` (defaults to signup mode).
+- Extended the Dashboard API (`src/app/api/dashboard/route.ts`) with:
+  - `businessImpact` object: moneyPending, moneyRecovered, invoicesProcessed, customersContacted, hoursSaved, emailsSent, tasksAutomated, automationRate, humanApprovalRate, avgTrustScore — all aggregated from employee profiles + finance domain + approvals.
+  - `needsOnboarding` boolean — true when the workspace has no employees.
+  - Enriched `employees.list` with profile data (trustScore, level, title, tasksAutomated, emailsSent, customersHandled, hoursSaved, moneyRecovered, approvalRate) + current task info (currentTaskId, currentTaskTitle).
+  - Fixed a variable initialization order bug (automationRate was referenced before completedTasks was defined).
+- Redesigned the Dashboard (`src/components/app/pages/dashboard.tsx`):
+  - **Onboarding CTA**: when `needsOnboarding` is true, shows a full-page "Welcome to BIHARI AI" empty state with a "Start Onboarding" button.
+  - **Business Impact KPIs** (top row): Money Pending, Invoices Processed, Customers Contacted, Hours Saved.
+  - **Automation & Trust KPIs** (second row): Automation Rate, Human Approval Rate, Avg Trust Score, Money Recovered.
+  - **Finance metrics** (third row): Outstanding AR, Overdue Invoices, Recovered This Week, Customers at Risk.
+  - **Employee Status** section: business-metrics-first (Trust, Automated, Recovered + current task title + pending count). Shows "No active employees" empty state with onboarding CTA when empty.
+  - **Pending Approvals** section: shows "No pending approvals — Your AI Employees are working autonomously" empty state when empty.
+  - **Recent Activity** section: shows "No activity yet" empty state when empty.
+- Extended the Employees API (`src/app/api/employees/route.ts`) to return profile data (trustScore, level, title, tasksAutomated, emailsSent, customersHandled, hoursSaved, moneyRecovered, approvalRate) + current task info for each employee. Also fixed the Finance Employee creation flow: when `role: "finance_employee"` is passed, the API now auto-grants finance capabilities + tool permissions + initializes the profile (reuses the Capability Engine + Profile Engine). Removed a duplicate `appendAudit` function that conflicted with the imported one.
+- Redesigned the Employee Cards (`src/components/app/pages/employees.tsx`):
+  - **Business metrics FIRST** (not XP/token): a 3-column grid showing Trust, Automated, Recovered.
+  - Secondary metrics row: emails sent, hours saved, approval rate.
+  - Footer: Level + Title, Hired date.
+  - Current task shown inline (● Process overdue invoices) with emerald accent.
+  - Empty state: "No AI Employees yet" with "Start Onboarding" CTA (not just "hire").
+  - Updated the Hire modal: Finance Employee is now the first template (enabled), others show "Coming soon" badge and are disabled. Finance Employee creation passes `role: "finance_employee"` directly.
+- Simplified the Navigation (`src/components/app/shell.tsx`):
+  - **Workspace**: Dashboard, Employees, Decision Center, Tasks
+  - **Finance**: Receivables
+  - **Trust & Audit**: Audit Timeline, Governance, Knowledge Base
+  - **Settings**: Settings, Integrations, Administration, Billing
+  - Renamed "AI Employees" to "Employees" (simpler). Moved Audit Timeline above Governance. Consolidated Administration into Settings.
+- Fixed a bug in the demo API: invoice numbers are now timestamped (`INV-${timestamp}-001`) to avoid unique constraint conflicts with existing seed data.
+- Browser-verified end-to-end:
+  - **Demo mode**: clicked "Load Demo Company" on the auth page → instantly logged in as Demo User → dashboard shows all 8 business-impact KPIs + Kavya working on "Process overdue invoices" + 1 pending approval.
+  - **Onboarding wizard**: navigated through all 4 steps (Company → Choose Employee → Upload Invoices → Review) — all steps render correctly, sample data option works, CSV upload zone works, review summary is accurate.
+  - **Existing workspace (no regression)**: logged in as rohit@acmetrading.in → dashboard shows real business data (Money Pending ₹9.31 L, Invoices Processed 2, Customers Contacted 2, Hours Saved 3.0h, Automation Rate 75%, Human Approval Rate 100%, Avg Trust Score 86.8). Employee cards show Kavya with Trust 85, Automated 6, Recovered ₹0, current task, and all 4 employees with business metrics.
+- Lint clean throughout. No runtime errors in dev.log.
+
+Stage Summary:
+
+## What was built
+- **3 new API routes** (`/api/onboarding/setup`, `/api/onboarding/demo`, `/api/onboarding/state`) — all reuse existing architecture (Capability Engine, Profile Engine, Audit Chain, finance domain models).
+- **Onboarding Wizard** (4 steps, ~600 lines) — Company → Choose Employee → Upload Invoices → Review. Full-screen, with stepper, CSV upload + parsing, demo data option.
+- **Demo Mode** — one-click instant demo company creation from the auth page or onboarding wizard. Creates user + workspace + Finance Employee + 5 customers + 8 invoices + first task.
+- **Dashboard redesign** — 8 business-impact KPIs (Money Pending, Invoices Processed, Customers Contacted, Hours Saved, Automation Rate, Human Approval Rate, Avg Trust Score, Money Recovered). Onboarding CTA when workspace is empty. Empty states for all sections.
+- **Employee card redesign** — business metrics first (Trust, Automated, Recovered), not XP/token. Current task shown inline. Onboarding CTA when no employees.
+- **Navigation simplification** — 4 groups (Workspace, Finance, Trust & Audit, Settings).
+- **Post-signup redirect** — new users go to onboarding wizard; existing users go to dashboard.
+- **Landing page deep-link** — "Start free" defaults to signup mode.
+
+## Design principles upheld
+- ✅ Customer experiences value in <10 minutes (demo mode is instant; onboarding wizard is 4 quick steps)
+- ✅ Feels like hiring an employee, not configuring software (wizard flow, auto-generated first task)
+- ✅ Customer never presses "Create Task" (first task auto-generated from uploaded invoices)
+- ✅ Every empty screen replaced with actionable CTAs
+- ✅ Business metrics first on employee cards (not XP/token)
+- ✅ Reuses existing architecture (no duplication): Capability Engine, Profile Engine, Learning Engine, Audit Chain, finance domain, Decision Center, Career Timeline
+- ✅ No regressions (existing Acme Trading workspace works perfectly)
+
+## Customer Journey (verified)
+```
+Create Workspace (signup)
+  ↓
+Onboarding Wizard (4 steps)
+  ↓ Hire Finance Employee + Upload Invoices
+  ↓
+AI analyzes invoices (auto-imported, overdue detection)
+  ↓
+Employee starts working (first task auto-generated: "Process overdue invoices")
+  ↓
+Decision Center appears if needed (approval gate)
+  ↓
+Dashboard shows business impact (8 KPIs + employee status)
+```
+
+## Files created/modified
+- `src/app/api/onboarding/setup/route.ts` — NEW (onboarding setup endpoint)
+- `src/app/api/onboarding/demo/route.ts` — NEW (demo mode endpoint)
+- `src/app/api/onboarding/state/route.ts` — NEW (onboarding state check)
+- `src/components/app/pages/onboarding.tsx` — NEW (4-step wizard, ~600 lines)
+- `src/app/page.tsx` — added onboarding route case
+- `src/components/app/pages/auth.tsx` — post-signup redirect to onboarding + demo mode button + deep-link support
+- `src/components/app/pages/landing.tsx` — "Start free" deep-links to signup mode
+- `src/lib/app/api-client.ts` — added `api.onboarding` namespace
+- `src/app/api/dashboard/route.ts` — added businessImpact KPIs + needsOnboarding + enriched employee list + fixed variable order bug
+- `src/components/app/pages/dashboard.tsx` — full redesign with business-impact KPIs + empty states
+- `src/app/api/employees/route.ts` — enriched GET with profile data + current task + Finance Employee auto-setup on POST + removed duplicate appendAudit
+- `src/components/app/pages/employees.tsx` — redesigned cards (business metrics first) + updated hire modal + Finance Employee template
+- `src/components/app/shell.tsx` — simplified navigation (4 groups)
+
+## Verification status
+- ✅ Lint clean
+- ✅ Demo mode works (instant demo company creation + login)
+- ✅ Onboarding wizard works (all 4 steps render correctly)
+- ✅ Dashboard shows 8 business-impact KPIs
+- ✅ Employee cards show business metrics first (Trust, Automated, Recovered)
+- ✅ Empty states with CTAs (dashboard, employees, approvals, activity)
+- ✅ Navigation simplified
+- ✅ No regressions (existing Acme Trading workspace works perfectly with real data)
+- ✅ No runtime errors

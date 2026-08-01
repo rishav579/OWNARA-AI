@@ -41,7 +41,7 @@ export function LandingPage() {
               Sign in
             </button>
             <button
-              onClick={() => navigate("login")}
+              onClick={() => navigate("login?signup=1")}
               className="rounded-lg bg-emerald-500 px-3.5 py-1.5 text-sm font-semibold text-emerald-950 transition-colors hover:bg-emerald-400"
             >
               Start free
