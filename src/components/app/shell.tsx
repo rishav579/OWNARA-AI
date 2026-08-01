@@ -42,7 +42,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
       { path: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { path: "employees", label: "AI Employees", icon: Bot },
       { path: "tasks", label: "Tasks", icon: ListTodo },
-      { path: "approvals", label: "Approvals", icon: ShieldCheck, badge: 2 },
+      { path: "approvals", label: "Decision Center", icon: ShieldCheck, badge: 2 },
     ],
   },
   {

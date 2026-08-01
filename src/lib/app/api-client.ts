@@ -165,6 +165,11 @@ export const api = {
       apiFetch<any>(`/approvals/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
   },
 
+  // Execution Contracts
+  contracts: {
+    get: (id: string) => apiFetch<any>(`/contracts/${id}`),
+  },
+
   // Knowledge
   knowledge: {
     list: (params?: { status?: string; employeeId?: string }) => {
