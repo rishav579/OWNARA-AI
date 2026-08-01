@@ -24,6 +24,9 @@ async function main() {
   await db.task.deleteMany();
   // Execution contracts
   await db.executionContract.deleteMany();
+  // Capabilities
+  await db.employeeCapability.deleteMany();
+  await db.capability.deleteMany();
   // Finance tables
   await db.followUpHistory.deleteMany();
   await db.collectionCase.deleteMany();
@@ -479,6 +482,15 @@ async function main() {
     }
   }
   console.log("  ✓ Created 4 departments");
+
+  // ─── Capabilities ────────────────────────────────────────────────────────
+  const { seedCapabilities, grantFinanceCapabilities, FINANCE_CAPABILITIES } = await import("../src/lib/capabilities/engine");
+  await seedCapabilities();
+  console.log(`  ✓ Seeded ${FINANCE_CAPABILITIES.length + 3} capabilities (finance + restricted)`);
+
+  // Grant finance capabilities to Kavya (the Finance Employee)
+  await grantFinanceCapabilities(kavya.id, rohit.id);
+  console.log(`  ✓ Granted ${FINANCE_CAPABILITIES.length} capabilities to Kavya (Finance Employee)`);
 
   console.log("\n✅ Clean V1 seed complete!");
   console.log("   Login: rohit@acmetrading.in / demo-password");

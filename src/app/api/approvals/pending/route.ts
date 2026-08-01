@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { requireWorkspace } from "@/lib/auth";
 import { success, handleApiError } from "@/lib/api-response";
+import { checkCapability } from "@/lib/capabilities/engine";
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,9 +14,8 @@ export async function GET(request: NextRequest) {
       include: { employee: true, task: true },
     });
 
-    // For each approval, find the contract from the task's approval_gate step output
+    // For each approval, find the contract and check capability
     const data = await Promise.all(approvals.map(async (a) => {
-      // Find the approval_gate step for this task that has contract data in its output
       const gateStep = await db.taskStep.findFirst({
         where: {
           taskId: a.taskId,
@@ -60,6 +60,9 @@ export async function GET(request: NextRequest) {
         } catch {}
       }
 
+      // Check capability status for this approval's tool
+      const capCheck = await checkCapability(a.employeeId, a.tool);
+
       const proposedAction = JSON.parse(a.proposedAction);
 
       return {
@@ -82,8 +85,14 @@ export async function GET(request: NextRequest) {
         policyId: a.policyId,
         createdAt: a.createdAt,
         timeoutAt: a.timeoutAt,
-        // Execution Contract data (from the step output)
         contract: contractData,
+        // Capability status
+        capability: {
+          required: capCheck.capabilityCode,
+          name: capCheck.capabilityName,
+          granted: capCheck.allowed,
+          reason: capCheck.reason,
+        },
       };
     }));
 

@@ -170,6 +170,16 @@ export const api = {
     get: (id: string) => apiFetch<any>(`/contracts/${id}`),
   },
 
+  // Capabilities
+  capabilities: {
+    list: () => apiFetch<any[]>("/capabilities"),
+    listForEmployee: (employeeId: string) => apiFetch<any[]>(`/employees/${employeeId}/capabilities`),
+    grant: (employeeId: string, capabilityCode: string) =>
+      apiFetch<any>(`/employees/${employeeId}/capabilities`, { method: "POST", body: JSON.stringify({ capabilityCode }) }),
+    revoke: (employeeId: string, capabilityCode: string) =>
+      apiFetch<any>(`/employees/${employeeId}/capabilities?code=${capabilityCode}`, { method: "DELETE" }),
+  },
+
   // Knowledge
   knowledge: {
     list: (params?: { status?: string; employeeId?: string }) => {

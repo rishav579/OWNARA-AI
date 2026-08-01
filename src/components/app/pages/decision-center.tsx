@@ -461,6 +461,40 @@ function DecisionDetail({
         </div>
       </div>
 
+      {/* ─── Capability Status ─── */}
+      {approval.capability && (
+        <div className="border-b border-zinc-800 p-5">
+          <div className="mb-3 flex items-center gap-1.5 text-[0.65rem] font-semibold uppercase tracking-wider text-zinc-500">
+            <ShieldCheck className="h-3.5 w-3.5" /> Required Capability
+          </div>
+          <div className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-950/50 p-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-sm text-zinc-200">{approval.capability.required}</span>
+                {approval.capability.granted ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[0.6rem] font-bold text-emerald-400">
+                    <Check className="h-2.5 w-2.5" /> GRANTED
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-red-500/15 px-2 py-0.5 text-[0.6rem] font-bold text-red-400">
+                    <X className="h-2.5 w-2.5" /> MISSING
+                  </span>
+                )}
+              </div>
+              <div className="mt-1 text-xs text-zinc-500">{approval.capability.name}</div>
+              {!approval.capability.granted && (
+                <div className="mt-2 flex items-start gap-1.5 rounded border border-red-500/20 bg-red-500/5 p-2">
+                  <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-red-400" />
+                  <p className="text-[0.7rem] leading-relaxed text-red-300">
+                    {approval.capability.reason}. Execution is disabled until this capability is granted.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ─── 9. Rejected Alternatives ─── */}
       {rejectedAlternatives.length > 0 && (
         <div className="border-b border-zinc-800 p-5">
@@ -555,14 +589,14 @@ function DecisionDetail({
           <div className="flex flex-col gap-2 sm:flex-row">
             <button
               onClick={onApprove}
-              disabled={isApproving || isRejecting}
+              disabled={isApproving || isRejecting || (approval.capability && !approval.capability.granted)}
               className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-500 py-2.5 text-sm font-semibold text-emerald-950 transition-colors hover:bg-emerald-400 disabled:opacity-50"
             >
               <Check className="h-4 w-4" /> {isApproving ? "Approving…" : "Approve"}
             </button>
             <button
               onClick={onModify}
-              disabled={isApproving || isRejecting}
+              disabled={isApproving || isRejecting || (approval.capability && !approval.capability.granted)}
               className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-zinc-700 py-2.5 text-sm font-semibold text-zinc-200 transition-colors hover:bg-zinc-800 disabled:opacity-50"
             >
               <Edit3 className="h-4 w-4" /> Modify

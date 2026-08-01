@@ -149,6 +149,7 @@ model Employee {
   documents     KnowledgeDocument[]
   toolPermissions EmployeeToolPermission[]
   trustScores  TrustScore[]
+  capabilities EmployeeCapability[]
 }
 
 model Tool {
@@ -641,4 +642,34 @@ model ExecutionContract {
   @@index([taskId])
   @@index([employeeId])
   @@index([contractHash])
+}
+
+// ─── Capability Engine ──────────────────────────────────────────────────────
+// Enterprise-grade least-privilege authorization. Every tool execution
+// must pass through capability verification before execution.
+
+model Capability {
+  id          String   @id @default(cuid())
+  code        String   @unique // e.g., "invoice.read", "reminder.send"
+  name        String
+  description String
+  category    String   // finance | communication | data_access | system
+  riskLevel   String   @default("low") // low | medium | high | critical
+  createdAt   DateTime @default(now())
+
+  employees EmployeeCapability[]
+}
+
+model EmployeeCapability {
+  id            String   @id @default(cuid())
+  employeeId    String
+  capabilityId  String
+  grantedBy     String
+  createdAt     DateTime @default(now())
+
+  employee    Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  capability  Capability @relation(fields: [capabilityId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, capabilityId])
+  @@index([employeeId])
 }

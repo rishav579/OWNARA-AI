@@ -29,6 +29,7 @@ import { findInvoicesNeedingAttention } from "@/lib/finance/domain";
 import { updateMemoryAfterTask, recordApprovalFeedback, extractFinanceMemories } from "@/lib/memory/service";
 import { getLLMGateway } from "@/lib/llm";
 import { generateContract, approveContract, rejectContract, linkApprovalToContract, type ContractInput } from "@/lib/contracts/engine";
+import { checkCapability, recordCapabilityDenial } from "@/lib/capabilities/engine";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -481,6 +482,46 @@ async function executeToolStep(task: any, step: any, employee: any): Promise<Exe
     return await executeReasoningStep(task, step, employee);
   }
 
+  // ─── Capability Verification ──────────────────────────────────────────────
+  // Before ANY tool execution, verify the employee has the required capability.
+  // If denied: stop execution, write audit event, fail the step.
+  const capCheck = await checkCapability(employee.id, toolName);
+  if (!capCheck.allowed) {
+    await db.$transaction(async (tx) => {
+      // Mark step as failed
+      await tx.taskStep.update({
+        where: { id: step.id },
+        data: {
+          status: "failed",
+          output: JSON.stringify({
+            error: "CAPABILITY_DENIED",
+            requiredCapability: capCheck.capabilityCode,
+            capabilityName: capCheck.capabilityName,
+            reason: capCheck.reason,
+          }),
+          completedAt: new Date(),
+        },
+      });
+
+      // Fail the task
+      await tx.task.update({
+        where: { id: task.id },
+        data: { status: "failed" },
+      });
+
+      // Update employee state
+      await tx.employee.update({
+        where: { id: employee.id },
+        data: { state: "idle" },
+      });
+
+      // Record the denial in the audit chain
+      await recordCapabilityDenial(tx, task.workspaceId, employee.id, employee.name, toolName, capCheck);
+    });
+
+    return { action: "failed", message: `Capability denied: ${capCheck.capabilityCode} required for ${toolName}` };
+  }
+
   // Check if this is a finance tool
   const financeTools = ["generate_reminder", "send_reminder", "update_collection_case"];
   const isFinanceTool = financeTools.includes(toolName);
@@ -542,6 +583,38 @@ async function executeToolStep(task: any, step: any, employee: any): Promise<Exe
 async function executeApprovalGateStep(task: any, step: any, employee: any): Promise<ExecutionResult> {
   const input = JSON.parse(step.input);
   const toolName = input.tool;
+
+  // ─── Capability Verification (pre-approval) ───────────────────────────────
+  // Before creating an approval gate, verify the employee has the capability.
+  // If denied: stop execution, write audit event, fail the step.
+  const capCheck = await checkCapability(employee.id, toolName);
+  if (!capCheck.allowed) {
+    await db.$transaction(async (tx) => {
+      await tx.taskStep.update({
+        where: { id: step.id },
+        data: {
+          status: "failed",
+          output: JSON.stringify({
+            error: "CAPABILITY_DENIED",
+            requiredCapability: capCheck.capabilityCode,
+            capabilityName: capCheck.capabilityName,
+            reason: capCheck.reason,
+          }),
+          completedAt: new Date(),
+        },
+      });
+      await tx.task.update({
+        where: { id: task.id },
+        data: { status: "failed" },
+      });
+      await tx.employee.update({
+        where: { id: employee.id },
+        data: { state: "idle" },
+      });
+      await recordCapabilityDenial(tx, task.workspaceId, employee.id, employee.name, toolName, capCheck);
+    });
+    return { action: "failed", message: `Capability denied: ${capCheck.capabilityCode} required for ${toolName}` };
+  }
 
   // Check if an approval already exists for this task
   const existingApproval = await db.approval.findFirst({
@@ -821,6 +894,26 @@ export async function resumeAfterApproval(
   const gateStep = task.steps.find(
     (s) => s.stepType === "approval_gate" && s.status === "pending"
   );
+
+  // ─── Capability Verification (post-approval) ──────────────────────────────
+  // Even after approval, verify the employee still has the capability.
+  // Capabilities can be revoked between approval and execution.
+  const postApprovalCapCheck = await checkCapability(task.employeeId, approval.tool);
+  if (!postApprovalCapCheck.allowed) {
+    // Capability was revoked after approval — fail the task
+    await db.$transaction(async (tx) => {
+      await tx.task.update({
+        where: { id: taskId },
+        data: { status: "failed" },
+      });
+      await tx.employee.update({
+        where: { id: task.employeeId },
+        data: { state: "idle", pendingApprovals: { decrement: 1 } },
+      });
+      await recordCapabilityDenial(tx, task.workspaceId, task.employeeId, task.employee.name, approval.tool, postApprovalCapCheck);
+    });
+    return;
+  }
 
   // Execute the approved tool BEFORE the transaction (it may do DB operations)
   const proposedAction = JSON.parse(approval.proposedAction);
