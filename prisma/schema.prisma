@@ -60,6 +60,10 @@ model Workspace {
   achievements        Achievement[]
   employeeAchievements EmployeeAchievement[]
   // ─── end EMP-002 ───
+  // ─── AI Employee Communication Engine (COMM-001) ───
+  communications       EmployeeCommunication[]
+  communicationThreads CommunicationThread[]
+  // ─── end COMM-001 ───
   integrations       Integration[]
   invoices           Invoice[]
   documents          KnowledgeDocument[]
@@ -1015,4 +1019,167 @@ model EmployeeAchievement {
   @@unique([employeeId, achievementId])
   @@index([employeeId, unlockedAt])
   @@index([workspaceId, unlockedAt])
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// COMM-001 — AI Employee Communication Engine
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// The universal messaging layer for every AI Employee in BIHARI AI.
+// Allows AI Employees to communicate with:
+//   - Humans (managers, owners)
+//   - Other AI Employees (employee-to-employee coordination)
+//   - Future external systems (via webhook/API adapters)
+//
+// This is NOT a chat system. It is structured business communication.
+// Every message has a type, priority, business context, explanation,
+// evidence, confidence, recommended action, and expected outcome.
+//
+// Design principles:
+//   1. Humans never receive raw AI reasoning — the engine transforms
+//      internal reasoning into professional business language.
+//   2. Every communication is explainable (why, evidence, confidence, impact).
+//   3. Threaded conversations with replies, acknowledgements, resolution.
+//   4. Deterministic scoring to avoid spam, merge similar alerts, throttle.
+//   5. Every communication becomes permanent memory (Learning Engine).
+//   6. Every communication generates audit events (Audit Chain).
+//   7. Generic and domain-independent — works for Finance, HR, Procurement,
+//      Back Office, Sales Ops, Compliance, Legal, IT, Customer Support.
+//
+// All models are workspace-scoped. IDs are cuid().
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ─── Communication Thread ────────────────────────────────────────────────────
+// Groups related messages into a conversation. A thread starts with an
+// initial message and can have replies, follow-ups, and escalations.
+model CommunicationThread {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  subject         String
+
+  // Who started the thread
+  startedByEmployeeId String?
+  startedByUserId     String?
+
+  // Related entities (all optional — threads can span multiple)
+  relatedTaskId      String?
+  relatedCustomerId  String?
+  relatedInvoiceId   String?
+
+  // Thread status
+  status          String   @default("active")  // active | waiting | resolved | escalated
+
+  // Priority (highest among messages)
+  priority        String   @default("medium")  // low | medium | high | critical
+
+  // Communication type (the thread's primary type)
+  communicationType String @default("notification")
+
+  // Scoring (deterministic — computed from messages)
+  messageCount    Int      @default(0)
+  participantCount Int     @default(0)
+
+  // Timestamps
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  resolvedAt      DateTime?
+  lastMessageAt   DateTime?
+
+  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+  messages        EmployeeCommunication[]
+
+  @@index([workspaceId, status, updatedAt])
+  @@index([workspaceId, priority])
+  @@index([startedByEmployeeId])
+}
+
+// ─── Employee Communication (the message) ────────────────────────────────────
+// A single structured business communication from an AI Employee (or system).
+// This is the core entity — every message the engine produces is stored here.
+model EmployeeCommunication {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  threadId        String?
+
+  // ─── Sender ──────────────────────────────────────────────────────────────
+  senderEmployeeId String?   // null if sent by system/human
+  senderUserId     String?   // null if sent by employee
+  senderName       String    // cached for quick display
+  senderType       String    // employee | user | system
+
+  // ─── Receiver ────────────────────────────────────────────────────────────
+  receiverType     String    // human | employee | system | all_humans | all_employees
+  receiverEmployeeId String? // null if receiver is human/system/all
+  receiverUserId   String?   // null if receiver is employee/system/all
+  receiverName     String    // cached for quick display
+
+  // ─── Communication metadata ──────────────────────────────────────────────
+  communicationType String   // notification | recommendation | escalation |
+                             // clarification_request | information_request |
+                             // approval_request | coordination_message |
+                             // status_update | completion_report | warning |
+                             // critical_alert
+  priority         String    @default("medium")  // low | medium | high | critical
+
+  // ─── Content (transformed into professional business language) ───────────
+  subject          String    // short, professional subject line
+  summary          String    // 1-2 sentence executive summary
+  explanation      String    // full professional explanation (the "body")
+
+  // ─── Business context (what this communication is about) ─────────────────
+  relatedTaskId    String?
+  relatedContractId String?
+  relatedCustomerId String?
+  relatedInvoiceId String?
+  relatedApprovalId String?
+  relatedReminderId String?
+
+  // ─── Explainability (why this message exists) ────────────────────────────
+  whyExists        String    // why this message was sent
+  evidence         String    @default("[]")  // JSON array of {source, fact, weight}
+  confidence       Float     @default(0.85)  // 0-1
+  businessImpact   String    // human-readable business impact
+  recommendedAction String   // what the receiver should do
+  expectedOutcome  String    // what's expected to happen if action is taken
+
+  // ─── Attachments + actions ───────────────────────────────────────────────
+  attachments      String    @default("[]")  // JSON array of {type, label, ref}
+  actionButtons    String    @default("[]")  // JSON array of {label, action, style}
+
+  // ─── Status ──────────────────────────────────────────────────────────────
+  status           String    @default("sent")  // sent | delivered | read | acknowledged | resolved | ignored | escalated
+
+  // ─── Scoring (deterministic — computed by the engine) ────────────────────
+  qualityScore     Int       @default(0)  // 0-100, deterministic
+  isDuplicate      Boolean   @default(false)
+  duplicateOfId    String?   // if this is a duplicate, points to the original
+  isThrottled      Boolean   @default(false)
+  mergedIntoId     String?   // if merged, points to the merged message
+
+  // ─── Timestamps ──────────────────────────────────────────────────────────
+  createdAt        DateTime @default(now())
+  readAt           DateTime?
+  acknowledgedAt   DateTime?
+  resolvedAt       DateTime?
+  escalatedAt      DateTime?
+
+  // ─── Response tracking (for Learning Engine) ─────────────────────────────
+  responseTimeMs   Int?   // time from sent → first response (for effectiveness scoring)
+  responseAction   String?  // approve | reject | acknowledge | ignore | resolve | escalate
+
+  workspace        Workspace @relation(fields: [workspaceId], references: [id])
+  thread           CommunicationThread? @relation(fields: [threadId], references: [id])
+  parentCommunication EmployeeCommunication? @relation("CommunicationReplies", fields: [parentCommunicationId], references: [id])
+  parentCommunicationId String?
+  replies          EmployeeCommunication[] @relation("CommunicationReplies")
+  mergedInto       EmployeeCommunication? @relation("CommunicationMerges", fields: [mergedIntoId], references: [id])
+  mergedMessages   EmployeeCommunication[] @relation("CommunicationMerges")
+
+  @@index([workspaceId, status, createdAt])
+  @@index([workspaceId, receiverType, receiverEmployeeId, status])
+  @@index([workspaceId, receiverType, receiverUserId, status])
+  @@index([workspaceId, senderEmployeeId, createdAt])
+  @@index([workspaceId, communicationType, priority])
+  @@index([workspaceId, createdAt])
+  @@index([threadId, createdAt])
 }

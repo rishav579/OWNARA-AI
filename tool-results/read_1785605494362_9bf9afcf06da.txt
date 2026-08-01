@@ -1,0 +1,1019 @@
+     1→generator client {
+     2→  provider = "prisma-client-js"
+     3→}
+     4→
+     5→datasource db {
+     6→  provider = "sqlite"
+     7→  url      = env("DATABASE_URL")
+     8→}
+     9→
+    10→model User {
+    11→  id               String              @id @default(cuid())
+    12→  email            String              @unique
+    13→  passwordHash     String
+    14→  name             String
+    15→  emailVerifiedAt  DateTime?
+    16→  status           String              @default("active")
+    17→  avatarColor      String              @default("#10b981")
+    18→  createdAt        DateTime            @default(now())
+    19→  updatedAt        DateTime            @updatedAt
+    20→  deactivatedAt    DateTime?
+    21→  approvals        Approval[]          @relation("ApprovalDecidedBy")
+    22→  employees        Employee[]          @relation("EmployeeCreatedBy")
+    23→  knowledgeDocs    KnowledgeDocument[]
+    24→  notifications    Notification[]
+    25→  sessions         Session[]
+    26→  tasks            Task[]              @relation("TaskAssignedBy")
+    27→  ownedWorkspaces  Workspace[]         @relation("WorkspaceOwner")
+    28→  workspaceMembers WorkspaceMember[]
+    29→}
+    30→
+    31→model Workspace {
+    32→  id                 String              @id @default(cuid())
+    33→  name               String
+    34→  slug               String              @unique
+    35→  ownerUserId        String
+    36→  defaultRegion      String              @default("in-central")
+    37→  status             String              @default("active")
+    38→  createdAt          DateTime            @default(now())
+    39→  updatedAt          DateTime            @updatedAt
+    40→  suspendedAt        DateTime?
+    41→  approvals          Approval[]
+    42→  approvalRules      ApprovalRule[]
+    43→  auditLogs          AuditLog[]
+    44→  collectionCases    CollectionCase[]
+    45→  customers          Customer[]
+    46→  departments        Department[]
+    47→  employees          Employee[]
+    48→  employeeMemories   EmployeeMemory[]
+    49→  employeeProfiles   EmployeeProfile[]
+    50→  employeeSkills     EmployeeSkill[]
+    51→  executionContracts ExecutionContract[]
+    52→  // ─── Autonomous Learning & Skill Evolution Engine (EMP-002) ───
+    53→  outcomeEvaluations  OutcomeEvaluation[]
+    54→  skillReinforcements SkillReinforcement[]
+    55→  learningPatterns    LearningPattern[]
+    56→  employeeWeaknesses  EmployeeWeakness[]
+    57→  employeeStrengths   EmployeeStrength[]
+    58→  businessOutcomes    BusinessOutcome[]
+    59→  careerTimeline      CareerTimelineEntry[]
+    60→  achievements        Achievement[]
+    61→  employeeAchievements EmployeeAchievement[]
+    62→  // ─── end EMP-002 ───
+    63→  integrations       Integration[]
+    64→  invoices           Invoice[]
+    65→  documents          KnowledgeDocument[]
+    66→  llmUsage           LlmUsage[]
+    67→  notifications      Notification[]
+    68→  payments           Payment[]
+    69→  policies           Policy[]
+    70→  reminders          Reminder[]
+    71→  tasks              Task[]
+    72→  trustScores        TrustScore[]
+    73→  owner              User                @relation("WorkspaceOwner", fields: [ownerUserId], references: [id])
+    74→  members            WorkspaceMember[]
+    75→}
+    76→
+    77→model WorkspaceMember {
+    78→  id          String    @id @default(cuid())
+    79→  workspaceId String
+    80→  userId      String
+    81→  role        String    @default("member")
+    82→  status      String    @default("pending")
+    83→  invitedAt   DateTime  @default(now())
+    84→  joinedAt    DateTime?
+    85→  removedAt   DateTime?
+    86→  user        User      @relation(fields: [userId], references: [id])
+    87→  workspace   Workspace @relation(fields: [workspaceId], references: [id])
+    88→
+    89→  @@unique([workspaceId, userId])
+    90→}
+    91→
+    92→model Session {
+    93→  id        String    @id @default(cuid())
+    94→  userId    String
+    95→  tokenHash String    @unique
+    96→  ipAddress String?
+    97→  userAgent String?
+    98→  expiresAt DateTime
+    99→  createdAt DateTime  @default(now())
+   100→  revokedAt DateTime?
+   101→  user      User      @relation(fields: [userId], references: [id])
+   102→}
+   103→
+   104→model EmployeeTemplate {
+   105→  id                    String     @id @default(cuid())
+   106→  name                  String
+   107→  role                  String     @unique
+   108→  description           String
+   109→  defaultJobDescription String
+   110→  defaultApprovalRules  String     @default("{}")
+   111→  defaultToolNames      String     @default("[]")
+   112→  version               Int        @default(1)
+   113→  isActive              Boolean    @default(true)
+   114→  createdAt             DateTime   @default(now())
+   115→  updatedAt             DateTime   @updatedAt
+   116→  employees             Employee[]
+   117→}
+   118→
+   119→model Employee {
+   120→  id               String                   @id @default(cuid())
+   121→  workspaceId      String
+   122→  name             String
+   123→  role             String
+   124→  templateId       String?
+   125→  status           String                   @default("draft")
+   126→  state            String                   @default("idle")
+   127→  priorState       String?
+   128→  jobDescription   String
+   129→  boundaries       String                   @default("[]")
+   130→  approvalRules    String                   @default("{}")
+   131→  tokenUsage       Int                      @default(0)
+   132→  tokenCap         Int                      @default(5000000)
+   133→  tools            String                   @default("[]")
+   134→  pendingApprovals Int                      @default(0)
+   135→  taskCount        Int                      @default(0)
+   136→  completedTasks   Int                      @default(0)
+   137→  createdBy        String
+   138→  createdAt        DateTime                 @default(now())
+   139→  updatedAt        DateTime                 @updatedAt
+   140→  activatedAt      DateTime?
+   141→  retiredAt        DateTime?
+   142→  approvals        Approval[]
+   143→  creator          User                     @relation("EmployeeCreatedBy", fields: [createdBy], references: [id])
+   144→  template         EmployeeTemplate?        @relation(fields: [templateId], references: [id])
+   145→  workspace        Workspace                @relation(fields: [workspaceId], references: [id])
+   146→  capabilities     EmployeeCapability[]
+   147→  toolPermissions  EmployeeToolPermission[]
+   148→  documents        KnowledgeDocument[]
+   149→  tasks            Task[]
+   150→  trustScores      TrustScore[]
+   151→}
+   152→
+   153→model Tool {
+   154→  id                 String                   @id @default(cuid())
+   155→  name               String                   @unique
+   156→  displayName        String
+   157→  description        String
+   158→  defaultCriticality String                   @default("non_critical")
+   159→  inputSchema        String                   @default("{}")
+   160→  outputSchema       String                   @default("{}")
+   161→  version            Int                      @default(1)
+   162→  isActive           Boolean                  @default(true)
+   163→  createdAt          DateTime                 @default(now())
+   164→  updatedAt          DateTime                 @updatedAt
+   165→  permissions        EmployeeToolPermission[]
+   166→}
+   167→
+   168→model EmployeeToolPermission {
+   169→  id                  String    @id @default(cuid())
+   170→  employeeId          String
+   171→  toolId              String
+   172→  criticalityOverride String?
+   173→  grantedBy           String
+   174→  grantedAt           DateTime  @default(now())
+   175→  revokedAt           DateTime?
+   176→  tool                Tool      @relation(fields: [toolId], references: [id])
+   177→  employee            Employee  @relation(fields: [employeeId], references: [id])
+   178→}
+   179→
+   180→model Task {
+   181→  id          String     @id @default(cuid())
+   182→  workspaceId String
+   183→  employeeId  String
+   184→  assignedBy  String
+   185→  title       String
+   186→  description String
+   187→  status      String     @default("assigned")
+   188→  priority    String     @default("medium")
+   189→  stepCount   Int        @default(0)
+   190→  stepCap     Int        @default(20)
+   191→  tokenUsage  Int        @default(0)
+   192→  tokenCap    Int        @default(100000)
+   193→  startedAt   DateTime?
+   194→  completedAt DateTime?
+   195→  createdAt   DateTime   @default(now())
+   196→  updatedAt   DateTime   @updatedAt
+   197→  approvals   Approval[]
+   198→  assigner    User       @relation("TaskAssignedBy", fields: [assignedBy], references: [id])
+   199→  employee    Employee   @relation(fields: [employeeId], references: [id])
+   200→  workspace   Workspace  @relation(fields: [workspaceId], references: [id])
+   201→  steps       TaskStep[]
+   202→}
+   203→
+   204→model TaskStep {
+   205→  id            String    @id @default(cuid())
+   206→  taskId        String
+   207→  stepNumber    Int
+   208→  stepType      String
+   209→  input         String    @default("{}")
+   210→  reasoning     String?
+   211→  output        String?
+   212→  status        String    @default("pending")
+   213→  tokens        Int       @default(0)
+   214→  durationMs    Int       @default(0)
+   215→  startedAt     DateTime?
+   216→  completedAt   DateTime?
+   217→  createdAt     DateTime  @default(now())
+   218→  confidence    Float?
+   219→  knowledgeRefs String?
+   220→  policyRefs    String?
+   221→  task          Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+   222→}
+   223→
+   224→model Approval {
+   225→  id              String    @id @default(cuid())
+   226→  workspaceId     String
+   227→  taskId          String
+   228→  employeeId      String
+   229→  tool            String
+   230→  toolDisplayName String
+   231→  proposedAction  String    @default("{}")
+   232→  originalAction  String?
+   233→  status          String    @default("pending")
+   234→  criticality     String    @default("critical")
+   235→  riskScore       Int       @default(50)
+   236→  confidence      Float     @default(0.8)
+   237→  businessImpact  String?
+   238→  policyTrigger   String?
+   239→  policyId        String?
+   240→  timeoutAt       DateTime?
+   241→  decidedBy       String?
+   242→  decidedAt       DateTime?
+   243→  decision        String?
+   244→  modifiedAction  String?
+   245→  reason          String?
+   246→  createdAt       DateTime  @default(now())
+   247→  decider         User?     @relation("ApprovalDecidedBy", fields: [decidedBy], references: [id])
+   248→  employee        Employee  @relation(fields: [employeeId], references: [id])
+   249→  task            Task      @relation(fields: [taskId], references: [id])
+   250→  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+   251→}
+   252→
+   253→model KnowledgeDocument {
+   254→  id          String    @id @default(cuid())
+   255→  workspaceId String
+   256→  employeeId  String?
+   257→  filename    String
+   258→  contentType String
+   259→  sizeBytes   Int
+   260→  storageKey  String
+   261→  status      String    @default("processing")
+   262→  chunkCount  Int       @default(0)
+   263→  uploadedBy  String
+   264→  createdAt   DateTime  @default(now())
+   265→  updatedAt   DateTime  @updatedAt
+   266→  removedAt   DateTime?
+   267→  uploader    User      @relation(fields: [uploadedBy], references: [id])
+   268→  employee    Employee? @relation(fields: [employeeId], references: [id])
+   269→  workspace   Workspace @relation(fields: [workspaceId], references: [id])
+   270→}
+   271→
+   272→model AuditLog {
+   273→  id             String    @id @default(cuid())
+   274→  workspaceId    String
+   275→  sequenceNumber Int
+   276→  entryType      String
+   277→  actorType      String
+   278→  actorId        String?
+   279→  actorName      String
+   280→  targetType     String?
+   281→  targetId       String?
+   282→  payload        String    @default("{}")
+   283→  previousHash   String?
+   284→  entryHash      String
+   285→  createdAt      DateTime  @default(now())
+   286→  workspace      Workspace @relation(fields: [workspaceId], references: [id])
+   287→
+   288→  @@unique([workspaceId, sequenceNumber])
+   289→}
+   290→
+   291→model Notification {
+   292→  id            String    @id @default(cuid())
+   293→  workspaceId   String
+   294→  userId        String
+   295→  type          String
+   296→  title         String
+   297→  body          String
+   298→  referenceType String?
+   299→  referenceId   String?
+   300→  channel       String    @default("in_app")
+   301→  status        String    @default("pending")
+   302→  readAt        DateTime?
+   303→  createdAt     DateTime  @default(now())
+   304→  user          User      @relation(fields: [userId], references: [id])
+   305→  workspace     Workspace @relation(fields: [workspaceId], references: [id])
+   306→}
+   307→
+   308→model LlmUsage {
+   309→  id               String    @id @default(cuid())
+   310→  workspaceId      String
+   311→  taskId           String?
+   312→  employeeId       String?
+   313→  provider         String    @default("openai")
+   314→  model            String
+   315→  promptTokens     Int       @default(0)
+   316→  completionTokens Int       @default(0)
+   317→  totalTokens      Int       @default(0)
+   318→  costCents        Int       @default(0)
+   319→  latencyMs        Int       @default(0)
+   320→  status           String    @default("success")
+   321→  errorMessage     String?
+   322→  createdAt        DateTime  @default(now())
+   323→  workspace        Workspace @relation(fields: [workspaceId], references: [id])
+   324→}
+   325→
+   326→model Policy {
+   327→  id          String    @id @default(cuid())
+   328→  workspaceId String
+   329→  name        String
+   330→  code        String
+   331→  category    String
+   332→  description String
+   333→  rules       String    @default("[]")
+   334→  severity    String    @default("high")
+   335→  status      String    @default("active")
+   336→  appliesTo   String    @default("all")
+   337→  createdBy   String
+   338→  createdAt   DateTime  @default(now())
+   339→  updatedAt   DateTime  @updatedAt
+   340→  workspace   Workspace @relation(fields: [workspaceId], references: [id])
+   341→}
+   342→
+   343→model ApprovalRule {
+   344→  id           String    @id @default(cuid())
+   345→  workspaceId  String
+   346→  name         String
+   347→  trigger      String
+   348→  condition    String
+   349→  action       String    @default("require_approval")
+   350→  approverRole String    @default("owner")
+   351→  policyId     String?
+   352→  priority     Int       @default(100)
+   353→  status       String    @default("active")
+   354→  createdAt    DateTime  @default(now())
+   355→  workspace    Workspace @relation(fields: [workspaceId], references: [id])
+   356→}
+   357→
+   358→model TrustScore {
+   359→  id                  String    @id @default(cuid())
+   360→  workspaceId         String
+   361→  employeeId          String
+   362→  successRate         Float     @default(1.0)
+   363→  approvalRate        Float     @default(1.0)
+   364→  humanCorrections    Int       @default(0)
+   365→  policyViolations    Int       @default(0)
+   366→  tasksCompleted      Int       @default(0)
+   367→  moneyRecoveredCents Int       @default(0)
+   368→  accuracyScore       Float     @default(1.0)
+   369→  overallScore        Float     @default(85.0)
+   370→  trend               String    @default("stable")
+   371→  trendDelta          Float     @default(0.0)
+   372→  computedAt          DateTime  @default(now())
+   373→  employee            Employee  @relation(fields: [employeeId], references: [id])
+   374→  workspace           Workspace @relation(fields: [workspaceId], references: [id])
+   375→}
+   376→
+   377→model Department {
+   378→  id          String    @id @default(cuid())
+   379→  workspaceId String
+   380→  name        String
+   381→  description String?
+   382→  headUserId  String?
+   383→  createdAt   DateTime  @default(now())
+   384→  workspace   Workspace @relation(fields: [workspaceId], references: [id])
+   385→}
+   386→
+   387→model Integration {
+   388→  id          String    @id @default(cuid())
+   389→  workspaceId String
+   390→  provider    String    @unique
+   391→  displayName String
+   392→  category    String
+   393→  description String
+   394→  status      String    @default("available")
+   395→  logoColor   String
+   396→  connectedAt DateTime?
+   397→  connectedBy String?
+   398→  createdAt   DateTime  @default(now())
+   399→  workspace   Workspace @relation(fields: [workspaceId], references: [id])
+   400→}
+   401→
+   402→model Customer {
+   403→  id              String           @id @default(cuid())
+   404→  workspaceId     String
+   405→  name            String
+   406→  email           String
+   407→  phone           String?
+   408→  gstin           String?
+   409→  billingAddress  String?
+   410→  paymentTerms    Int              @default(30)
+   411→  creditLimit     Int              @default(0)
+   412→  status          String           @default("active")
+   413→  riskLevel       String           @default("medium")
+   414→  notes           String?
+   415→  createdAt       DateTime         @default(now())
+   416→  updatedAt       DateTime         @updatedAt
+   417→  collectionCases CollectionCase[]
+   418→  workspace       Workspace        @relation(fields: [workspaceId], references: [id])
+   419→  invoices        Invoice[]
+   420→  payments        Payment[]
+   421→  reminders       Reminder[]
+   422→}
+   423→
+   424→model Invoice {
+   425→  id              String           @id @default(cuid())
+   426→  workspaceId     String
+   427→  customerId      String
+   428→  invoiceNumber   String           @unique
+   429→  issueDate       DateTime
+   430→  dueDate         DateTime
+   431→  subtotal        Int
+   432→  tax             Int              @default(0)
+   433→  total           Int
+   434→  amountPaid      Int              @default(0)
+   435→  outstanding     Int              @default(0)
+   436→  status          String           @default("unpaid")
+   437→  paymentTerms    Int              @default(30)
+   438→  notes           String?
+   439→  createdBy       String
+   440→  createdAt       DateTime         @default(now())
+   441→  updatedAt       DateTime         @updatedAt
+   442→  collectionCases CollectionCase[]
+   443→  customer        Customer         @relation(fields: [customerId], references: [id])
+   444→  workspace       Workspace        @relation(fields: [workspaceId], references: [id])
+   445→  payments        Payment[]
+   446→  reminders       Reminder[]
+   447→}
+   448→
+   449→model Payment {
+   450→  id          String    @id @default(cuid())
+   451→  workspaceId String
+   452→  invoiceId   String
+   453→  customerId  String
+   454→  amount      Int
+   455→  paymentDate DateTime
+   456→  method      String    @default("bank_transfer")
+   457→  reference   String?
+   458→  status      String    @default("completed")
+   459→  notes       String?
+   460→  recordedBy  String?
+   461→  createdAt   DateTime  @default(now())
+   462→  customer    Customer  @relation(fields: [customerId], references: [id])
+   463→  invoice     Invoice   @relation(fields: [invoiceId], references: [id])
+   464→  workspace   Workspace @relation(fields: [workspaceId], references: [id])
+   465→}
+   466→
+   467→model Reminder {
+   468→  id            String    @id @default(cuid())
+   469→  workspaceId   String
+   470→  invoiceId     String
+   471→  customerId    String
+   472→  reminderType  String    @default("email")
+   473→  subject       String
+   474→  body          String
+   475→  status        String    @default("drafted")
+   476→  sentAt        DateTime?
+   477→  respondedAt   DateTime?
+   478→  responseNotes String?
+   479→  createdBy     String?
+   480→  createdAt     DateTime  @default(now())
+   481→  customer      Customer  @relation(fields: [customerId], references: [id])
+   482→  invoice       Invoice   @relation(fields: [invoiceId], references: [id])
+   483→  workspace     Workspace @relation(fields: [workspaceId], references: [id])
+   484→}
+   485→
+   486→model CollectionCase {
+   487→  id              String            @id @default(cuid())
+   488→  workspaceId     String
+   489→  invoiceId       String
+   490→  customerId      String
+   491→  status          String            @default("open")
+   492→  priority        String            @default("medium")
+   493→  agingBucket     String            @default("current")
+   494→  daysOverdue     Int               @default(0)
+   495→  assignedTo      String?
+   496→  escalationLevel Int               @default(0)
+   497→  resolution      String?
+   498→  openedAt        DateTime          @default(now())
+   499→  resolvedAt      DateTime?
+   500→  updatedAt       DateTime          @updatedAt
+   501→  customer        Customer          @relation(fields: [customerId], references: [id])
+   502→  invoice         Invoice           @relation(fields: [invoiceId], references: [id])
+   503→  workspace       Workspace         @relation(fields: [workspaceId], references: [id])
+   504→  followUps       FollowUpHistory[]
+   505→}
+   506→
+   507→model FollowUpHistory {
+   508→  id               String         @id @default(cuid())
+   509→  collectionCaseId String
+   510→  action           String
+   511→  description      String
+   512→  performedBy      String?
+   513→  performedAt      DateTime       @default(now())
+   514→  collectionCase   CollectionCase @relation(fields: [collectionCaseId], references: [id], onDelete: Cascade)
+   515→}
+   516→
+   517→model EmployeeMemory {
+   518→  id                 String    @id @default(cuid())
+   519→  workspaceId        String
+   520→  employeeId         String
+   521→  memoryType         String
+   522→  entityType         String
+   523→  entityId           String
+   524→  entityLabel        String
+   525→  key                String
+   526→  value              String
+   527→  confidence         Float     @default(0.5)
+   528→  source             String    @default("task")
+   529→  reinforcementCount Int       @default(1)
+   530→  createdAt          DateTime  @default(now())
+   531→  updatedAt          DateTime  @updatedAt
+   532→  workspace          Workspace @relation(fields: [workspaceId], references: [id])
+   533→
+   534→  @@unique([employeeId, memoryType, entityType, entityId, key])
+   535→  @@index([employeeId, entityType, entityId])
+   536→  @@index([employeeId, memoryType])
+   537→}
+   538→
+   539→model ExecutionContract {
+   540→  id                       String    @id @default(cuid())
+   541→  workspaceId              String
+   542→  taskId                   String
+   543→  employeeId               String
+   544→  approvalId               String?
+   545→  contractNumber           String
+   546→  version                  Int       @default(1)
+   547→  parentContractId         String?
+   548→  status                   String    @default("draft")
+   549→  goal                     String
+   550→  proposedAction           String
+   551→  confidence               Float
+   552→  evidence                 String    @default("[]")
+   553→  memoriesUsed             String    @default("[]")
+   554→  policiesUsed             String    @default("[]")
+   555→  businessImpact           String
+   556→  affectedSystems          String    @default("[]")
+   557→  rollbackPlan             String
+   558→  estimatedBusinessOutcome String
+   559→  estimatedTokenCost       Int       @default(0)
+   560→  estimatedExecutionTime   Int       @default(0)
+   561→  requiredAuthority        String    @default("owner")
+   562→  contractHash             String    @unique
+   563→  generatedAt              DateTime  @default(now())
+   564→  approvedAt               DateTime?
+   565→  approvedBy               String?
+   566→  rejectedAt               DateTime?
+   567→  rejectedBy               String?
+   568→  rejectionReason          String?
+   569→  supersededAt             DateTime?
+   570→  createdAt                DateTime  @default(now())
+   571→  updatedAt                DateTime  @updatedAt
+   572→  workspace                Workspace @relation(fields: [workspaceId], references: [id])
+   573→
+   574→  @@unique([workspaceId, contractNumber, version])
+   575→  @@index([workspaceId, status])
+   576→  @@index([taskId])
+   577→  @@index([employeeId])
+   578→  @@index([contractHash])
+   579→}
+   580→
+   581→model Capability {
+   582→  id          String               @id @default(cuid())
+   583→  code        String               @unique
+   584→  name        String
+   585→  description String
+   586→  category    String
+   587→  riskLevel   String               @default("low")
+   588→  createdAt   DateTime             @default(now())
+   589→  employees   EmployeeCapability[]
+   590→}
+   591→
+   592→model EmployeeCapability {
+   593→  id           String     @id @default(cuid())
+   594→  employeeId   String
+   595→  capabilityId String
+   596→  grantedBy    String
+   597→  createdAt    DateTime   @default(now())
+   598→  capability   Capability @relation(fields: [capabilityId], references: [id], onDelete: Cascade)
+   599→  employee     Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+   600→
+   601→  @@unique([employeeId, capabilityId])
+   602→  @@index([employeeId])
+   603→}
+   604→
+   605→model EmployeeProfile {
+   606→  id                     String    @id @default(cuid())
+   607→  employeeId             String    @unique
+   608→  workspaceId            String
+   609→  employeeType           String    @default("finance_employee")
+   610→  department             String    @default("Finance")
+   611→  title                  String    @default("Intern")
+   612→  version                Int       @default(1)
+   613→  experiencePoints       Int       @default(0)
+   614→  level                  Int       @default(1)
+   615→  completedTasks         Int       @default(0)
+   616→  successfulTasks        Int       @default(0)
+   617→  failedTasks            Int       @default(0)
+   618→  approvalRate           Float     @default(1.0)
+   619→  averageConfidence      Float     @default(0.85)
+   620→  averageExecutionTime   Int       @default(0)
+   621→  moneyRecovered         Int       @default(0)
+   622→  invoicesProcessed      Int       @default(0)
+   623→  customersHandled       Int       @default(0)
+   624→  emailsSent             Int       @default(0)
+   625→  tasksAutomated         Int       @default(0)
+   626→  hoursSaved             Float     @default(0)
+   627→  estimatedBusinessValue Int       @default(0)
+   628→  trustScore             Float     @default(85.0)
+   629→  accuracyScore          Float     @default(0.90)
+   630→  consistencyScore       Float     @default(0.85)
+   631→  riskScore              Float     @default(30.0)
+   632→  hallucinationRate      Float     @default(0.05)
+   633→  humanInterventionRate  Float     @default(0.20)
+   634→  skills                 String    @default("[]")
+   635→  knowledgeAreas         String    @default("[]")
+   636→  specializations        String    @default("[]")
+   637→  strongestDomains       String    @default("[]")
+   638→  weakDomains            String    @default("[]")
+   639→  memoryCount            Int       @default(0)
+   640→  reinforcementCount     Int       @default(0)
+   641→  capabilitiesGranted    Int       @default(0)
+   642→  criticalCapabilities   Int       @default(0)
+   643→  createdAt              DateTime  @default(now())
+   644→  updatedAt              DateTime  @updatedAt
+   645→  lastTaskAt             DateTime?
+   646→  workspace              Workspace @relation(fields: [workspaceId], references: [id])
+   647→}
+   648→
+   649→model EmployeeSkill {
+   650→  id          String    @id @default(cuid())
+   651→  employeeId  String
+   652→  workspaceId String
+   653→  name        String
+   654→  level       Int       @default(1)
+   655→  confidence  Float     @default(0.5)
+   656→  usageCount  Int       @default(0)
+   657→  lastUsedAt  DateTime  @default(now())
+   658→  createdAt   DateTime  @default(now())
+   659→  updatedAt   DateTime  @updatedAt
+   660→  workspace   Workspace @relation(fields: [workspaceId], references: [id])
+   661→
+   662→  @@unique([employeeId, name])
+   663→  @@index([employeeId])
+   664→}
+   665→
+   666→// ═════════════════════════════════════════════════════════════════════════════
+   667→// EMP-002 — Autonomous Learning & Skill Evolution Engine
+   668→// ═════════════════════════════════════════════════════════════════════════════
+   669→//
+   670→// Design principles:
+   671→//   1. NO fake learning. NO random XP. NO LLM-generated scores.
+   672→//      Everything comes from MEASURABLE BUSINESS OUTCOMES.
+   673→//   2. Normalized tables — no JSON blobs for core entities.
+   674→//      Patterns, strengths, weaknesses, achievements are all queryable.
+   675→//   3. Append-only history. Business outcomes never overwrite.
+   676→//   4. Incremental updates only — no expensive scans.
+   677→//   5. Generic — works for Finance, HR, Sales Ops, Procurement, etc.
+   678→//      No domain-specific code in the engine.
+   679→//
+   680→// All 8 models are workspace-scoped and employee-scoped. IDs are cuid().
+   681→// ═════════════════════════════════════════════════════════════════════════════
+   682→
+   683→// ─── 1. Outcome Evaluation ───────────────────────────────────────────────────
+   684→// One row per completed task. The deterministic "scorecard" of what happened.
+   685→// Generated by evaluateOutcome() after task completion.
+   686→model OutcomeEvaluation {
+   687→  id              String   @id @default(cuid())
+   688→  workspaceId     String
+   689→  employeeId      String
+   690→  taskId          String   @unique  // one evaluation per task
+   691→
+   692→  // Execution quality (deterministic, from task + steps + approvals)
+   693→  stepCount              Int     @default(0)
+   694→  toolCallCount          Int     @default(0)
+   695→  approvalGateCount      Int     @default(0)
+   696→  approvalRejections     Int     @default(0)
+   697→  humanOverrides         Int     @default(0)  // manager edited proposed action
+   698→  capabilityDenials      Int     @default(0)
+   699→  tokenUsage             Int     @default(0)
+   700→  executionTimeMs        Int     @default(0)
+   701→  rollbackNeeded         Boolean @default(false)
+   702→
+   703→  // Business outcome (measurable, from finance domain — null if not applicable)
+   704→  paymentReceived        Boolean @default(false)
+   705→  paymentAmount          Int     @default(0)  // in paise
+   706→  invoiceResolved        Boolean @default(false)
+   707→  customerResponded      Boolean @default(false)
+   708→  reminderSentCount      Int     @default(0)
+   709→
+   710→  // SLA
+   711→  slaAchieved            Boolean @default(false)
+   712→  slaTargetHours         Int     @default(0)
+   713→  slaActualHours         Float   @default(0)
+   714→
+   715→  // Errors
+   716→  errorCount             Int     @default(0)
+   717→  stepFailureCount       Int     @default(0)
+   718→
+   719→  // Confidence accuracy — how close was the employee's confidence to reality?
+   720→  // Computed as: avg(step.confidence) for completed steps vs outcome success.
+   721→  expectedSuccess        Boolean @default(true)   // employee predicted success
+   722→  actualSuccess          Boolean @default(true)   // task actually completed
+   723→  confidenceAccuracy     Float   @default(1.0)    // 1.0 = perfect, 0.0 = always wrong
+   724→
+   725→  // Overall quality score (0-100, deterministic formula in engine)
+   726→  qualityScore           Int     @default(0)
+   727→
+   728→  // Human corrections count (approvals rejected + overrides + capability denials)
+   729→  humanCorrections       Int     @default(0)
+   730→
+   731→  // Free-form outcome summary (deterministic, built from facts)
+   732→  outcomeSummary         String  @default("")
+   733→
+   734→  createdAt              DateTime @default(now())
+   735→
+   736→  workspace              Workspace @relation(fields: [workspaceId], references: [id])
+   737→
+   738→  @@index([employeeId, createdAt])
+   739→  @@index([workspaceId, createdAt])
+   740→}
+   741→
+   742→// ─── 2. Skill Reinforcement ──────────────────────────────────────────────────
+   743→// Append-only ledger of every reinforcement event for a skill.
+   744→// Instead of "skill++", we record WHY the skill was reinforced.
+   745→// The skill's level is derived from the sum of reinforcements.
+   746→//
+   747→// Reinforcement values:
+   748→//   positive (+1, +2, +3) = good outcome attributable to this skill
+   749→//   negative (-1, -2, -3) = bad outcome attributable to this skill
+   750→//
+   751→// Level formula (in engine):
+   752→//   totalReinforcement = sum of all reinforcement values for this skill
+   753→//   level = clamp(1, 10, 1 + floor(totalReinforcement / 5))
+   754→//   (every +5 net reinforcement = +1 level)
+   755→model SkillReinforcement {
+   756→  id              String   @id @default(cuid())
+   757→  workspaceId     String
+   758→  employeeId      String
+   759→  skillName       String   // e.g. "Collections", "Invoice Analysis"
+   760→  taskId          String?  // null if not tied to a task
+   761→  outcomeId       String?  // link to OutcomeEvaluation
+   762→
+   763→  // Why was this skill reinforced? (deterministic reason code)
+   764→  reason          String   // e.g. "successful_collection", "payment_recovered",
+   765→                           //      "reminder_approved", "rejected", "rollback"
+   766→  reinforcement   Int      @default(0)  // +1, +2, +3, -1, -2, -3
+   767→  notes           String   @default("") // human-readable detail
+   768→
+   769→  createdAt       DateTime @default(now())
+   770→
+   771→  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+   772→
+   773→  @@index([employeeId, skillName, createdAt])
+   774→  @@index([workspaceId, createdAt])
+   775→}
+   776→
+   777→// ─── 3. Learning Pattern ─────────────────────────────────────────────────────
+   778→// Detected patterns from repeated outcomes. Queryable & reusable.
+   779→// Examples:
+   780→//   "FastFreight always pays after second reminder"
+   781→//   "Customer X ignores Friday emails"
+   782→//   "Invoices above ₹5 lakh need manager approval"
+   783→//
+   784→// Patterns are detected by deterministic rules in the engine — no LLM.
+   785→// Patterns are STORED ONLY — not yet integrated with the Planner.
+   786→model LearningPattern {
+   787→  id              String   @id @default(cuid())
+   788→  workspaceId     String
+   789→  employeeId      String
+   790→
+   791→  patternType     String   // "customer_payment_behavior" | "reminder_effectiveness"
+   792→                           // | "invoice_risk_indicator" | "communication_preference"
+   793→                           // | "approval_correlation"
+   794→  entityType      String   @default("customer")  // customer | invoice | reminder | generic
+   795→  entityId        String   @default("")          // customerId / invoiceId / "" for generic
+   796→  entityLabel     String   @default("")          // human-readable label
+   797→
+   798→  // The pattern itself (deterministic, fact-based)
+   799→  pattern         String   // e.g. "pays_after_second_reminder"
+   800→  description     String   // human-readable: "FastFreight pays 100% of invoices within 7 days of the 2nd reminder"
+   801→
+   802→  // Evidence (how many times observed)
+   803→  observationCount Int     @default(1)
+   804→  lastObservedAt  DateTime @default(now())
+   805→
+   806→  // Confidence in the pattern (0-1, increases with observations)
+   807→  confidence      Float    @default(0.5)
+   808→
+   809→  // Is this pattern actionable? (can the Planner reuse it?)
+   810→  actionable      Boolean  @default(true)
+   811→
+   812→  createdAt       DateTime @default(now())
+   813→  updatedAt       DateTime @updatedAt
+   814→
+   815→  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+   816→
+   817→  // One pattern per (employee, patternType, entityType, entityId, pattern)
+   818→  @@unique([employeeId, patternType, entityType, entityId, pattern])
+   819→  @@index([employeeId, patternType])
+   820→  @@index([workspaceId, createdAt])
+   821→}
+   822→
+   823→// ─── 4. Employee Weakness ────────────────────────────────────────────────────
+   824→// Detected repeated failures. Reduces trust.
+   825→// Examples: "High rejection rate", "Low confidence", "Frequent human edits"
+   826→model EmployeeWeakness {
+   827→  id              String   @id @default(cuid())
+   828→  workspaceId     String
+   829→  employeeId      String
+   830→
+   831→  weaknessType    String   // "high_rejection_rate" | "low_confidence"
+   832→                           // | "frequent_human_edits" | "repeated_rollbacks"
+   833→                           // | "repeated_sla_misses" | "high_capability_denials"
+   834→                           // | "low_accuracy" | "slow_execution"
+   835→  description     String   // human-readable
+   836→
+   837→  // Measurable evidence
+   838→  metricValue     Float    @default(0)  // e.g. rejection rate = 0.45
+   839→  threshold       Float    @default(0)  // e.g. threshold = 0.30
+   840→  occurrenceCount Int     @default(1)   // how many tasks triggered this
+   841→
+   842→  // Impact on trust (negative)
+   843→  trustImpact     Float    @default(0)  // e.g. -5.0 trust points
+   844→
+   845→  // Is this weakness currently active (vs resolved)?
+   846→  status          String   @default("active")  // active | resolved | acknowledged
+   847→
+   848→  firstDetectedAt DateTime @default(now())
+   849→  lastDetectedAt  DateTime @default(now())
+   850→  resolvedAt      DateTime?
+   851→
+   852→  createdAt       DateTime @default(now())
+   853→  updatedAt       DateTime @updatedAt
+   854→
+   855→  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+   856→
+   857→  @@unique([employeeId, weaknessType])
+   858→  @@index([employeeId, status])
+   859→  @@index([workspaceId, createdAt])
+   860→}
+   861→
+   862→// ─── 5. Employee Strength ────────────────────────────────────────────────────
+   863→// Detected repeated success. Increases trust.
+   864→// Examples: "Excellent collections", "High recovery rate", "Fast execution"
+   865→model EmployeeStrength {
+   866→  id              String   @id @default(cuid())
+   867→  workspaceId     String
+   868→  employeeId      String
+   869→
+   870→  strengthType    String   // "excellent_collections" | "high_recovery_rate"
+   871→                           // | "fast_execution" | "low_escalation"
+   872→                           // | "high_approval_rate" | "high_confidence_accuracy"
+   873→                           // | "zero_rollbacks" | "consistent_sla"
+   874→  description     String   // human-readable
+   875→
+   876→  // Measurable evidence
+   877→  metricValue     Float    @default(0)  // e.g. recovery rate = 0.85
+   878→  threshold       Float    @default(0)  // e.g. threshold = 0.70
+   879→  occurrenceCount Int     @default(1)   // how many tasks triggered this
+   880→
+   881→  // Impact on trust (positive)
+   882→  trustImpact     Float    @default(0)  // e.g. +5.0 trust points
+   883→
+   884→  // Is this strength currently active?
+   885→  status          String   @default("active")  // active | superseded
+   886→
+   887→  firstDetectedAt DateTime @default(now())
+   888→  lastDetectedAt  DateTime @default(now())
+   889→
+   890→  createdAt       DateTime @default(now())
+   891→  updatedAt       DateTime @updatedAt
+   892→
+   893→  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+   894→
+   895→  @@unique([employeeId, strengthType])
+   896→  @@index([employeeId, status])
+   897→  @@index([workspaceId, createdAt])
+   898→}
+   899→
+   900→// ─── 6. Business Outcome History (Append-Only) ───────────────────────────────
+   901→// Every business outcome is recorded. Never overwritten.
+   902→// This is the employee's "ledger of impact".
+   903→model BusinessOutcome {
+   904→  id              String   @id @default(cuid())
+   905→  workspaceId     String
+   906→  employeeId      String
+   907→  taskId          String?
+   908→
+   909→  outcomeType     String   // "money_recovered" | "invoice_processed"
+   910→                           // | "customer_helped" | "hours_saved"
+   911→                           // | "task_automated" | "email_sent"
+   912→                           // | "approval_avoided" | "escalation_avoided"
+   913→                           // | "rollback" | "failure" | "success_streak"
+   914→                           // | "largest_recovery"
+   915→  amount          Int      @default(0)  // in paise (for money outcomes)
+   916→  count           Int      @default(1)  // for countable outcomes
+   917→  description     String   @default("")
+   918→
+   919→  // Running totals at the time of this outcome (for historical charts)
+   920→  cumulativeMoneyRecovered    Int @default(0)
+   921→  cumulativeInvoicesProcessed Int @default(0)
+   922→  cumulativeCustomersHelped   Int @default(0)
+   923→  cumulativeHoursSaved        Float @default(0)
+   924→  cumulativeTasksAutomated    Int @default(0)
+   925→  cumulativeEmailsSent        Int @default(0)
+   926→
+   927→  createdAt       DateTime @default(now())
+   928→
+   929→  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+   930→
+   931→  @@index([employeeId, outcomeType, createdAt])
+   932→  @@index([workspaceId, createdAt])
+   933→}
+   934→
+   935→// ─── 7. Career Timeline Entry ────────────────────────────────────────────────
+   936→// Chronological log of every career event. The "LinkedIn activity feed".
+   937→model CareerTimelineEntry {
+   938→  id              String   @id @default(cuid())
+   939→  workspaceId     String
+   940→  employeeId      String
+   941→
+   942→  entryType       String   // "level_up" | "skill_promoted" | "skill_learned"
+   943→                           // | "strength_detected" | "weakness_detected"
+   944→                           // | "weakness_resolved" | "achievement_unlocked"
+   945→                           // | "pattern_learned" | "task_completed"
+   946→                           // | "task_failed" | "milestone_reached"
+   947→                           // | "trust_change" | "major_recovery"
+   948→  title           String   // short title
+   949→  description     String   // human-readable detail
+   950→  metadata        String   @default("{}")  // JSON for extra context (rarely used)
+   951→
+   952→  // The state of the employee at this moment (snapshot)
+   953→  levelAtTime     Int      @default(0)
+   954→  xpAtTime        Int      @default(0)
+   955→  trustAtTime     Float    @default(0)
+   956→
+   957→  taskId          String?  // if related to a task
+   958→  outcomeId       String?  // if related to an outcome evaluation
+   959→
+   960→  createdAt       DateTime @default(now())
+   961→
+   962→  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+   963→
+   964→  @@index([employeeId, createdAt])
+   965→  @@index([workspaceId, createdAt])
+   966→}
+   967→
+   968→// ─── 8. Achievement + EmployeeAchievement (unlock ledger) ────────────────────
+   969→// Achievement = a definable milestone (workspace-scoped, definable by admins)
+   970→// EmployeeAchievement = the unlock ledger (who earned it, when, evidence)
+   971→model Achievement {
+   972→  id              String   @id @default(cuid())
+   973→  workspaceId     String
+   974→
+   975→  code            String   // e.g. "first_collection", "ten_invoices", "level_5"
+   976→  name            String   // "First Collection"
+   977→  description     String   // "Successfully collected on the first overdue invoice"
+   978→  category        String   @default("performance")  // performance | milestone | quality | learning
+   979→  icon            String   @default("award")        // lucide icon name
+   980→
+   981→  // Trigger condition (deterministic, evaluated by the engine)
+   982→  triggerType     String   // "task_count" | "money_recovered" | "level_reached"
+   983→                           // | "skill_level" | "streak" | "perfect_quality"
+   984→  triggerThreshold Int     @default(1)  // e.g. 10 for "10 invoices processed"
+   985→  triggerSkillName String  @default("") // for skill_level triggers
+   986→
+   987→  // Trust impact (positive)
+   988→  trustImpact     Float    @default(0)  // e.g. +3.0 trust points
+   989→
+   990→  createdAt       DateTime @default(now())
+   991→
+   992→  workspace       Workspace @relation(fields: [workspaceId], references: [id])
+   993→  unlocks         EmployeeAchievement[]
+   994→
+   995→  @@unique([workspaceId, code])
+   996→  @@index([workspaceId, category])
+   997→}
+   998→
+   999→model EmployeeAchievement {
+  1000→  id              String   @id @default(cuid())
+  1001→  workspaceId     String
+  1002→  employeeId      String
+  1003→  achievementId   String
+  1004→
+  1005→  // Evidence (why was this unlocked?)
+  1006→  evidence        String   @default("")  // human-readable
+  1007→  taskId          String?
+  1008→  outcomeId       String?
+  1009→
+  1010→  unlockedAt      DateTime @default(now())
+  1011→
+  1012→  achievement     Achievement @relation(fields: [achievementId], references: [id])
+  1013→  workspace       Workspace  @relation(fields: [workspaceId], references: [id])
+  1014→
+  1015→  @@unique([employeeId, achievementId])
+  1016→  @@index([employeeId, unlockedAt])
+  1017→  @@index([workspaceId, unlockedAt])
+  1018→}
+  1019→

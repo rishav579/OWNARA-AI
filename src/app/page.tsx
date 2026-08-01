@@ -13,6 +13,7 @@ import { EmployeeDetailPage } from "@/components/app/pages/employee-detail";
 import { TasksPage } from "@/components/app/pages/tasks";
 import { ApprovalsPage } from "@/components/app/pages/approvals";
 import { DecisionCenterPage } from "@/components/app/pages/decision-center";
+import { CommunicationPage } from "@/components/app/pages/communication";
 import { KnowledgePage } from "@/components/app/pages/knowledge";
 import { AuditPage } from "@/components/app/pages/audit";
 import { SettingsPage } from "@/components/app/pages/settings";
@@ -83,6 +84,9 @@ function AppRouter() {
       break;
     case "approvals":
       page = <DecisionCenterPage />;
+      break;
+    case "communication":
+      page = <CommunicationPage />;
       break;
     case "knowledge":
       page = <KnowledgePage />;

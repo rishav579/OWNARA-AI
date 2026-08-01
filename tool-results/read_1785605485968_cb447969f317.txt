@@ -1,0 +1,1645 @@
+     1→/**
+     2→ * BIHARI AI — Autonomous Learning & Skill Evolution Engine (EMP-002)
+     3→ *
+     4→ * Transforms the Employee Profile from a static record into a continuously
+     5→ * learning workforce. Every completed task generates a deterministic Outcome
+     6→ * Evaluation, which drives:
+     7→ *
+     8→ *   1. Skill Reinforcement  — skills level up from real outcomes, not usage++
+     9→ *   2. Pattern Learning     — reusable patterns detected from repeated outcomes
+    10→ *   3. Weakness Detection   — repeated failures reduce trust
+    11→ *   4. Strength Detection   — repeated successes increase trust
+    12→ *   5. Business Outcome History — append-only ledger of measurable impact
+    13→ *   6. Career Timeline      — chronological log of every career event
+    14→ *   7. Achievement Unlocks  — milestone-based recognition
+    15→ *
+    16→ * Design principles (NON-NEGOTIABLE):
+    17→ *   - NO fake learning. NO random XP. NO LLM-generated scores.
+    18→ *   - Everything comes from MEASURABLE BUSINESS OUTCOMES.
+    19→ *   - Normalized tables — no JSON blobs for core entities.
+    20→ *   - Append-only history. Business outcomes never overwrite.
+    21→ *   - Incremental updates only — no expensive scans.
+    22→ *   - Generic — works for Finance, HR, Sales Ops, Procurement, etc.
+    23→ *
+    24→ * Architecture:
+    25→ *   The engine is called ONCE per task completion from the executor's
+    26→ *   `completeTask()` function. It runs AFTER `recordProfileEvent` so the
+    27→ *   profile counters are already updated. The engine then:
+    28→ *     1. Loads the task with steps + approvals + finance domain data
+    29→ *     2. Builds an OutcomeEvaluation (deterministic scorecard)
+    30→ *     3. Applies skill reinforcements based on the outcome
+    31→ *     4. Detects patterns (customer payment behavior, reminder effectiveness)
+    32→ *     5. Detects weaknesses (high rejection rate, low confidence, etc.)
+    33→ *     6. Detects strengths (high approval rate, fast execution, etc.)
+    34→ *     7. Records business outcomes (append-only ledger)
+    35→ *     8. Appends career timeline entries
+    36→ *     9. Checks for achievement unlocks
+    37→ *    10. Emits audit events for every evolution
+    38→ *
+    39→ * All of this happens in best-effort try/catch blocks — learning failures
+    40→ * must NEVER break task completion.
+    41→ */
+    42→
+    43→import { db } from "@/lib/db";
+    44→import { appendAudit } from "@/lib/runtime/audit";
+    45→
+    46→// ─── Types ───────────────────────────────────────────────────────────────────
+    47→
+    48→export interface TaskOutcomeData {
+    49→  taskId: string;
+    50→  employeeId: string;
+    51→  workspaceId: string;
+    52→}
+    53→
+    54→// ─── Skill Reinforcement Definitions ─────────────────────────────────────────
+    55→// Maps outcome events to skill reinforcements. GENERIC — no domain logic.
+    56→// The "skill" is inferred from the task's tools/keywords (same logic as the
+    57→// profile engine's inferAndUpdateSkills). The reinforcement is applied to
+    58→// EVERY skill that was exercised in the task.
+    59→//
+    60→// Reinforcement values are intentionally small so levels grow gradually:
+    61→//   +3 = major success (payment recovered, customer responded)
+    62→//   +2 = good outcome (approval approved, reminder sent)
+    63→//   +1 = minor success (task completed without issues)
+    64→//   -1 = minor issue (single rejection, single override)
+    65→//   -2 = moderate failure (rollback needed, multiple rejections)
+    66→//   -3 = major failure (task failed, capability denied repeatedly)
+    67→
+    68→interface ReinforcementRule {
+    69→  reason: string;
+    70→  reinforcement: number;
+    71→  notes: string;
+    72→}
+    73→
+    74→// ─── Skill Definitions (mirrored from profile engine for inference) ──────────
+    75→// These MUST stay in sync with src/lib/profile/engine.ts. We import the
+    76→// inference logic indirectly by re-querying the task's steps.
+    77→
+    78→interface SkillDefinition {
+    79→  name: string;
+    80→  keywords: string[];
+    81→  tools: string[];
+    82→}
+    83→
+    84→const FINANCE_SKILLS: SkillDefinition[] = [
+    85→  { name: "Invoice Analysis", keywords: ["invoice", "overdue", "outstanding", "aging"], tools: ["search_knowledge"] },
+    86→  { name: "Collections", keywords: ["collection", "reminder", "dunning", "follow-up"], tools: ["generate_reminder", "send_reminder", "update_collection_case"] },
+    87→  { name: "Credit Risk", keywords: ["risk", "credit", "exposure", "customer"], tools: [] },
+    88→  { name: "Reminder Strategy", keywords: ["reminder", "escalation", "follow-up"], tools: ["generate_reminder"] },
+    89→  { name: "GST Knowledge", keywords: ["gst", "tax", "gstin"], tools: [] },
+    90→  { name: "Negotiation", keywords: ["negotiation", "payment plan", "settlement"], tools: [] },
+    91→  { name: "Compliance", keywords: ["compliance", "policy", "regulation"], tools: [] },
+    92→  { name: "Policy Following", keywords: ["policy", "rule", "boundary"], tools: [] },
+    93→  { name: "Decision Making", keywords: ["recommendation", "decision", "action"], tools: [] },
+    94→];
+    95→
+    96→const GENERIC_SKILLS: SkillDefinition[] = [
+    97→  { name: "Knowledge Retrieval", keywords: ["search", "knowledge", "research"], tools: ["search_knowledge"] },
+    98→  { name: "Communication", keywords: ["draft", "email", "response", "reply"], tools: ["draft_response", "send_email"] },
+    99→  { name: "Summarization", keywords: ["summarize", "summary", "brief"], tools: ["summarize"] },
+   100→];
+   101→
+   102→function getSkillsForRole(role: string): SkillDefinition[] {
+   103→  if (role === "finance_employee") return [...FINANCE_SKILLS, ...GENERIC_SKILLS];
+   104→  return GENERIC_SKILLS;
+   105→}
+   106→
+   107→// ─── 1. Outcome Evaluation ───────────────────────────────────────────────────
+   108→
+   109→/**
+   110→ * Evaluates a completed task and produces a deterministic OutcomeEvaluation.
+   111→ *
+   112→ * This is the SINGLE entry point called from the executor after task
+   113→ * completion. It runs the full learning pipeline:
+   114→ *   evaluate → reinforce → patterns → weaknesses → strengths → outcomes → timeline → achievements
+   115→ *
+   116→ * All steps are best-effort. A failure in any step logs an error but does
+   117→ * not block the others.
+   118→ */
+   119→export async function evaluateAndLearn(data: TaskOutcomeData): Promise<void> {
+   120→  const { taskId, employeeId, workspaceId } = data;
+   121→
+   122→  // Idempotency: skip if an evaluation already exists for this task
+   123→  const existing = await db.outcomeEvaluation.findUnique({ where: { taskId } });
+   124→  if (existing) {
+   125→    return;
+   126→  }
+   127→
+   128→  // Load the task with everything we need
+   129→  const task = await db.task.findUnique({
+   130→    where: { id: taskId },
+   131→    include: {
+   132→      steps: { orderBy: { stepNumber: "asc" } },
+   133→      approvals: true,
+   134→      employee: true,
+   135→    },
+   136→  });
+   137→
+   138→  if (!task) {
+   139→    console.error(`[Learning] Task not found: ${taskId}`);
+   140→    return;
+   141→  }
+   142→
+   143→  // Only evaluate completed tasks (not failed/stopped)
+   144→  if (task.status !== "completed") {
+   145→    return;
+   146→  }
+   147→
+   148→  const evaluation = await buildOutcomeEvaluation(task);
+   149→  if (!evaluation) return;
+   150→
+   151→  // Run the learning pipeline (each step is independent & best-effort)
+   152→  try { await reinforceSkillsFromOutcome(task, evaluation); } catch (e) { console.error("[Learning] reinforceSkills failed:", e); }
+   153→  try { await detectPatternsFromOutcome(task, evaluation); } catch (e) { console.error("[Learning] detectPatterns failed:", e); }
+   154→  try { await detectWeaknesses(employeeId, workspaceId); } catch (e) { console.error("[Learning] detectWeaknesses failed:", e); }
+   155→  try { await detectStrengths(employeeId, workspaceId); } catch (e) { console.error("[Learning] detectStrengths failed:", e); }
+   156→  try { await recordBusinessOutcomesFromTask(task, evaluation); } catch (e) { console.error("[Learning] recordBusinessOutcomes failed:", e); }
+   157→  try { await appendTimelineFromOutcome(task, evaluation); } catch (e) { console.error("[Learning] appendTimeline failed:", e); }
+   158→  try { await checkAchievementUnlocks(employeeId, workspaceId, evaluation); } catch (e) { console.error("[Learning] checkAchievements failed:", e); }
+   159→}
+   160→
+   161→/**
+   162→ * Builds the deterministic OutcomeEvaluation scorecard.
+   163→ * Pure function — no side effects except the DB write.
+   164→ */
+   165→async function buildOutcomeEvaluation(task: any): Promise<any | null> {
+   166→  const { id: taskId, workspaceId, employeeId } = task;
+   167→
+   168→  // ─── Execution quality (from task + steps + approvals) ──────────────────
+   169→  const stepCount = task.steps.length;
+   170→  const toolCallCount = task.steps.filter((s: any) => s.stepType === "tool_call").length;
+   171→  const approvalGateCount = task.steps.filter((s: any) => s.stepType === "approval_gate").length;
+   172→  const approvals = task.approvals || [];
+   173→  const approvalRejections = approvals.filter((a: any) => a.decision === "rejected").length;
+   174→  const humanOverrides = approvals.filter((a: any) => a.originalAction !== null).length;
+   175→  const tokenUsage = task.tokenUsage || 0;
+   176→
+   177→  // Execution time
+   178→  const executionTimeMs =
+   179→    task.startedAt && task.completedAt
+   180→      ? new Date(task.completedAt).getTime() - new Date(task.startedAt).getTime()
+   181→      : 0;
+   182→
+   183→  // Capability denials + step failures (scan step outputs)
+   184→  let capabilityDenials = 0;
+   185→  let stepFailureCount = 0;
+   186→  for (const step of task.steps) {
+   187→    if (step.status === "failed") stepFailureCount++;
+   188→    if (step.output && step.output.includes("capability_denied")) {
+   189→      capabilityDenials++;
+   190→    }
+   191→  }
+   192→
+   193→  // ─── Business outcome (from finance domain — generic approach) ──────────
+   194→  const { paymentReceived, paymentAmount, invoiceResolved, customerResponded, reminderSentCount, invoiceIds, customerIds } =
+   195→    await detectBusinessOutcomes(task, workspaceId);
+   196→
+   197→  // ─── SLA ────────────────────────────────────────────────────────────────
+   198→  // SLA target: 24 hours for finance tasks (configurable per role in future)
+   199→  const slaTargetHours = 24;
+   200→  const slaActualHours = executionTimeMs / (1000 * 60 * 60);
+   201→  const slaAchieved = slaActualHours <= slaTargetHours && stepFailureCount === 0;
+   202→
+   203→  // ─── Confidence accuracy ────────────────────────────────────────────────
+   204→  const completedSteps = task.steps.filter((s: any) => s.status === "completed" && s.confidence !== null);
+   205→  const avgConfidence =
+   206→    completedSteps.length > 0
+   207→      ? completedSteps.reduce((sum: number, s: any) => sum + (s.confidence || 0), 0) / completedSteps.length
+   208→      : 0.85;
+   209→  const expectedSuccess = avgConfidence >= 0.7;
+   210→  const actualSuccess = task.status === "completed" && approvalRejections === 0;
+   211→  const confidenceAccuracy = expectedSuccess === actualSuccess ? 1.0 : 0.0;
+   212→
+   213→  // ─── Human corrections ──────────────────────────────────────────────────
+   214→  const humanCorrections = approvalRejections + humanOverrides + capabilityDenials;
+   215→
+   216→  // ─── Quality score (deterministic formula, 0-100) ───────────────────────
+   217→  let qualityScore = 0;
+   218→  if (actualSuccess) qualityScore += 40;
+   219→  if (humanCorrections === 0) qualityScore += 20;
+   220→  else if (humanCorrections === 1) qualityScore += 10;
+   221→  if (slaAchieved) qualityScore += 15;
+   222→  if (confidenceAccuracy === 1.0) qualityScore += 15;
+   223→  if (paymentReceived || customerResponded) qualityScore += 10;
+   224→
+   225→  // ─── Outcome summary (deterministic, built from facts) ──────────────────
+   226→  const outcomeParts: string[] = [];
+   227→  outcomeParts.push(`Task completed with ${stepCount} steps (${toolCallCount} tool calls, ${approvalGateCount} approval gates)`);
+   228→  if (approvalRejections > 0) outcomeParts.push(`${approvalRejections} approval rejection(s)`);
+   229→  if (humanOverrides > 0) outcomeParts.push(`${humanOverrides} human override(s)`);
+   230→  if (capabilityDenials > 0) outcomeParts.push(`${capabilityDenials} capability denial(s)`);
+   231→  if (reminderSentCount > 0) outcomeParts.push(`${reminderSentCount} reminder(s) sent`);
+   232→  if (paymentReceived) outcomeParts.push(`Payment received: ₹${(paymentAmount / 100).toFixed(2)}`);
+   233→  if (customerResponded) outcomeParts.push("Customer responded to reminder");
+   234→  if (slaAchieved) outcomeParts.push(`SLA achieved (${slaActualHours.toFixed(1)}h / ${slaTargetHours}h)`);
+   235→  else outcomeParts.push(`SLA missed (${slaActualHours.toFixed(1)}h / ${slaTargetHours}h)`);
+   236→  const outcomeSummary = outcomeParts.join(". ");
+   237→
+   238→  // ─── Persist the evaluation ─────────────────────────────────────────────
+   239→  const evaluation = await db.outcomeEvaluation.create({
+   240→    data: {
+   241→      workspaceId,
+   242→      employeeId,
+   243→      taskId,
+   244→      stepCount,
+   245→      toolCallCount,
+   246→      approvalGateCount,
+   247→      approvalRejections,
+   248→      humanOverrides,
+   249→      capabilityDenials,
+   250→      tokenUsage,
+   251→      executionTimeMs,
+   252→      rollbackNeeded: false,
+   253→      paymentReceived,
+   254→      paymentAmount,
+   255→      invoiceResolved,
+   256→      customerResponded,
+   257→      reminderSentCount,
+   258→      slaAchieved,
+   259→      slaTargetHours,
+   260→      slaActualHours: Math.round(slaActualHours * 100) / 100,
+   261→      errorCount: stepFailureCount,
+   262→      stepFailureCount,
+   263→      expectedSuccess,
+   264→      actualSuccess,
+   265→      confidenceAccuracy,
+   266→      qualityScore,
+   267→      humanCorrections,
+   268→      outcomeSummary,
+   269→    },
+   270→  });
+   271→
+   272→  // Audit: profile_updated (the outcome evaluation IS a profile update)
+   273→  await emitAudit(workspaceId, employeeId, "profile_updated", "outcome_evaluation", evaluation.id, {
+   274→    taskId,
+   275→    qualityScore: String(qualityScore),
+   276→    actualSuccess: String(actualSuccess),
+   277→    humanCorrections: String(humanCorrections),
+   278→    paymentReceived: String(paymentReceived),
+   279→    paymentAmount: String(paymentAmount),
+   280→  });
+   281→
+   282→  // Attach the computed (non-persisted) fields for downstream functions.
+   283→  // These are not DB columns but are needed by recordBusinessOutcomesFromTask,
+   284→  // detectPatternsFromOutcome, etc.
+   285→  return {
+   286→    ...evaluation,
+   287→    invoiceIds,
+   288→    customerIds,
+   289→  };
+   290→}
+   291→
+   292→/**
+   293→ * Detects business outcomes for a task by examining finance domain data.
+   294→ * GENERIC approach: scan the task's steps for invoice IDs and check if
+   295→ * payments were received or customers responded. Returns empty results for
+   296→ * non-finance tasks (which is correct — they have no finance outcomes).
+   297→ */
+   298→async function detectBusinessOutcomes(task: any, workspaceId: string): Promise<{
+   299→  paymentReceived: boolean;
+   300→  paymentAmount: number;
+   301→  invoiceResolved: boolean;
+   302→  customerResponded: boolean;
+   303→  reminderSentCount: number;
+   304→  invoiceIds: string[];
+   305→  customerIds: string[];
+   306→}> {
+   307→  const result = {
+   308→    paymentReceived: false,
+   309→    paymentAmount: 0,
+   310→    invoiceResolved: false,
+   311→    customerResponded: false,
+   312→    reminderSentCount: 0,
+   313→    invoiceIds: [] as string[],
+   314→    customerIds: [] as string[],
+   315→  };
+   316→
+   317→  const invoiceIds = new Set<string>();
+   318→  const customerIds = new Set<string>();
+   319→
+   320→  // Scan steps for invoiceId / customerId / reminderId in their input/output JSON
+   321→  for (const step of task.steps) {
+   322→    try {
+   323→      const input = JSON.parse(step.input || "{}");
+   324→      if (input.invoiceIds && Array.isArray(input.invoiceIds)) {
+   325→        input.invoiceIds.forEach((id: string) => invoiceIds.add(id));
+   326→      }
+   327→      if (input.invoiceId) invoiceIds.add(input.invoiceId);
+   328→      if (input.customerId) customerIds.add(input.customerId);
+   329→      if (input.tool === "send_reminder" || input.tool === "generate_reminder") {
+   330→        result.reminderSentCount++;
+   331→      }
+   332→    } catch {}
+   333→
+   334→    try {
+   335→      const output = JSON.parse(step.output || "{}");
+   336→      if (output.invoiceId) invoiceIds.add(output.invoiceId);
+   337→      if (output.customerId) customerIds.add(output.customerId);
+   338→      if (output.reminderId) {
+   339→        // This step created a reminder — check if it was sent & responded
+   340→        const reminder = await db.reminder.findUnique({ where: { id: output.reminderId } });
+   341→        if (reminder) {
+   342→          if (reminder.status === "sent") result.reminderSentCount = Math.max(result.reminderSentCount, 1);
+   343→          if (reminder.status === "responded" || reminder.respondedAt) {
+   344→            result.customerResponded = true;
+   345→            customerIds.add(reminder.customerId);
+   346→          }
+   347→          invoiceIds.add(reminder.invoiceId);
+   348→          customerIds.add(reminder.customerId);
+   349→        }
+   350→      }
+   351→    } catch {}
+   352→  }
+   353→
+   354→  result.invoiceIds = Array.from(invoiceIds);
+   355→  result.customerIds = Array.from(customerIds);
+   356→
+   357→  // Check for payments received on these invoices AFTER the task started
+   358→  if (invoiceIds.size > 0) {
+   359→    const taskStartTime = task.startedAt || task.createdAt;
+   360→    const payments = await db.payment.findMany({
+   361→      where: {
+   362→        workspaceId,
+   363→        invoiceId: { in: result.invoiceIds },
+   364→        paymentDate: { gte: taskStartTime },
+   365→        status: "completed",
+   366→      },
+   367→    });
+   368→
+   369→    if (payments.length > 0) {
+   370→      result.paymentReceived = true;
+   371→      result.paymentAmount = payments.reduce((sum, p) => sum + p.amount, 0);
+   372→
+   373→      const invoices = await db.invoice.findMany({
+   374→        where: { id: { in: result.invoiceIds } },
+   375→        select: { id: true, outstanding: true },
+   376→      });
+   377→      result.invoiceResolved = invoices.length > 0 && invoices.every((inv) => inv.outstanding <= 0);
+   378→    }
+   379→  }
+   380→
+   381→  return result;
+   382→}
+   383→
+   384→// ─── 2. Skill Reinforcement Engine ───────────────────────────────────────────
+   385→
+   386→/**
+   387→ * Applies skill reinforcements based on the outcome evaluation.
+   388→ * Every skill exercised in the task gets reinforced (positively or negatively).
+   389→ */
+   390→async function reinforceSkillsFromOutcome(task: any, evaluation: any): Promise<void> {
+   391→  const { employeeId, workspaceId, taskId } = task;
+   392→  const employee = task.employee;
+   393→  if (!employee) return;
+   394→
+   395→  // Determine which skills were exercised in this task
+   396→  const skillDefs = getSkillsForRole(employee.role);
+   397→  const taskText = `${task.title} ${task.description}`.toLowerCase();
+   398→  const toolsUsed = new Set<string>();
+   399→  for (const step of task.steps) {
+   400→    try {
+   401→      const input = JSON.parse(step.input);
+   402→      if (input.tool) toolsUsed.add(input.tool);
+   403→    } catch {}
+   404→  }
+   405→
+   406→  const exercisedSkills: string[] = [];
+   407→  for (const skillDef of skillDefs) {
+   408→    const usedByKeyword = skillDef.keywords.some((kw) => taskText.includes(kw.toLowerCase()));
+   409→    const usedByTool = skillDef.tools.some((t) => toolsUsed.has(t));
+   410→    if (usedByKeyword || usedByTool) {
+   411→      exercisedSkills.push(skillDef.name);
+   412→    }
+   413→  }
+   414→
+   415→  if (exercisedSkills.length === 0) return;
+   416→
+   417→  // Build reinforcement rules based on the outcome
+   418→  const rules = buildReinforcementRules(evaluation);
+   419→
+   420→  // Apply each rule to each exercised skill
+   421→  for (const skillName of exercisedSkills) {
+   422→    for (const rule of rules) {
+   423→      await db.skillReinforcement.create({
+   424→        data: {
+   425→          workspaceId,
+   426→          employeeId,
+   427→          skillName,
+   428→          taskId,
+   429→          outcomeId: evaluation.id,
+   430→          reason: rule.reason,
+   431→          reinforcement: rule.reinforcement,
+   432→          notes: rule.notes,
+   433→        },
+   434→      });
+   435→    }
+   436→
+   437→    // Recompute the skill's level from the reinforcement ledger
+   438→    await recomputeSkillLevel(employeeId, workspaceId, skillName, evaluation);
+   439→  }
+   440→}
+   441→
+   442→/**
+   443→ * Builds the list of reinforcement rules based on the outcome evaluation.
+   444→ */
+   445→function buildReinforcementRules(evaluation: any): ReinforcementRule[] {
+   446→  const rules: ReinforcementRule[] = [];
+   447→
+   448→  if (evaluation.actualSuccess) {
+   449→    rules.push({ reason: "task_completed", reinforcement: 1, notes: "Task completed without failures" });
+   450→  }
+   451→  if (evaluation.paymentReceived) {
+   452→    rules.push({
+   453→      reason: "payment_recovered",
+   454→      reinforcement: 3,
+   455→      notes: `Payment of ₹${(evaluation.paymentAmount / 100).toFixed(2)} received after this task`,
+   456→    });
+   457→  }
+   458→  if (evaluation.customerResponded) {
+   459→    rules.push({ reason: "customer_responded", reinforcement: 2, notes: "Customer responded to a reminder sent in this task" });
+   460→  }
+   461→  if (evaluation.slaAchieved) {
+   462→    rules.push({ reason: "sla_achieved", reinforcement: 1, notes: `Completed within SLA (${evaluation.slaActualHours}h / ${evaluation.slaTargetHours}h)` });
+   463→  }
+   464→  if (evaluation.humanCorrections === 0 && evaluation.qualityScore >= 80) {
+   465→    rules.push({ reason: "high_quality_execution", reinforcement: 2, notes: `Quality score ${evaluation.qualityScore}/100 with zero human corrections` });
+   466→  }
+   467→  if (evaluation.approvalRejections > 0) {
+   468→    rules.push({
+   469→      reason: "approval_rejected",
+   470→      reinforcement: -1 * Math.min(3, evaluation.approvalRejections),
+   471→      notes: `${evaluation.approvalRejections} approval rejection(s)`,
+   472→    });
+   473→  }
+   474→  if (evaluation.humanOverrides > 0) {
+   475→    rules.push({
+   476→      reason: "human_override",
+   477→      reinforcement: -1 * Math.min(2, evaluation.humanOverrides),
+   478→      notes: `${evaluation.humanOverrides} human override(s)`,
+   479→    });
+   480→  }
+   481→  if (evaluation.capabilityDenials > 0) {
+   482→    rules.push({
+   483→      reason: "capability_denied",
+   484→      reinforcement: -2 * evaluation.capabilityDenials,
+   485→      notes: `${evaluation.capabilityDenials} capability denial(s)`,
+   486→    });
+   487→  }
+   488→  if (!evaluation.slaAchieved && evaluation.slaActualHours > 0) {
+   489→    rules.push({ reason: "sla_missed", reinforcement: -1, notes: `SLA missed (${evaluation.slaActualHours}h / ${evaluation.slaTargetHours}h)` });
+   490→  }
+   491→  if (evaluation.confidenceAccuracy === 0.0) {
+   492→    rules.push({ reason: "confidence_inaccurate", reinforcement: -1, notes: "Employee's confidence did not match the actual outcome" });
+   493→  }
+   494→  if (evaluation.stepFailureCount > 0) {
+   495→    rules.push({
+   496→      reason: "step_failure",
+   497→      reinforcement: -1 * Math.min(2, evaluation.stepFailureCount),
+   498→      notes: `${evaluation.stepFailureCount} step failure(s)`,
+   499→    });
+   500→  }
+   501→
+   502→  return rules;
+   503→}
+   504→
+   505→/**
+   506→ * Recomputes a skill's level from the reinforcement ledger.
+   507→ * Level formula:
+   508→ *   totalReinforcement = sum of all reinforcement values
+   509→ *   level = clamp(1, 10, 1 + floor(max(0, totalReinforcement) / 5))
+   510→ *   confidence = clamp(0.5, 0.99, 0.5 + (positive_count * 0.03) - (negative_count * 0.05))
+   511→ *
+   512→ * If the level increased, emit a skill_promoted audit event + timeline entry.
+   513→ */
+   514→async function recomputeSkillLevel(
+   515→  employeeId: string,
+   516→  workspaceId: string,
+   517→  skillName: string,
+   518→  evaluation: any
+   519→): Promise<void> {
+   520→  const reinforcements = await db.skillReinforcement.findMany({
+   521→    where: { employeeId, skillName },
+   522→    orderBy: { createdAt: "asc" },
+   523→  });
+   524→
+   525→  if (reinforcements.length === 0) return;
+   526→
+   527→  const totalReinforcement = reinforcements.reduce((sum, r) => sum + r.reinforcement, 0);
+   528→  const positiveCount = reinforcements.filter((r) => r.reinforcement > 0).length;
+   529→  const negativeCount = reinforcements.filter((r) => r.reinforcement < 0).length;
+   530→
+   531→  const newLevel = Math.max(1, Math.min(10, 1 + Math.floor(Math.max(0, totalReinforcement) / 5)));
+   532→  const newConfidence = Math.max(0.5, Math.min(0.99, 0.5 + positiveCount * 0.03 - negativeCount * 0.05));
+   533→  const newUsageCount = reinforcements.length;
+   534→
+   535→  const existing = await db.employeeSkill.findUnique({
+   536→    where: { employeeId_name: { employeeId, name: skillName } },
+   537→  });
+   538→
+   539→  const previousLevel = existing?.level || 1;
+   540→
+   541→  if (existing) {
+   542→    await db.employeeSkill.update({
+   543→      where: { id: existing.id },
+   544→      data: {
+   545→        level: newLevel,
+   546→        confidence: newConfidence,
+   547→        usageCount: newUsageCount,
+   548→        lastUsedAt: new Date(),
+   549→      },
+   550→    });
+   551→  } else {
+   552→    await db.employeeSkill.create({
+   553→      data: {
+   554→        employeeId,
+   555→        workspaceId,
+   556→        name: skillName,
+   557→        level: newLevel,
+   558→        confidence: newConfidence,
+   559→        usageCount: newUsageCount,
+   560→        lastUsedAt: new Date(),
+   561→      },
+   562→    });
+   563→  }
+   564→
+   565→  // If level increased, emit skill_promoted audit + timeline
+   566→  if (newLevel > previousLevel) {
+   567→    await emitAudit(workspaceId, employeeId, "skill_promoted", "skill", skillName, {
+   568→      skillName,
+   569→      previousLevel: String(previousLevel),
+   570→      newLevel: String(newLevel),
+   571→      totalReinforcement: String(totalReinforcement),
+   572→    });
+   573→
+   574→    await db.careerTimelineEntry.create({
+   575→      data: {
+   576→        workspaceId,
+   577→        employeeId,
+   578→        entryType: "skill_promoted",
+   579→        title: `${skillName} → Level ${newLevel}`,
+   580→        description: `Skill "${skillName}" promoted from Level ${previousLevel} to Level ${newLevel} based on ${reinforcements.length} reinforcements (net +${totalReinforcement}).`,
+   581→        metadata: JSON.stringify({ skillName, previousLevel, newLevel, totalReinforcement }),
+   582→        levelAtTime: 0,
+   583→        xpAtTime: 0,
+   584→        trustAtTime: 0,
+   585→        taskId: evaluation.taskId,
+   586→        outcomeId: evaluation.id,
+   587→      },
+   588→    });
+   589→  } else if (!existing && newLevel === 1) {
+   590→    // First time this skill was learned
+   591→    await db.careerTimelineEntry.create({
+   592→      data: {
+   593→        workspaceId,
+   594→        employeeId,
+   595→        entryType: "skill_learned",
+   596→        title: `Learned: ${skillName}`,
+   597→        description: `New skill "${skillName}" acquired with initial reinforcement +${totalReinforcement}.`,
+   598→        metadata: JSON.stringify({ skillName, initialReinforcement: totalReinforcement }),
+   599→        levelAtTime: 0,
+   600→        xpAtTime: 0,
+   601→        trustAtTime: 0,
+   602→        taskId: evaluation.taskId,
+   603→        outcomeId: evaluation.id,
+   604→      },
+   605→    });
+   606→  }
+   607→
+   608→  // Sync the skills JSON on the profile (for quick access by the UI)
+   609→  await syncSkillsJson(employeeId);
+   610→}
+   611→
+   612→/** Syncs the skills JSON array on EmployeeProfile from EmployeeSkill rows. */
+   613→async function syncSkillsJson(employeeId: string): Promise<void> {
+   614→  const allSkills = await db.employeeSkill.findMany({
+   615→    where: { employeeId },
+   616→    orderBy: { usageCount: "desc" },
+   617→  });
+   618→  const skillsJson = allSkills.map((s) => ({
+   619→    name: s.name,
+   620→    level: s.level,
+   621→    confidence: s.confidence,
+   622→    usageCount: s.usageCount,
+   623→  }));
+   624→  await db.employeeProfile.update({
+   625→    where: { employeeId },
+   626→    data: { skills: JSON.stringify(skillsJson) },
+   627→  });
+   628→}
+   629→
+   630→// ─── 3. Pattern Learning ─────────────────────────────────────────────────────
+   631→
+   632→/**
+   633→ * Detects reusable patterns from the outcome evaluation.
+   634→ * Patterns are STORED ONLY — not yet integrated with the Planner.
+   635→ */
+   636→async function detectPatternsFromOutcome(task: any, evaluation: any): Promise<void> {
+   637→  const { employeeId, workspaceId } = task;
+   638→
+   639→  // ─── Pattern 1: Customer payment behavior ───────────────────────────────
+   640→  if (evaluation.paymentReceived && evaluation.invoiceIds.length > 0) {
+   641→    for (const invoiceId of evaluation.invoiceIds) {
+   642→      const invoice = await db.invoice.findUnique({
+   643→        where: { id: invoiceId },
+   644→        include: { customer: true, reminders: { orderBy: { createdAt: "asc" } } },
+   645→      });
+   646→      if (!invoice) continue;
+   647→
+   648→      const reminderCount = invoice.reminders.filter((r) => r.status === "sent").length;
+   649→      if (reminderCount === 0) continue;
+   650→
+   651→      const patternKey = reminderCount === 1 ? "pays_after_first_reminder" : `pays_after_${reminderCount}_reminders`;
+   652→      const patternDescription = `${invoice.customer.name} paid invoice ${invoice.invoiceNumber} after ${reminderCount} reminder(s).`;
+   653→
+   654→      await upsertPattern({
+   655→        workspaceId,
+   656→        employeeId,
+   657→        patternType: "customer_payment_behavior",
+   658→        entityType: "customer",
+   659→        entityId: invoice.customerId,
+   660→        entityLabel: invoice.customer.name,
+   661→        pattern: patternKey,
+   662→        description: patternDescription,
+   663→        confidence: Math.min(0.99, 0.5 + 0.1 * reminderCount),
+   664→      });
+   665→    }
+   666→  }
+   667→
+   668→  // ─── Pattern 2: Reminder effectiveness ──────────────────────────────────
+   669→  if (evaluation.customerResponded && evaluation.customerIds.length > 0) {
+   670→    for (const customerId of evaluation.customerIds) {
+   671→      const customer = await db.customer.findUnique({ where: { id: customerId } });
+   672→      if (!customer) continue;
+   673→
+   674→      await upsertPattern({
+   675→        workspaceId,
+   676→        employeeId,
+   677→        patternType: "reminder_effectiveness",
+   678→        entityType: "customer",
+   679→        entityId: customerId,
+   680→        entityLabel: customer.name,
+   681→        pattern: "responds_to_reminders",
+   682→        description: `${customer.name} responds to reminder emails.`,
+   683→        confidence: 0.7,
+   684→      });
+   685→    }
+   686→  }
+   687→
+   688→  // ─── Pattern 3: Invoice risk indicator ──────────────────────────────────
+   689→  if (evaluation.approvalRejections > 0 && evaluation.invoiceIds.length > 0) {
+   690→    for (const invoiceId of evaluation.invoiceIds) {
+   691→      const invoice = await db.invoice.findUnique({
+   692→        where: { id: invoiceId },
+   693→        include: { customer: true },
+   694→      });
+   695→      if (!invoice) continue;
+   696→
+   697→      // Invoices above ₹5 lakh (5000000 paise = ₹50000... actually ₹5L = 500000*100 = 50000000)
+   698→      if (invoice.total >= 5000000) {
+   699→        await upsertPattern({
+   700→          workspaceId,
+   701→          employeeId,
+   702→          patternType: "invoice_risk_indicator",
+   703→          entityType: "invoice",
+   704→          entityId: invoiceId,
+   705→          entityLabel: invoice.invoiceNumber,
+   706→          pattern: "high_value_invoice_needs_manager_review",
+   707→          description: `Invoice ${invoice.invoiceNumber} (₹${(invoice.total / 100).toFixed(2)}) required manager review.`,
+   708→          confidence: 0.6,
+   709→        });
+   710→      }
+   711→    }
+   712→  }
+   713→}
+   714→
+   715→/**
+   716→ * Upserts a pattern: if it exists, increment observationCount and update confidence;
+   717→ * otherwise create it. Emits a pattern_learned audit on first detection.
+   718→ */
+   719→async function upsertPattern(params: {
+   720→  workspaceId: string;
+   721→  employeeId: string;
+   722→  patternType: string;
+   723→  entityType: string;
+   724→  entityId: string;
+   725→  entityLabel: string;
+   726→  pattern: string;
+   727→  description: string;
+   728→  confidence: number;
+   729→}): Promise<void> {
+   730→  const existing = await db.learningPattern.findUnique({
+   731→    where: {
+   732→      employeeId_patternType_entityType_entityId_pattern: {
+   733→        employeeId: params.employeeId,
+   734→        patternType: params.patternType,
+   735→        entityType: params.entityType,
+   736→        entityId: params.entityId,
+   737→        pattern: params.pattern,
+   738→      },
+   739→    },
+   740→  });
+   741→
+   742→  if (existing) {
+   743→    const newCount = existing.observationCount + 1;
+   744→    const newConfidence = Math.min(0.99, existing.confidence + 0.05);
+   745→    await db.learningPattern.update({
+   746→      where: { id: existing.id },
+   747→      data: {
+   748→        observationCount: newCount,
+   749→        confidence: newConfidence,
+   750→        lastObservedAt: new Date(),
+   751→        description: params.description,
+   752→      },
+   753→    });
+   754→  } else {
+   755→    const created = await db.learningPattern.create({
+   756→      data: {
+   757→        workspaceId: params.workspaceId,
+   758→        employeeId: params.employeeId,
+   759→        patternType: params.patternType,
+   760→        entityType: params.entityType,
+   761→        entityId: params.entityId,
+   762→        entityLabel: params.entityLabel,
+   763→        pattern: params.pattern,
+   764→        description: params.description,
+   765→        confidence: params.confidence,
+   766→        observationCount: 1,
+   767→      },
+   768→    });
+   769→
+   770→    await emitAudit(params.workspaceId, params.employeeId, "pattern_learned", "learning_pattern", created.id, {
+   771→      patternType: params.patternType,
+   772→      pattern: params.pattern,
+   773→      entityLabel: params.entityLabel,
+   774→      description: params.description,
+   775→    });
+   776→
+   777→    await db.careerTimelineEntry.create({
+   778→      data: {
+   779→        workspaceId: params.workspaceId,
+   780→        employeeId: params.employeeId,
+   781→        entryType: "pattern_learned",
+   782→        title: `Pattern: ${params.pattern.replace(/_/g, " ")}`,
+   783→        description: params.description,
+   784→        metadata: JSON.stringify({
+   785→          patternType: params.patternType,
+   786→          pattern: params.pattern,
+   787→          entityType: params.entityType,
+   788→          entityId: params.entityId,
+   789→        }),
+   790→        levelAtTime: 0,
+   791→        xpAtTime: 0,
+   792→        trustAtTime: 0,
+   793→      },
+   794→    });
+   795→  }
+   796→}
+   797→
+   798→// ─── 4. Weakness Detection ───────────────────────────────────────────────────
+   799→
+   800→/**
+   801→ * Detects weaknesses by scanning the last N outcome evaluations.
+   802→ * Called after every task completion (incremental).
+   803→ */
+   804→async function detectWeaknesses(employeeId: string, workspaceId: string): Promise<void> {
+   805→  const recentEvaluations = await db.outcomeEvaluation.findMany({
+   806→    where: { employeeId },
+   807→    orderBy: { createdAt: "desc" },
+   808→    take: 10,
+   809→  });
+   810→
+   811→  if (recentEvaluations.length < 3) return;
+   812→
+   813→  const totalTasks = recentEvaluations.length;
+   814→  const tasksWithRejections = recentEvaluations.filter((e) => e.approvalRejections > 0).length;
+   815→  const tasksWithOverrides = recentEvaluations.filter((e) => e.humanOverrides > 0).length;
+   816→  const tasksWithSlaMisses = recentEvaluations.filter((e) => !e.slaAchieved).length;
+   817→  const tasksWithDenials = recentEvaluations.filter((e) => e.capabilityDenials > 0).length;
+   818→  const avgConfidenceAccuracy = recentEvaluations.reduce((s, e) => s + e.confidenceAccuracy, 0) / totalTasks;
+   819→  const avgExecutionTime = recentEvaluations.reduce((s, e) => s + e.executionTimeMs, 0) / totalTasks;
+   820→  const avgSlaTarget = recentEvaluations[0]?.slaTargetHours || 24;
+   821→
+   822→  const weaknessChecks = [
+   823→    {
+   824→      type: "high_rejection_rate",
+   825→      description: `${tasksWithRejections}/${totalTasks} recent tasks had approval rejections (${Math.round((tasksWithRejections / totalTasks) * 100)}%)`,
+   826→      metricValue: tasksWithRejections / totalTasks,
+   827→      threshold: 0.3,
+   828→      trustImpact: -5.0,
+   829→      inverted: false,
+   830→    },
+   831→    {
+   832→      type: "frequent_human_edits",
+   833→      description: `${tasksWithOverrides}/${totalTasks} recent tasks had human overrides (${Math.round((tasksWithOverrides / totalTasks) * 100)}%)`,
+   834→      metricValue: tasksWithOverrides / totalTasks,
+   835→      threshold: 0.4,
+   836→      trustImpact: -3.0,
+   837→      inverted: false,
+   838→    },
+   839→    {
+   840→      type: "repeated_sla_misses",
+   841→      description: `${tasksWithSlaMisses}/${totalTasks} recent tasks missed SLA (${Math.round((tasksWithSlaMisses / totalTasks) * 100)}%)`,
+   842→      metricValue: tasksWithSlaMisses / totalTasks,
+   843→      threshold: 0.3,
+   844→      trustImpact: -4.0,
+   845→      inverted: false,
+   846→    },
+   847→    {
+   848→      type: "low_confidence_accuracy",
+   849→      description: `Average confidence accuracy is ${(avgConfidenceAccuracy * 100).toFixed(0)}% (threshold 50%)`,
+   850→      metricValue: avgConfidenceAccuracy,
+   851→      threshold: 0.5,
+   852→      trustImpact: -3.0,
+   853→      inverted: true,
+   854→    },
+   855→    {
+   856→      type: "slow_execution",
+   857→      description: `Average execution time is ${(avgExecutionTime / (1000 * 60 * 60)).toFixed(1)}h (threshold ${avgSlaTarget * 2}h)`,
+   858→      metricValue: avgExecutionTime / (1000 * 60 * 60),
+   859→      threshold: avgSlaTarget * 2,
+   860→      trustImpact: -2.0,
+   861→      inverted: false, // higher execution time = worse
+   862→    },
+   863→  ];
+   864→
+   865→  if (tasksWithDenials > 1) {
+   866→    weaknessChecks.push({
+   867→      type: "high_capability_denials",
+   868→      description: `${tasksWithDenials} capability denial(s) in recent ${totalTasks} tasks`,
+   869→      metricValue: tasksWithDenials,
+   870→      threshold: 1,
+   871→      trustImpact: -6.0,
+   872→      inverted: false, // higher denials = worse
+   873→    });
+   874→  }
+   875→
+   876→  for (const check of weaknessChecks) {
+   877→    const triggered = check.inverted
+   878→      ? check.metricValue < check.threshold
+   879→      : check.metricValue > check.threshold;
+   880→
+   881→    if (triggered) {
+   882→      await upsertWeakness({
+   883→        workspaceId,
+   884→        employeeId,
+   885→        weaknessType: check.type,
+   886→        description: check.description,
+   887→        metricValue: check.metricValue,
+   888→        threshold: check.threshold,
+   889→        trustImpact: check.trustImpact,
+   890→      });
+   891→    } else {
+   892→      await resolveWeaknessIfApplicable(workspaceId, employeeId, check.type);
+   893→    }
+   894→  }
+   895→}
+   896→
+   897→async function upsertWeakness(params: {
+   898→  workspaceId: string;
+   899→  employeeId: string;
+   900→  weaknessType: string;
+   901→  description: string;
+   902→  metricValue: number;
+   903→  threshold: number;
+   904→  trustImpact: number;
+   905→}): Promise<void> {
+   906→  const existing = await db.employeeWeakness.findUnique({
+   907→    where: { employeeId_weaknessType: { employeeId: params.employeeId, weaknessType: params.weaknessType } },
+   908→  });
+   909→
+   910→  if (existing) {
+   911→    if (existing.status === "resolved") {
+   912→      await db.employeeWeakness.update({
+   913→        where: { id: existing.id },
+   914→        data: {
+   915→          status: "active",
+   916→          description: params.description,
+   917→          metricValue: params.metricValue,
+   918→          occurrenceCount: { increment: 1 },
+   919→          lastDetectedAt: new Date(),
+   920→          resolvedAt: null,
+   921→        },
+   922→      });
+   923→    } else {
+   924→      await db.employeeWeakness.update({
+   925→        where: { id: existing.id },
+   926→        data: {
+   927→          description: params.description,
+   928→          metricValue: params.metricValue,
+   929→          occurrenceCount: { increment: 1 },
+   930→          lastDetectedAt: new Date(),
+   931→        },
+   932→      });
+   933→    }
+   934→  } else {
+   935→    const created = await db.employeeWeakness.create({
+   936→      data: {
+   937→        workspaceId: params.workspaceId,
+   938→        employeeId: params.employeeId,
+   939→        weaknessType: params.weaknessType,
+   940→        description: params.description,
+   941→        metricValue: params.metricValue,
+   942→        threshold: params.threshold,
+   943→        trustImpact: params.trustImpact,
+   944→        occurrenceCount: 1,
+   945→        status: "active",
+   946→      },
+   947→    });
+   948→
+   949→    await emitAudit(params.workspaceId, params.employeeId, "weakness_detected", "employee_weakness", created.id, {
+   950→      weaknessType: params.weaknessType,
+   951→      description: params.description,
+   952→      trustImpact: String(params.trustImpact),
+   953→    });
+   954→
+   955→    await db.careerTimelineEntry.create({
+   956→      data: {
+   957→        workspaceId: params.workspaceId,
+   958→        employeeId: params.employeeId,
+   959→        entryType: "weakness_detected",
+   960→        title: `Weakness: ${params.weaknessType.replace(/_/g, " ")}`,
+   961→        description: params.description,
+   962→        metadata: JSON.stringify({
+   963→          weaknessType: params.weaknessType,
+   964→          metricValue: params.metricValue,
+   965→          threshold: params.threshold,
+   966→          trustImpact: params.trustImpact,
+   967→        }),
+   968→        levelAtTime: 0,
+   969→        xpAtTime: 0,
+   970→        trustAtTime: 0,
+   971→      },
+   972→    });
+   973→  }
+   974→}
+   975→
+   976→async function resolveWeaknessIfApplicable(
+   977→  workspaceId: string,
+   978→  employeeId: string,
+   979→  weaknessType: string
+   980→): Promise<void> {
+   981→  const existing = await db.employeeWeakness.findUnique({
+   982→    where: { employeeId_weaknessType: { employeeId, weaknessType } },
+   983→  });
+   984→  if (!existing || existing.status !== "active") return;
+   985→
+   986→  await db.employeeWeakness.update({
+   987→    where: { id: existing.id },
+   988→    data: { status: "resolved", resolvedAt: new Date() },
+   989→  });
+   990→
+   991→  await db.careerTimelineEntry.create({
+   992→    data: {
+   993→      workspaceId,
+   994→      employeeId,
+   995→      entryType: "weakness_resolved",
+   996→      title: `Resolved: ${weaknessType.replace(/_/g, " ")}`,
+   997→      description: `Weakness "${weaknessType}" has been resolved — recent metrics are now within acceptable thresholds.`,
+   998→      metadata: JSON.stringify({ weaknessType }),
+   999→      levelAtTime: 0,
+  1000→      xpAtTime: 0,
+  1001→      trustAtTime: 0,
+  1002→    },
+  1003→  });
+  1004→}
+  1005→
+  1006→// ─── 5. Strength Detection ───────────────────────────────────────────────────
+  1007→
+  1008→/**
+  1009→ * Detects strengths by scanning the last N outcome evaluations.
+  1010→ * Called after every task completion (incremental).
+  1011→ */
+  1012→async function detectStrengths(employeeId: string, workspaceId: string): Promise<void> {
+  1013→  const recentEvaluations = await db.outcomeEvaluation.findMany({
+  1014→    where: { employeeId },
+  1015→    orderBy: { createdAt: "desc" },
+  1016→    take: 10,
+  1017→  });
+  1018→
+  1019→  if (recentEvaluations.length < 3) return;
+  1020→
+  1021→  const totalTasks = recentEvaluations.length;
+  1022→  const tasksWithRejections = recentEvaluations.filter((e) => e.approvalRejections > 0).length;
+  1023→  const tasksWithSlaMisses = recentEvaluations.filter((e) => !e.slaAchieved).length;
+  1024→  const tasksWithRollbacks = recentEvaluations.filter((e) => e.rollbackNeeded).length;
+  1025→  const avgConfidenceAccuracy = recentEvaluations.reduce((s, e) => s + e.confidenceAccuracy, 0) / totalTasks;
+  1026→  const avgQualityScore = recentEvaluations.reduce((s, e) => s + e.qualityScore, 0) / totalTasks;
+  1027→  const avgExecutionTime = recentEvaluations.reduce((s, e) => s + e.executionTimeMs, 0) / totalTasks;
+  1028→  const avgSlaTarget = recentEvaluations[0]?.slaTargetHours || 24;
+  1029→  const paymentRecoveryCount = recentEvaluations.filter((e) => e.paymentReceived).length;
+  1030→
+  1031→  const strengthChecks = [
+  1032→    {
+  1033→      type: "high_approval_rate",
+  1034→      description: `100% approval rate across last ${totalTasks} tasks`,
+  1035→      metricValue: (totalTasks - tasksWithRejections) / totalTasks,
+  1036→      threshold: 1.0,
+  1037→      trustImpact: 5.0,
+  1038→    },
+  1039→    {
+  1040→      type: "consistent_sla",
+  1041→      description: `100% SLA achievement across last ${totalTasks} tasks`,
+  1042→      metricValue: (totalTasks - tasksWithSlaMisses) / totalTasks,
+  1043→      threshold: 1.0,
+  1044→      trustImpact: 4.0,
+  1045→    },
+  1046→    {
+  1047→      type: "zero_rollbacks",
+  1048→      description: `Zero rollbacks across last ${totalTasks} tasks`,
+  1049→      metricValue: (totalTasks - tasksWithRollbacks) / totalTasks,
+  1050→      threshold: 1.0,
+  1051→      trustImpact: 3.0,
+  1052→    },
+  1053→    {
+  1054→      type: "high_confidence_accuracy",
+  1055→      description: `Average confidence accuracy is ${(avgConfidenceAccuracy * 100).toFixed(0)}%`,
+  1056→      metricValue: avgConfidenceAccuracy,
+  1057→      threshold: 0.8,
+  1058→      trustImpact: 4.0,
+  1059→    },
+  1060→    {
+  1061→      type: "high_quality",
+  1062→      description: `Average quality score is ${avgQualityScore.toFixed(0)}/100`,
+  1063→      metricValue: avgQualityScore / 100,
+  1064→      threshold: 0.85,
+  1065→      trustImpact: 4.0,
+  1066→    },
+  1067→    {
+  1068→      type: "fast_execution",
+  1069→      description: `Average execution time is ${(avgExecutionTime / (1000 * 60 * 60)).toFixed(1)}h (SLA target ${avgSlaTarget}h)`,
+  1070→      metricValue: avgExecutionTime / (1000 * 60 * 60),
+  1071→      threshold: avgSlaTarget * 0.5,
+  1072→      trustImpact: 3.0,
+  1073→    },
+  1074→  ];
+  1075→
+  1076→  if (paymentRecoveryCount >= 2) {
+  1077→    strengthChecks.push({
+  1078→      type: "excellent_collections",
+  1079→      description: `Recovered payments in ${paymentRecoveryCount} of last ${totalTasks} tasks`,
+  1080→      metricValue: paymentRecoveryCount / totalTasks,
+  1081→      threshold: 0.4,
+  1082→      trustImpact: 6.0,
+  1083→    });
+  1084→  }
+  1085→
+  1086→  for (const check of strengthChecks) {
+  1087→    if (check.metricValue >= check.threshold) {
+  1088→      await upsertStrength({
+  1089→        workspaceId,
+  1090→        employeeId,
+  1091→        strengthType: check.type,
+  1092→        description: check.description,
+  1093→        metricValue: check.metricValue,
+  1094→        threshold: check.threshold,
+  1095→        trustImpact: check.trustImpact,
+  1096→      });
+  1097→    }
+  1098→  }
+  1099→}
+  1100→
+  1101→async function upsertStrength(params: {
+  1102→  workspaceId: string;
+  1103→  employeeId: string;
+  1104→  strengthType: string;
+  1105→  description: string;
+  1106→  metricValue: number;
+  1107→  threshold: number;
+  1108→  trustImpact: number;
+  1109→}): Promise<void> {
+  1110→  const existing = await db.employeeStrength.findUnique({
+  1111→    where: { employeeId_strengthType: { employeeId: params.employeeId, strengthType: params.strengthType } },
+  1112→  });
+  1113→
+  1114→  if (existing) {
+  1115→    await db.employeeStrength.update({
+  1116→      where: { id: existing.id },
+  1117→      data: {
+  1118→        description: params.description,
+  1119→        metricValue: params.metricValue,
+  1120→        occurrenceCount: { increment: 1 },
+  1121→        lastDetectedAt: new Date(),
+  1122→      },
+  1123→    });
+  1124→  } else {
+  1125→    const created = await db.employeeStrength.create({
+  1126→      data: {
+  1127→        workspaceId: params.workspaceId,
+  1128→        employeeId: params.employeeId,
+  1129→        strengthType: params.strengthType,
+  1130→        description: params.description,
+  1131→        metricValue: params.metricValue,
+  1132→        threshold: params.threshold,
+  1133→        trustImpact: params.trustImpact,
+  1134→        occurrenceCount: 1,
+  1135→        status: "active",
+  1136→      },
+  1137→    });
+  1138→
+  1139→    await emitAudit(params.workspaceId, params.employeeId, "strength_detected", "employee_strength", created.id, {
+  1140→      strengthType: params.strengthType,
+  1141→      description: params.description,
+  1142→      trustImpact: String(params.trustImpact),
+  1143→    });
+  1144→
+  1145→    await db.careerTimelineEntry.create({
+  1146→      data: {
+  1147→        workspaceId: params.workspaceId,
+  1148→        employeeId: params.employeeId,
+  1149→        entryType: "strength_detected",
+  1150→        title: `Strength: ${params.strengthType.replace(/_/g, " ")}`,
+  1151→        description: params.description,
+  1152→        metadata: JSON.stringify({
+  1153→          strengthType: params.strengthType,
+  1154→          metricValue: params.metricValue,
+  1155→          threshold: params.threshold,
+  1156→          trustImpact: params.trustImpact,
+  1157→        }),
+  1158→        levelAtTime: 0,
+  1159→        xpAtTime: 0,
+  1160→        trustAtTime: 0,
+  1161→      },
+  1162→    });
+  1163→  }
+  1164→}
+  1165→
+  1166→// ─── 6. Business Outcome History (Append-Only) ───────────────────────────────
+  1167→
+  1168→/**
+  1169→ * Records business outcomes from a completed task. Append-only — never overwrites.
+  1170→ * Also maintains running cumulative totals for historical charts.
+  1171→ */
+  1172→async function recordBusinessOutcomesFromTask(task: any, evaluation: any): Promise<void> {
+  1173→  const { employeeId, workspaceId, taskId } = task;
+  1174→
+  1175→  const profile = await db.employeeProfile.findUnique({ where: { employeeId } });
+  1176→  if (!profile) return;
+  1177→
+  1178→  const outcomes: Array<{
+  1179→    outcomeType: string;
+  1180→    amount: number;
+  1181→    count: number;
+  1182→    description: string;
+  1183→  }> = [];
+  1184→
+  1185→  outcomes.push({
+  1186→    outcomeType: "task_automated",
+  1187→    amount: 0,
+  1188→    count: 1,
+  1189→    description: `Task "${task.title}" completed automatically`,
+  1190→  });
+  1191→
+  1192→  outcomes.push({
+  1193→    outcomeType: "hours_saved",
+  1194→    amount: 0,
+  1195→    count: 1,
+  1196→    description: `0.5 hours of manual work saved`,
+  1197→  });
+  1198→
+  1199→  if (evaluation.reminderSentCount > 0) {
+  1200→    outcomes.push({
+  1201→      outcomeType: "email_sent",
+  1202→      amount: 0,
+  1203→      count: evaluation.reminderSentCount,
+  1204→      description: `${evaluation.reminderSentCount} reminder email(s) sent`,
+  1205→    });
+  1206→  }
+  1207→
+  1208→  if (evaluation.customerIds.length > 0) {
+  1209→    outcomes.push({
+  1210→      outcomeType: "customer_helped",
+  1211→      amount: 0,
+  1212→      count: evaluation.customerIds.length,
+  1213→      description: `${evaluation.customerIds.length} customer(s) helped`,
+  1214→    });
+  1215→  }
+  1216→
+  1217→  if (evaluation.invoiceIds.length > 0) {
+  1218→    outcomes.push({
+  1219→      outcomeType: "invoice_processed",
+  1220→      amount: 0,
+  1221→      count: evaluation.invoiceIds.length,
+  1222→      description: `${evaluation.invoiceIds.length} invoice(s) processed`,
+  1223→    });
+  1224→  }
+  1225→
+  1226→  if (evaluation.paymentReceived && evaluation.paymentAmount > 0) {
+  1227→    outcomes.push({
+  1228→      outcomeType: "money_recovered",
+  1229→      amount: evaluation.paymentAmount,
+  1230→      count: 1,
+  1231→      description: `Payment of ₹${(evaluation.paymentAmount / 100).toFixed(2)} received`,
+  1232→    });
+  1233→
+  1234→    if (evaluation.paymentAmount > profile.moneyRecovered) {
+  1235→      outcomes.push({
+  1236→        outcomeType: "largest_recovery",
+  1237→        amount: evaluation.paymentAmount,
+  1238→        count: 1,
+  1239→        description: `New largest single recovery: ₹${(evaluation.paymentAmount / 100).toFixed(2)}`,
+  1240→      });
+  1241→    }
+  1242→  }
+  1243→
+  1244→  if (evaluation.humanCorrections === 0 && evaluation.approvalGateCount === 0) {
+  1245→    outcomes.push({
+  1246→      outcomeType: "approval_avoided",
+  1247→      amount: 0,
+  1248→      count: 1,
+  1249→      description: "Task completed without requiring any human approval",
+  1250→    });
+  1251→  }
+  1252→
+  1253→  if (evaluation.capabilityDenials === 0 && !evaluation.rollbackNeeded) {
+  1254→    outcomes.push({
+  1255→      outcomeType: "escalation_avoided",
+  1256→      amount: 0,
+  1257→      count: 1,
+  1258→      description: "Task completed without escalation",
+  1259→    });
+  1260→  }
+  1261→
+  1262→  const newCumulative = {
+  1263→    moneyRecovered: profile.moneyRecovered + (evaluation.paymentAmount || 0),
+  1264→    invoicesProcessed: profile.invoicesProcessed + (evaluation.invoiceIds.length || 0),
+  1265→    customersHelped: profile.customersHandled,
+  1266→    hoursSaved: profile.hoursSaved,
+  1267→    tasksAutomated: profile.tasksAutomated,
+  1268→    emailsSent: profile.emailsSent,
+  1269→  };
+  1270→
+  1271→  for (const outcome of outcomes) {
+  1272→    await db.businessOutcome.create({
+  1273→      data: {
+  1274→        workspaceId,
+  1275→        employeeId,
+  1276→        taskId,
+  1277→        outcomeType: outcome.outcomeType,
+  1278→        amount: outcome.amount,
+  1279→        count: outcome.count,
+  1280→        description: outcome.description,
+  1281→        cumulativeMoneyRecovered: newCumulative.moneyRecovered,
+  1282→        cumulativeInvoicesProcessed: newCumulative.invoicesProcessed,
+  1283→        cumulativeCustomersHelped: newCumulative.customersHelped,
+  1284→        cumulativeHoursSaved: newCumulative.hoursSaved,
+  1285→        cumulativeTasksAutomated: newCumulative.tasksAutomated,
+  1286→        cumulativeEmailsSent: newCumulative.emailsSent,
+  1287→      },
+  1288→    });
+  1289→  }
+  1290→}
+  1291→
+  1292→// ─── 7. Career Timeline (from Outcome) ───────────────────────────────────────
+  1293→
+  1294→/**
+  1295→ * Appends career timeline entries from the outcome evaluation.
+  1296→ * Separate from skill/strength/weakness/pattern timeline entries.
+  1297→ */
+  1298→async function appendTimelineFromOutcome(task: any, evaluation: any): Promise<void> {
+  1299→  const { employeeId, workspaceId, taskId } = task;
+  1300→  const profile = await db.employeeProfile.findUnique({ where: { employeeId } });
+  1301→  if (!profile) return;
+  1302→
+  1303→  await db.careerTimelineEntry.create({
+  1304→    data: {
+  1305→      workspaceId,
+  1306→      employeeId,
+  1307→      entryType: "task_completed",
+  1308→      title: `Completed: ${task.title}`,
+  1309→      description: evaluation.outcomeSummary,
+  1310→      metadata: JSON.stringify({
+  1311→        taskId,
+  1312→        qualityScore: evaluation.qualityScore,
+  1313→        humanCorrections: evaluation.humanCorrections,
+  1314→        executionTimeMs: evaluation.executionTimeMs,
+  1315→      }),
+  1316→      levelAtTime: profile.level,
+  1317→      xpAtTime: profile.experiencePoints,
+  1318→      trustAtTime: profile.trustScore,
+  1319→      taskId,
+  1320→      outcomeId: evaluation.id,
+  1321→    },
+  1322→  });
+  1323→
+  1324→  if (evaluation.paymentReceived && evaluation.paymentAmount >= 100000) {
+  1325→    await db.careerTimelineEntry.create({
+  1326→      data: {
+  1327→        workspaceId,
+  1328→        employeeId,
+  1329→        entryType: "major_recovery",
+  1330→        title: `Recovered ₹${(evaluation.paymentAmount / 100).toFixed(2)}`,
+  1331→        description: `Recovered payment of ₹${(evaluation.paymentAmount / 100).toFixed(2)} through task "${task.title}".`,
+  1332→        metadata: JSON.stringify({ taskId, amount: evaluation.paymentAmount }),
+  1333→        levelAtTime: profile.level,
+  1334→        xpAtTime: profile.experiencePoints,
+  1335→        trustAtTime: profile.trustScore,
+  1336→        taskId,
+  1337→        outcomeId: evaluation.id,
+  1338→      },
+  1339→    });
+  1340→  }
+  1341→}
+  1342→
+  1343→// ─── 8. Achievement Unlocks ──────────────────────────────────────────────────
+  1344→
+  1345→/**
+  1346→ * Checks for achievement unlocks based on the employee's current state.
+  1347→ */
+  1348→async function checkAchievementUnlocks(
+  1349→  employeeId: string,
+  1350→  workspaceId: string,
+  1351→  evaluation: any
+  1352→): Promise<void> {
+  1353→  await seedDefaultAchievements(workspaceId);
+  1354→
+  1355→  const profile = await db.employeeProfile.findUnique({ where: { employeeId } });
+  1356→  if (!profile) return;
+  1357→
+  1358→  const [achievements, unlocked] = await Promise.all([
+  1359→    db.achievement.findMany({ where: { workspaceId } }),
+  1360→    db.employeeAchievement.findMany({ where: { employeeId }, select: { achievementId: true } }),
+  1361→  ]);
+  1362→  const unlockedIds = new Set(unlocked.map((u) => u.achievementId));
+  1363→
+  1364→  for (const achievement of achievements) {
+  1365→    if (unlockedIds.has(achievement.id)) continue;
+  1366→
+  1367→    let shouldUnlock = false;
+  1368→    let evidence = "";
+  1369→
+  1370→    switch (achievement.triggerType) {
+  1371→      case "task_count":
+  1372→        if (profile.completedTasks >= achievement.triggerThreshold) {
+  1373→          shouldUnlock = true;
+  1374→          evidence = `Completed ${profile.completedTasks} tasks (threshold: ${achievement.triggerThreshold})`;
+  1375→        }
+  1376→        break;
+  1377→      case "money_recovered":
+  1378→        if (profile.moneyRecovered >= achievement.triggerThreshold) {
+  1379→          shouldUnlock = true;
+  1380→          evidence = `Recovered ₹${(profile.moneyRecovered / 100).toFixed(2)} (threshold: ₹${(achievement.triggerThreshold / 100).toFixed(2)})`;
+  1381→        }
+  1382→        break;
+  1383→      case "level_reached":
+  1384→        if (profile.level >= achievement.triggerThreshold) {
+  1385→          shouldUnlock = true;
+  1386→          evidence = `Reached Level ${profile.level} (threshold: Level ${achievement.triggerThreshold})`;
+  1387→        }
+  1388→        break;
+  1389→      case "skill_level":
+  1390→        if (achievement.triggerSkillName) {
+  1391→          const skill = await db.employeeSkill.findUnique({
+  1392→            where: { employeeId_name: { employeeId, name: achievement.triggerSkillName } },
+  1393→          });
+  1394→          if (skill && skill.level >= achievement.triggerThreshold) {
+  1395→            shouldUnlock = true;
+  1396→            evidence = `Skill "${achievement.triggerSkillName}" reached Level ${skill.level} (threshold: Level ${achievement.triggerThreshold})`;
+  1397→          }
+  1398→        }
+  1399→        break;
+  1400→      case "perfect_quality": {
+  1401→        const perfectCount = await db.outcomeEvaluation.count({
+  1402→          where: { employeeId, qualityScore: 100 },
+  1403→        });
+  1404→        if (perfectCount >= achievement.triggerThreshold) {
+  1405→          shouldUnlock = true;
+  1406→          evidence = `${perfectCount} tasks with perfect quality score (threshold: ${achievement.triggerThreshold})`;
+  1407→        }
+  1408→        break;
+  1409→      }
+  1410→      case "streak": {
+  1411→        const recentEvals = await db.outcomeEvaluation.findMany({
+  1412→          where: { employeeId },
+  1413→          orderBy: { createdAt: "desc" },
+  1414→          take: achievement.triggerThreshold,
+  1415→        });
+  1416→        const allSuccess = recentEvals.length >= achievement.triggerThreshold &&
+  1417→          recentEvals.every((e) => e.actualSuccess);
+  1418→        if (allSuccess) {
+  1419→          shouldUnlock = true;
+  1420→          evidence = `${achievement.triggerThreshold} consecutive successful tasks`;
+  1421→        }
+  1422→        break;
+  1423→      }
+  1424→    }
+  1425→
+  1426→    if (shouldUnlock) {
+  1427→      await db.employeeAchievement.create({
+  1428→        data: {
+  1429→          workspaceId,
+  1430→          employeeId,
+  1431→          achievementId: achievement.id,
+  1432→          evidence,
+  1433→          taskId: evaluation.taskId,
+  1434→          outcomeId: evaluation.id,
+  1435→        },
+  1436→      });
+  1437→
+  1438→      await emitAudit(workspaceId, employeeId, "achievement_unlocked", "achievement", achievement.id, {
+  1439→        code: achievement.code,
+  1440→        name: achievement.name,
+  1441→        description: achievement.description,
+  1442→        trustImpact: String(achievement.trustImpact),
+  1443→        evidence,
+  1444→      });
+  1445→
+  1446→      await db.careerTimelineEntry.create({
+  1447→        data: {
+  1448→          workspaceId,
+  1449→          employeeId,
+  1450→          entryType: "achievement_unlocked",
+  1451→          title: `Achievement: ${achievement.name}`,
+  1452→          description: `${achievement.description} — ${evidence}`,
+  1453→          metadata: JSON.stringify({
+  1454→            code: achievement.code,
+  1455→            name: achievement.name,
+  1456→            trustImpact: achievement.trustImpact,
+  1457→            evidence,
+  1458→          }),
+  1459→          levelAtTime: profile.level,
+  1460→          xpAtTime: profile.experiencePoints,
+  1461→          trustAtTime: profile.trustScore,
+  1462→          taskId: evaluation.taskId,
+  1463→          outcomeId: evaluation.id,
+  1464→        },
+  1465→      });
+  1466→    }
+  1467→  }
+  1468→}
+  1469→
+  1470→/**
+  1471→ * Seeds the default achievement set for a workspace (idempotent).
+  1472→ */
+  1473→async function seedDefaultAchievements(workspaceId: string): Promise<void> {
+  1474→  const existingCount = await db.achievement.count({ where: { workspaceId } });
+  1475→  if (existingCount > 0) return;
+  1476→
+  1477→  const defaults = [
+  1478→    { code: "first_task", name: "First Task", description: "Completed the first task", category: "milestone", icon: "check-circle", triggerType: "task_count", triggerThreshold: 1, trustImpact: 2.0 },
+  1479→    { code: "five_tasks", name: "Five Tasks", description: "Completed 5 tasks", category: "milestone", icon: "list-todo", triggerType: "task_count", triggerThreshold: 5, trustImpact: 3.0 },
+  1480→    { code: "ten_tasks", name: "Ten Tasks", description: "Completed 10 tasks", category: "milestone", icon: "award", triggerType: "task_count", triggerThreshold: 10, trustImpact: 5.0 },
+  1481→    { code: "first_recovery", name: "First Recovery", description: "Recovered the first payment", category: "performance", icon: "banknote", triggerType: "money_recovered", triggerThreshold: 1, trustImpact: 4.0 },
+  1482→    { code: "major_recovery", name: "Major Recovery", description: "Recovered ₹10,000+ in a single task", category: "performance", icon: "banknote", triggerType: "money_recovered", triggerThreshold: 1000000, trustImpact: 6.0 },
+  1483→    { code: "level_3", name: "Promoted to Employee", description: "Reached Level 3 (Employee)", category: "milestone", icon: "trending-up", triggerType: "level_reached", triggerThreshold: 3, trustImpact: 3.0 },
+  1484→    { code: "level_5", name: "Promoted to Lead", description: "Reached Level 5 (Lead Employee)", category: "milestone", icon: "trophy", triggerType: "level_reached", triggerThreshold: 5, trustImpact: 5.0 },
+  1485→    { code: "collections_expert", name: "Collections Expert", description: "Reached Level 5 in the Collections skill", category: "learning", icon: "graduation-cap", triggerType: "skill_level", triggerThreshold: 5, triggerSkillName: "Collections", trustImpact: 4.0 },
+  1486→    { code: "perfect_quality", name: "Perfect Execution", description: "Completed a task with a perfect quality score (100/100)", category: "quality", icon: "sparkles", triggerType: "perfect_quality", triggerThreshold: 1, trustImpact: 5.0 },
+  1487→    { code: "streak_3", name: "Three in a Row", description: "Completed 3 consecutive tasks without failures", category: "performance", icon: "flame", triggerType: "streak", triggerThreshold: 3, trustImpact: 3.0 },
+  1488→    { code: "streak_5", name: "Five in a Row", description: "Completed 5 consecutive tasks without failures", category: "performance", icon: "flame", triggerType: "streak", triggerThreshold: 5, trustImpact: 5.0 },
+  1489→  ];
+  1490→
+  1491→  for (const def of defaults) {
+  1492→    await db.achievement.upsert({
+  1493→      where: { workspaceId_code: { workspaceId, code: def.code } },
+  1494→      update: {},
+  1495→      create: { workspaceId, ...def },
+  1496→    });
+  1497→  }
+  1498→}
+  1499→
+  1500→// ─── Audit Helper ────────────────────────────────────────────────────────────
+  1501→
+  1502→async function emitAudit(
+  1503→  workspaceId: string,
+  1504→  _employeeId: string,
+  1505→  entryType: string,
+  1506→  targetType: string,
+  1507→  targetId: string,
+  1508→  payload: Record<string, string>
+  1509→): Promise<void> {
+  1510→  try {
+  1511→    await db.$transaction(async (tx) => {
+  1512→      await appendAudit(tx, {
+  1513→        workspaceId,
+  1514→        entryType,
+  1515→        actorType: "system",
+  1516→        actorId: null,
+  1517→        actorName: "Learning Engine",
+  1518→        targetType,
+  1519→        targetId,
+  1520→        payload,
+  1521→      });
+  1522→    });
+  1523→  } catch (err) {
+  1524→    console.error(`[Learning] Audit emission failed for ${entryType}:`, err);
+  1525→  }
+  1526→}
+  1527→
+  1528→// ─── Retrieval Functions (for APIs) ──────────────────────────────────────────
+  1529→
+  1530→export async function getCareerTimeline(employeeId: string, limit = 50) {
+  1531→  return db.careerTimelineEntry.findMany({
+  1532→    where: { employeeId },
+  1533→    orderBy: { createdAt: "desc" },
+  1534→    take: limit,
+  1535→  });
+  1536→}
+  1537→
+  1538→export async function getAchievements(employeeId: string) {
+  1539→  const employee = await db.employee.findUnique({ where: { id: employeeId }, select: { workspaceId: true } });
+  1540→  if (!employee) return [];
+  1541→  const [definitions, unlocked] = await Promise.all([
+  1542→    db.achievement.findMany({ where: { workspaceId: employee.workspaceId }, orderBy: { category: "asc" } }),
+  1543→    db.employeeAchievement.findMany({
+  1544→      where: { employeeId },
+  1545→      include: { achievement: true },
+  1546→      orderBy: { unlockedAt: "desc" },
+  1547→    }),
+  1548→  ]);
+  1549→
+  1550→  const unlockedMap = new Map(unlocked.map((u) => [u.achievementId, u]));
+  1551→  return definitions.map((def) => ({
+  1552→    ...def,
+  1553→    unlocked: unlockedMap.has(def.id),
+  1554→    unlockedAt: unlockedMap.get(def.id)?.unlockedAt || null,
+  1555→    evidence: unlockedMap.get(def.id)?.evidence || null,
+  1556→  }));
+  1557→}
+  1558→
+  1559→export async function getPatterns(employeeId: string, limit = 50) {
+  1560→  return db.learningPattern.findMany({
+  1561→    where: { employeeId },
+  1562→    orderBy: { updatedAt: "desc" },
+  1563→    take: limit,
+  1564→  });
+  1565→}
+  1566→
+  1567→export async function getStrengths(employeeId: string) {
+  1568→  return db.employeeStrength.findMany({
+  1569→    where: { employeeId },
+  1570→    orderBy: { trustImpact: "desc" },
+  1571→  });
+  1572→}
+  1573→
+  1574→export async function getWeaknesses(employeeId: string) {
+  1575→  return db.employeeWeakness.findMany({
+  1576→    where: { employeeId },
+  1577→    orderBy: { trustImpact: "asc" },
+  1578→  });
+  1579→}
+  1580→
+  1581→export async function getOutcomeHistory(employeeId: string, limit = 20) {
+  1582→  return db.outcomeEvaluation.findMany({
+  1583→    where: { employeeId },
+  1584→    orderBy: { createdAt: "desc" },
+  1585→    take: limit,
+  1586→  });
+  1587→}
+  1588→
+  1589→export async function getBusinessImpact(employeeId: string) {
+  1590→  const outcomes = await db.businessOutcome.findMany({
+  1591→    where: { employeeId },
+  1592→    orderBy: { createdAt: "desc" },
+  1593→    take: 200,
+  1594→  });
+  1595→
+  1596→  const byType: Record<string, { count: number; totalAmount: number; lastAt: Date | null }> = {};
+  1597→  for (const o of outcomes) {
+  1598→    if (!byType[o.outcomeType]) {
+  1599→      byType[o.outcomeType] = { count: 0, totalAmount: 0, lastAt: null };
+  1600→    }
+  1601→    byType[o.outcomeType].count += o.count;
+  1602→    byType[o.outcomeType].totalAmount += o.amount;
+  1603→    if (!byType[o.outcomeType].lastAt || o.createdAt > byType[o.outcomeType].lastAt!) {
+  1604→      byType[o.outcomeType].lastAt = o.createdAt;
+  1605→    }
+  1606→  }
+  1607→
+  1608→  const latest = outcomes[0];
+  1609→
+  1610→  const allEvals = await db.outcomeEvaluation.findMany({
+  1611→    where: { employeeId },
+  1612→    orderBy: { createdAt: "desc" },
+  1613→    take: 50,
+  1614→  });
+  1615→  let currentStreak = 0;
+  1616→  for (const e of allEvals) {
+  1617→    if (e.actualSuccess) currentStreak++;
+  1618→    else break;
+  1619→  }
+  1620→
+  1621→  const largestRecovery = await db.businessOutcome.findFirst({
+  1622→    where: { employeeId, outcomeType: "money_recovered" },
+  1623→    orderBy: { amount: "desc" },
+  1624→  });
+  1625→
+  1626→  return {
+  1627→    byType,
+  1628→    cumulative: latest
+  1629→      ? {
+  1630→          moneyRecovered: latest.cumulativeMoneyRecovered,
+  1631→          invoicesProcessed: latest.cumulativeInvoicesProcessed,
+  1632→          customersHelped: latest.cumulativeCustomersHelped,
+  1633→          hoursSaved: latest.cumulativeHoursSaved,
+  1634→          tasksAutomated: latest.cumulativeTasksAutomated,
+  1635→          emailsSent: latest.cumulativeEmailsSent,
+  1636→        }
+  1637→      : null,
+  1638→    currentStreak,
+  1639→    largestRecovery: largestRecovery
+  1640→      ? { amount: largestRecovery.amount, taskId: largestRecovery.taskId, at: largestRecovery.createdAt }
+  1641→      : null,
+  1642→    totalOutcomes: outcomes.length,
+  1643→  };
+  1644→}
+  1645→

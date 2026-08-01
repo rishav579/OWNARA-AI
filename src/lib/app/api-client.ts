@@ -147,6 +147,39 @@ export const api = {
     get: () => apiFetch<any>("/dashboard"),
   },
 
+  // Communications (COMM-001) — AI Employee Communication Engine
+  // The universal messaging layer for every AI Employee.
+  communications: {
+    list: (params?: {
+      status?: string; priority?: string; communicationType?: string;
+      receiverType?: string; employeeId?: string; customerId?: string;
+      taskId?: string; invoiceId?: string; search?: string; limit?: number;
+    }) => {
+      const q = new URLSearchParams();
+      if (params?.status) q.set("status", params.status);
+      if (params?.priority) q.set("priority", params.priority);
+      if (params?.communicationType) q.set("communicationType", params.communicationType);
+      if (params?.receiverType) q.set("receiverType", params.receiverType);
+      if (params?.employeeId) q.set("employeeId", params.employeeId);
+      if (params?.customerId) q.set("customerId", params.customerId);
+      if (params?.taskId) q.set("taskId", params.taskId);
+      if (params?.invoiceId) q.set("invoiceId", params.invoiceId);
+      if (params?.search) q.set("search", params.search);
+      if (params?.limit) q.set("limit", String(params.limit));
+      const qs = q.toString();
+      return apiFetch<any[]>(`/communications${qs ? `?${qs}` : ""}`);
+    },
+    create: (data: any) => apiFetch<any>("/communications", { method: "POST", body: JSON.stringify(data) }),
+    threads: (limit = 50) => apiFetch<any[]>(`/communications/threads?limit=${limit}`),
+    stats: () => apiFetch<any>("/communications/stats"),
+    search: (q: string, limit = 50) => apiFetch<any[]>(`/communications/search?q=${encodeURIComponent(q)}&limit=${limit}`),
+    action: (id: string, action: string, note?: string, reason?: string) =>
+      apiFetch<any>(`/communications/${id}/action`, { method: "POST", body: JSON.stringify({ action, note, reason }) }),
+    thread: (id: string) => apiFetch<any[]>(`/communications/${id}/thread`),
+    reply: (id: string, data: any) => apiFetch<any>(`/communications/${id}/thread`, { method: "POST", body: JSON.stringify(data) }),
+    employeeToEmployee: (data: any) => apiFetch<any>("/communications/employee-to-employee", { method: "POST", body: JSON.stringify(data) }),
+  },
+
   // Employees
   employees: {
     list: (params?: { status?: string; role?: string; q?: string }) => {

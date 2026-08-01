@@ -582,3 +582,111 @@ Stage Summary:
 - ✅ Mobile responsive (375×812)
 - ✅ No runtime errors
 - ✅ No regressions (existing pages all still work)
+
+---
+Task ID: COMM-001
+Agent: Z.ai Code (lead product engineer)
+Task: Design and implement the AI Employee Communication Engine — the universal messaging layer for every AI Employee in BIHARI AI. Not a chat system, but structured business communication with humans, other AI Employees, and future external systems. Must be generic and domain-independent.
+
+Work Log:
+- Read the complete architecture via a subagent — mapped every composable system: Audit Chain (appendAudit), Memory Engine (recordMemory), Profile Engine (recordProfileEvent), Learning Engine (evaluateAndLearn), Capability Engine (checkCapability), Approval flow (resumeAfterApproval/failAfterApprovalRejection), Prisma schema (Employee, Task, AuditLog, EmployeeMemory), API response pattern, auth pattern, routing, shell navigation, UI components. Identified exactly how to compose with each — no duplication.
+- Designed 2 new Prisma models:
+  - `CommunicationThread` — groups related messages into a conversation with status (active/waiting/resolved/escalated), priority, message count, participant count, timestamps.
+  - `EmployeeCommunication` — the core message entity with 30+ fields: sender/receiver (employee/user/system/all), 11 communication types, 4 priorities, professional business content (subject/summary/explanation), business context (6 related entity refs), explainability (whyExists/evidence/confidence/businessImpact/recommendedAction/expectedOutcome), attachments + action buttons (JSON arrays), status lifecycle (sent→delivered→read→acknowledged→resolved/ignored/escalated), deterministic quality score (0-100), duplicate/throttle flags, response tracking (responseTimeMs/responseAction).
+- Added both models to the Prisma schema with proper indexes (8 indexes on EmployeeCommunication for efficient querying by workspace, status, receiver, sender, type, priority, thread, createdAt). Ran `bun run db:push` — database in sync.
+- Built the Communication Engine (`src/lib/communication/engine.ts`, ~550 lines) — generic, domain-independent, composes with existing systems:
+  - `createCommunication(input)` — the SINGLE entry point. Performs: duplicate detection (same sender+receiver+type+subject within 30min window → returns original), throttling (same sender+receiver+type+subject within 5min window → flagged), deterministic quality score computation (0-100 based on 6 components: explainability completeness 30%, confidence 20%, priority alignment 15%, business context 15%, actionability 10%, content quality 10%), thread creation/appending, audit event emission, memory recording.
+  - `replyToCommunication(id, replyInput)` — creates a reply in the same thread with parent linkage.
+  - `markAsRead(id)` — marks as read, emits audit.
+  - `acknowledgeCommunication(id, by, name)` — sets status to acknowledged, records response time, emits audit, records outcome memory.
+  - `resolveCommunication(id, by, name, note)` — sets status to resolved, resolves the thread, records response time, emits audit, records outcome memory.
+  - `escalateCommunication(id, by, name, reason)` — raises priority (high→critical, medium→high), sets status to escalated, escalates the thread, emits audit, records outcome memory.
+  - `sendEmployeeCoordination(from, to, workspace, params)` — employee-to-employee coordination message (enables handoffs like Finance→Back Office "Invoice requires missing GST document").
+  - `recordCommunicationMemory(employeeId, workspaceId, commId, outcome, responseTimeMs)` — records a `strategy_effectiveness` memory with the communication outcome (acknowledged/resolved/escalated) so the Learning Engine can track communication effectiveness over time.
+  - `computeQualityScore(input, confidence)` — deterministic formula (6 components, 0-100).
+  - `listCommunications(workspaceId, query)` — filtered retrieval by status/priority/type/receiverType/employeeId/customerId/taskId/invoiceId/search.
+  - `getCommunicationThreads(workspaceId)` — threads with latest message.
+  - `getThreadMessages(threadId)` — all messages in a thread.
+  - `getCommunicationStats(workspaceId)` — aggregate stats (total/unread/critical/waiting/resolved/escalated + byType + byPriority + avgResponseTimeMs).
+- Built 7 API routes (all follow the existing pattern: requireWorkspace + success/error/handleApiError):
+  - `GET/POST /api/communications` — list with filters + create new
+  - `POST /api/communications/[id]/action` — read/acknowledge/resolve/escalate/ignore
+  - `GET/POST /api/communications/[id]/thread` — get thread messages + reply
+  - `GET /api/communications/threads` — list threads with latest message
+  - `GET /api/communications/stats` — aggregate stats
+  - `POST /api/communications/employee-to-employee` — employee-to-employee coordination
+  - `GET /api/communications/search` — full-text search across subject/summary/explanation
+- Added `api.communications` namespace to the api-client with 8 methods: list, create, threads, stats, search, action, thread, reply, employeeToEmployee.
+- Built the Communication Center UI (`src/components/app/pages/communication.tsx`, ~590 lines):
+  - **Stats strip**: 5 KPI cells (Unread, Critical, Waiting, Resolved, Avg Response Time)
+  - **Tabs**: Inbox, Unread, Critical, Waiting, Resolved
+  - **Search bar**: full-text search across communications
+  - **Filters**: All, By Employee, By Customer, By Task
+  - **Two-column layout**: list (left, scrollable) + detail panel (right)
+  - **Communication list items**: type icon (11 types with color-coded configs), subject, sender→receiver, summary, priority badge, timestamp, response time, unread indicator (emerald left border)
+  - **Detail panel**: header (icon, subject, sender→receiver, type/priority/status badges, timestamp, quality score), summary, explanation, 4-cell explainability grid (Why this exists, Business impact, Recommended action, Expected outcome), confidence bar, evidence list (source/fact/weight), business context chips (Task/Customer/Invoice/Approval/Contract), duplicate/throttle flags, action buttons (Resolve/Acknowledge/Escalate/Ignore — inline, no navigation needed)
+  - **Inline actions**: Resolve, Acknowledge, Escalate, Ignore — all work via `api.communications.action()`, invalidate queries on success
+  - 11 communication type configs with icons + colors
+  - Loading/error/empty states for all sections
+  - Mobile responsive (375×812 tested)
+- Added the Communication route to `page.tsx` (`case "communication"`).
+- Added the Communication nav item to the shell sidebar (Workspace group, MessageSquare icon).
+- Fixed a React hooks lint error: `ref` is a reserved prop name in React — renamed to `refId` in the `ContextChip` component.
+- Composed with existing systems (NO duplication):
+  - **Audit Chain**: every communication action (create/read/acknowledge/resolve/escalate) emits an audit event via `appendAudit()` inside a transaction.
+  - **Memory Engine**: creating a communication records a `communication_preference` memory; resolving/acknowledging/escalating records a `strategy_effectiveness` memory with the outcome + response time — enabling the Learning Engine to track communication effectiveness.
+  - **Profile Engine**: the memory recording triggers `recordProfileEvent({ type: "memory_created" })` via the existing lazy-import pattern — no direct coupling.
+  - **Learning Engine**: the outcome memories (strategy_effectiveness) are picked up by the Learning Engine's pattern detection in future task evaluations.
+- Browser-verified end-to-end:
+  - Created a recommendation communication via API → appeared in the Communication Center list
+  - Created an employee-to-employee coordination message (Kavya→Kavya "Invoice requires missing GST document") → appeared in the list
+  - Clicked "Resolve" inline → communication status changed to "resolved" → list refreshed → stats updated
+  - All 5 tabs (Inbox/Unread/Critical/Waiting/Resolved) render correctly
+  - Search bar filters communications
+  - Detail panel shows all explainability fields, evidence, business context, confidence, quality score
+  - Stats strip shows correct counts (Unread, Critical, Waiting, Resolved, Avg Response Time: 17s)
+  - Audit events generated for every action (5 events: 2 created + 3 resolved)
+  - Memories recorded (3 communication_preference + 1 strategy_effectiveness)
+  - Mobile responsive (375×812)
+- Lint clean. No runtime errors in dev.log.
+
+Stage Summary:
+
+## What was built
+- **2 new Prisma models** (CommunicationThread, EmployeeCommunication) — normalized, workspace-scoped, 8 indexes for efficient querying.
+- **Communication Engine** (`src/lib/communication/engine.ts`, ~550 lines) — generic, domain-independent. Single entry point `createCommunication()` with duplicate detection, throttling, deterministic quality scoring, threading, audit emission, memory recording.
+- **7 API routes** — all follow the existing pattern.
+- **8 api-client methods** under `api.communications`.
+- **Communication Center UI** (~590 lines) — 5 tabs, search, filters, two-column list+detail, inline actions, 11 communication type configs, mobile responsive.
+- **Navigation + routing** — Communication nav item in the sidebar, route in page.tsx.
+
+## Design principles upheld
+- ✅ NOT a chat system — structured business communication with 11 types, priorities, explainability
+- ✅ Humans never receive raw AI reasoning — the engine requires professional business language (subject/summary/explanation)
+- ✅ Every communication is explainable (whyExists, evidence, confidence, businessImpact, recommendedAction, expectedOutcome)
+- ✅ Threaded conversations with replies, acknowledgements, resolution, escalation chains
+- ✅ Deterministic scoring (quality score 0-100) to avoid spam, merge duplicates, throttle
+- ✅ Every communication becomes permanent memory (Learning Engine integration)
+- ✅ Every communication generates audit events (Audit Chain integration)
+- ✅ Generic and domain-independent — works for Finance, HR, Procurement, Back Office, Sales Ops, Compliance, Legal, IT, Customer Support
+- ✅ Employee-to-employee coordination enabled (handoffs like Finance→Back Office)
+- ✅ Composed with existing architecture — no duplicate engines, no duplicate queries
+
+## Composability (no duplication)
+- Audit Chain: `appendAudit()` called for every communication action
+- Memory Engine: `recordMemory()` called for creation + outcome tracking
+- Profile Engine: triggered indirectly via memory events
+- Learning Engine: outcome memories picked up by pattern detection
+- API pattern: `requireWorkspace` + `success/error/handleApiError`
+- UI components: reused Avatar, PageHeader, EmptyState, ErrorState, ListSkeleton, ConfidenceBar, cn()
+
+## Verification status
+- ✅ Lint clean
+- ✅ Database in sync
+- ✅ All 7 APIs tested (list, create, action, thread, stats, search, employee-to-employee)
+- ✅ Browser-verified: Communication Center renders with real data, inline actions work
+- ✅ Audit events generated (5 events: 2 created + 3 resolved)
+- ✅ Memories recorded (3 communication_preference + 1 strategy_effectiveness)
+- ✅ Mobile responsive
+- ✅ No runtime errors
+- ✅ No regressions
