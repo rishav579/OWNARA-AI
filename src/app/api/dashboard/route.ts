@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
   try {
     const { workspaceId } = await requireWorkspace(request);
 
-    const [employees, tasks, approvals, documents, llmUsage, auditLogs, trustScores, policies, businessActivity] = await Promise.all([
+    const [employees, tasks, approvals, documents, llmUsage, auditLogs, trustScores, policies] = await Promise.all([
       db.employee.findMany({ where: { workspaceId } }),
       db.task.findMany({ where: { workspaceId } }),
       db.approval.findMany({ where: { workspaceId } }),
@@ -16,11 +16,10 @@ export async function GET(request: NextRequest) {
       db.auditLog.findMany({
         where: { workspaceId },
         orderBy: { sequenceNumber: "desc" },
-        take: 6,
+        take: 8, // Single query — used for both recentActivity and businessFeed
       }),
       db.trustScore.findMany({ where: { workspaceId }, include: { employee: true } }),
       db.policy.count({ where: { workspaceId, status: "active" } }),
-      db.auditLog.findMany({ where: { workspaceId }, orderBy: { sequenceNumber: "desc" }, take: 8 }),
     ]);
 
     // Finance metrics (live data from AR domain)
@@ -127,7 +126,7 @@ export async function GET(request: NextRequest) {
     }));
 
     // Business activity (translated)
-    const businessFeed = businessActivity.map((e) => {
+    const businessFeed = auditLogs.map((e) => {
       const payload = JSON.parse(e.payload);
       return translateBusiness(e.entryType, e.actorName, e.actorType, payload, e.targetType, e.id, e.sequenceNumber, e.createdAt);
     });
@@ -213,7 +212,7 @@ export async function GET(request: NextRequest) {
       tokens: {
         usedThisMonth: totalTokens,
         costCentsThisMonth: totalCostCents,
-        budgetCentsThisMonth: 10000,
+        budgetCentsThisMonth: totalCostCents > 0 ? totalCostCents : 0, // Real cost from LLM usage
         byEmployee: tokenByEmployee,
       },
       documents: {
@@ -256,16 +255,38 @@ export async function GET(request: NextRequest) {
       // Onboarding state (MVP-001) — used by the dashboard to show
       // the "Hire your first AI Employee" CTA when the workspace is empty.
       needsOnboarding: employees.length === 0,
-      // Task activity over 14 days (from LLM usage as proxy)
-      taskActivity: llmUsage.slice(-14).map((u, i) => ({
-        day: `Jan ${15 + i}`,
-        tasks: Math.max(1, Math.floor(u.totalTokens / 8000)),
-        tokens: u.totalTokens,
-      })),
+      // Task activity over 14 days — derived from actual task completion dates
+      taskActivity: generateTaskActivity(tasks),
     });
   } catch (err) {
     return handleApiError(err);
   }
+}
+
+// Generate real task activity from actual task completion dates (last 14 days)
+function generateTaskActivity(tasks: any[]) {
+  const days: Array<{ day: string; tasks: number; tokens: number }> = [];
+  const now = new Date();
+  for (let i = 13; i >= 0; i--) {
+    const date = new Date(now);
+    date.setDate(date.getDate() - i);
+    date.setHours(0, 0, 0, 0);
+    const nextDate = new Date(date);
+    nextDate.setDate(nextDate.getDate() + 1);
+
+    const dayTasks = tasks.filter((t) => {
+      if (!t.completedAt) return false;
+      const completed = new Date(t.completedAt);
+      return completed >= date && completed < nextDate;
+    });
+
+    days.push({
+      day: date.toLocaleDateString("en-IN", { day: "numeric", month: "short" }),
+      tasks: dayTasks.length,
+      tokens: dayTasks.reduce((s, t) => s + (t.tokenUsage || 0), 0),
+    });
+  }
+  return days;
 }
 
 function translateBusiness(entryType: string, actorName: string, actorType: string, payload: any, targetType: string | null, id: string, seq: number, createdAt: Date) {

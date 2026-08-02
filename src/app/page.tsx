@@ -11,7 +11,6 @@ import { DashboardPage } from "@/components/app/pages/dashboard";
 import { EmployeesPage } from "@/components/app/pages/employees";
 import { EmployeeDetailPage } from "@/components/app/pages/employee-detail";
 import { TasksPage } from "@/components/app/pages/tasks";
-import { ApprovalsPage } from "@/components/app/pages/approvals";
 import { DecisionCenterPage } from "@/components/app/pages/decision-center";
 import { CommunicationPage } from "@/components/app/pages/communication";
 import { TrustCenterPage } from "@/components/app/pages/trust-center";

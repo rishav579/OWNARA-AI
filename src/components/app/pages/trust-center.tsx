@@ -61,18 +61,14 @@ function formatINRfinance(paise: number): string {
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
 const MODULES = [
-  { id: "identity", label: "Identity Cards", icon: Bot },
-  { id: "explainability", label: "Explainability", icon: Eye },
-  { id: "trust-timeline", label: "Trust Timeline", icon: Activity },
-  { id: "risk", label: "Risk Center", icon: AlertOctagon },
-  { id: "resume", label: "Employee Resume", icon: FileText },
   { id: "ceo-report", label: "CEO Report", icon: Building2 },
-  { id: "customer-report", label: "Customer Trust Report", icon: ShieldCheck },
-  { id: "security", label: "Security Overview", icon: Lock },
+  { id: "customer-report", label: "Customer Report", icon: ShieldCheck },
+  { id: "risk", label: "Risk Center", icon: AlertOctagon },
+  { id: "security", label: "Security", icon: Lock },
 ] as const;
 
 export function TrustCenterPage() {
-  const [module, setModule] = useState<(typeof MODULES)[number]["id"]>("identity");
+  const [module, setModule] = useState<(typeof MODULES)[number]["id"]>("ceo-report");
 
   return (
     <div>
@@ -112,11 +108,7 @@ export function TrustCenterPage() {
       </div>
 
       {/* Module content */}
-      {module === "identity" && <IdentityCardsModule />}
-      {module === "explainability" && <ExplainabilityModule />}
-      {module === "trust-timeline" && <TrustTimelineModule />}
       {module === "risk" && <RiskCenterModule />}
-      {module === "resume" && <ResumeModule />}
       {module === "ceo-report" && <CEOReportModule />}
       {module === "customer-report" && <CustomerTrustReportModule />}
       {module === "security" && <SecurityOverviewModule />}
@@ -1158,7 +1150,11 @@ function CustomerTrustReportModule() {
   });
 
   const customer = customers.find((c: any) => c.id === selectedId);
-  const customerAudit = audit.filter((a: any) => a.payload?.includes?.(selectedId) || a.businessDescription?.includes?.(customer?.name || "___"));
+  const customerAudit = audit.filter((a: any) => {
+    const desc = a.businessDescription || "";
+    const payloadStr = typeof a.payload === "string" ? a.payload : JSON.stringify(a.payload || {});
+    return desc.includes(customer?.name || "___INVALID___") || payloadStr.includes(selectedId || "___INVALID___");
+  });
   const today = new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
 
   return (
@@ -1294,7 +1290,7 @@ function SecurityOverviewModule() {
   const highRiskCaps = capabilities.filter((c: any) => c.riskLevel === "high");
   const totalCaps = capabilities.length;
   const auditEntries = audit.length;
-  const hashChainVerified = audit.length > 0; // simplified — the chain is verified on read
+  const hashChainVerified = audit.length > 0 ? "Not verified" : "—"; // Requires backend verification endpoint
 
   return (
     <div className="space-y-4">
@@ -1303,7 +1299,7 @@ function SecurityOverviewModule() {
         <SecurityStat label="Employees" value={String(employees.length)} icon={Bot} color="text-emerald-400" />
         <SecurityStat label="Capabilities" value={String(totalCaps)} icon={Key} color="text-sky-400" />
         <SecurityStat label="Audit Events" value={String(auditEntries)} icon={Database} color="text-violet-400" />
-        <SecurityStat label="Hash Chain" value={hashChainVerified ? "Verified" : "—"} icon={ShieldCheck} color="text-emerald-400" />
+        <SecurityStat label="Hash Chain" value={hashChainVerified} icon={ShieldCheck} color="text-zinc-400" />
       </div>
 
       {/* Workspace security */}
@@ -1336,7 +1332,7 @@ function SecurityOverviewModule() {
       {/* Audit integrity */}
       <SecurityCard title="Audit Integrity" icon={ShieldCheck}>
         <SecurityRow label="Total Events" value={String(auditEntries)} />
-        <SecurityRow label="Hash Chain" value={hashChainVerified ? "Verified ✓" : "—"} status={hashChainVerified ? "ok" : "unknown"} />
+        <SecurityRow label="Hash Chain" value={hashChainVerified} status="unknown" />
         <SecurityRow label="Latest Entry" value={audit[0] ? `#${audit[0].sequenceNumber}` : "—"} />
         <SecurityRow label="Latest Hash" value={audit[0]?.entryHash?.slice(0, 16) + "…" || "—"} mono />
       </SecurityCard>

@@ -264,7 +264,7 @@ export async function createCommunication(input: CommunicationInput): Promise<{
       expectedOutcome: input.expectedOutcome,
       attachments: JSON.stringify(input.attachments || []),
       actionButtons: JSON.stringify(input.actionButtons || []),
-      status: isThrottled ? "sent" : "sent", // throttled messages are still sent but flagged
+      status: isThrottled ? "ignored" : "sent", // throttled messages are suppressed (not sent)
       qualityScore,
       isDuplicate: false,
       isThrottled,

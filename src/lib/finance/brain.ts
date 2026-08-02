@@ -303,13 +303,8 @@ export async function buildFinanceContext(
     select: { id: true, filename: true, status: true, chunkCount: true },
   });
 
-  // Load previous approvals for this invoice's tasks
-  const invoiceTasks = await db.task.findFirst({
-    where: { id: { in: (await db.approval.findMany({ where: { taskId: { not: undefined } }, select: { taskId: true } })).map((a) => a.taskId) } },
-    select: { id: true },
-  });
-
-  // Actually, let's get approvals related to this invoice via the task
+  // Load previous approvals for this invoice via the task
+  // (tasks are linked to invoices by title containing the invoice number)
   const tasksForInvoice = await db.task.findMany({
     where: {
       workspaceId,

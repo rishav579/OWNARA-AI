@@ -235,38 +235,39 @@ export function generateBusinessReason(ctx: InvoiceContext): string {
  * Generates a reminder email subject and body based on the invoice context
  * and the type of reminder (first, follow-up, escalation).
  */
-export function generateReminderContent(ctx: InvoiceContext): { subject: string; body: string } {
+export function generateReminderContent(ctx: InvoiceContext, companyName?: string): { subject: string; body: string } {
   const customer = ctx.customerName;
   const invoiceNum = ctx.invoiceNumber;
   const amount = formatRupees(ctx.outstanding);
   const days = ctx.daysOverdue;
   const dueDate = formatDate(ctx.dueDate);
+  const company = companyName || "Finance Team";
 
   if (ctx.recommendedAction === "send_first_reminder") {
     return {
       subject: `Payment Reminder: Invoice ${invoiceNum} — ${amount} Overdue`,
-      body: `Dear ${customer},\n\nThis is a friendly reminder that payment for Invoice ${invoiceNum} (${amount}) was due on ${dueDate} and is now ${days} days overdue.\n\nPlease arrange payment at your earliest convenience. If you have already paid, please disregard this notice and share the payment reference so we can update our records.\n\nIf you have any questions about this invoice, please reply to this email.\n\nBest regards,\nFinance Team\nAcme Trading Pvt Ltd`,
+      body: `Dear ${customer},\n\nThis is a friendly reminder that payment for Invoice ${invoiceNum} (${amount}) was due on ${dueDate} and is now ${days} days overdue.\n\nPlease arrange payment at your earliest convenience. If you have already paid, please disregard this notice and share the payment reference so we can update our records.\n\nIf you have any questions about this invoice, please reply to this email.\n\nBest regards,\nFinance Team\n${company}`,
     };
   }
 
   if (ctx.recommendedAction === "send_follow_up_reminder") {
     return {
       subject: `URGENT: Follow-up on Invoice ${invoiceNum} — ${amount} Overdue (${days} days)`,
-      body: `Dear ${customer},\n\nWe are following up on Invoice ${invoiceNum} (${amount}), which is now ${days} days overdue.\n\nDespite our previous reminder(s), we have not yet received payment or a response. Please treat this as urgent.\n\nIf there is an issue with this invoice, please contact us immediately so we can resolve it. Otherwise, please arrange payment within 3 business days to avoid further action.\n\nBest regards,\nFinance Team\nAcme Trading Pvt Ltd`,
+      body: `Dear ${customer},\n\nWe are following up on Invoice ${invoiceNum} (${amount}), which is now ${days} days overdue.\n\nDespite our previous reminder(s), we have not yet received payment or a response. Please treat this as urgent.\n\nIf there is an issue with this invoice, please contact us immediately so we can resolve it. Otherwise, please arrange payment within 3 business days to avoid further action.\n\nBest regards,\nFinance Team\n${company}`,
     };
   }
 
   if (ctx.recommendedAction === "escalate_to_manager") {
     return {
       subject: `Final Notice: Invoice ${invoiceNum} — ${amount} Overdue (${days} days) — Escalation Pending`,
-      body: `Dear ${customer},\n\nThis is a final notice regarding Invoice ${invoiceNum} (${amount}), which is now ${days} days overdue.\n\nIf payment is not received within 5 business days, this account will be escalated to our collections manager for direct intervention, which may include suspension of services and legal recovery proceedings.\n\nPlease contact us immediately to arrange payment or discuss a payment plan.\n\nBest regards,\nCollections Manager\nAcme Trading Pvt Ltd`,
+      body: `Dear ${customer},\n\nThis is a final notice regarding Invoice ${invoiceNum} (${amount}), which is now ${days} days overdue.\n\nIf payment is not received within 5 business days, this account will be escalated to our collections manager for direct intervention, which may include suspension of services and legal recovery proceedings.\n\nPlease contact us immediately to arrange payment or discuss a payment plan.\n\nBest regards,\nCollections Manager\n${company}`,
     };
   }
 
   // Default: escalation/legal
   return {
     subject: `Legal Escalation Notice: Invoice ${invoiceNum} — ${amount} Overdue (${days} days)`,
-    body: `Dear ${customer},\n\nPlease be advised that Invoice ${invoiceNum} (${amount}), now ${days} days overdue, is being escalated to our legal team for formal recovery proceedings.\n\nAll previous reminders have gone unanswered. To avoid legal action, please arrange full payment immediately and contact us within 48 hours.\n\nThis is our final communication before formal proceedings begin.\n\nBest regards,\nLegal Department\nAcme Trading Pvt Ltd`,
+    body: `Dear ${customer},\n\nPlease be advised that Invoice ${invoiceNum} (${amount}), now ${days} days overdue, is being escalated to our legal team for formal recovery proceedings.\n\nAll previous reminders have gone unanswered. To avoid legal action, please arrange full payment immediately and contact us within 48 hours.\n\nThis is our final communication before formal proceedings begin.\n\nBest regards,\nLegal Department\n${company}`,
   };
 }
 

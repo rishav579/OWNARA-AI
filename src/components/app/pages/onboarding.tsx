@@ -88,33 +88,6 @@ const EMPLOYEE_TEMPLATES = [
     badge: "Available now",
     capabilities: ["Invoice Analysis", "Collections", "Credit Risk", "Reminder Strategy"],
   },
-  {
-    id: "back-office",
-    name: "Back Office Employee",
-    role: "back_office_employee",
-    description: "Handles data entry, document processing, and operational workflows.",
-    enabled: false,
-    badge: "Coming soon",
-    capabilities: ["Data Entry", "Document Processing", "Workflow Automation"],
-  },
-  {
-    id: "hr",
-    name: "HR Employee",
-    role: "hr_employee",
-    description: "Manages onboarding, leave tracking, and employee queries.",
-    enabled: false,
-    badge: "Coming soon",
-    capabilities: ["Employee Onboarding", "Leave Management", "Policy Queries"],
-  },
-  {
-    id: "sales-ops",
-    name: "Sales Ops Employee",
-    role: "sales_ops_employee",
-    description: "Researches prospects, drafts outreach, and manages CRM updates.",
-    enabled: false,
-    badge: "Coming soon",
-    capabilities: ["Lead Research", "Outreach Drafting", "CRM Updates"],
-  },
 ];
 
 const SAMPLE_CSV = `customer_name,customer_email,invoice_number,issue_date,due_date,subtotal,tax

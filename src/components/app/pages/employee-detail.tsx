@@ -47,9 +47,8 @@ import {
 
 const TABS = [
   { id: "overview", label: "Overview", icon: Activity },
-  { id: "career", label: "Career", icon: Award },
-  { id: "timeline", label: "Timeline", icon: History },
-  { id: "learning", label: "Learning", icon: Brain },
+  { id: "career", label: "Performance", icon: Award },
+  { id: "timeline", label: "Activity", icon: History },
   { id: "tasks", label: "Tasks", icon: ListTodo },
   { id: "tools", label: "Tools", icon: Shield },
   { id: "knowledge", label: "Knowledge", icon: BookOpen },
@@ -79,39 +78,6 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
     queryKey: ["employee", employeeId, "career-timeline"],
     queryFn: () => api.employees.careerTimeline(employeeId, 100),
     enabled: tab === "timeline",
-  });
-
-  // Learning data (EMP-002) — patterns, strengths, weaknesses, achievements,
-  // outcome history, business impact. All loaded together for the Learning tab.
-  const { data: patterns, isLoading: patternsLoading } = useQuery({
-    queryKey: ["employee", employeeId, "patterns"],
-    queryFn: () => api.employees.patterns(employeeId),
-    enabled: tab === "learning",
-  });
-  const { data: strengths, isLoading: strengthsLoading } = useQuery({
-    queryKey: ["employee", employeeId, "strengths"],
-    queryFn: () => api.employees.strengths(employeeId),
-    enabled: tab === "learning",
-  });
-  const { data: weaknesses, isLoading: weaknessesLoading } = useQuery({
-    queryKey: ["employee", employeeId, "weaknesses"],
-    queryFn: () => api.employees.weaknesses(employeeId),
-    enabled: tab === "learning",
-  });
-  const { data: achievements, isLoading: achievementsLoading } = useQuery({
-    queryKey: ["employee", employeeId, "achievements"],
-    queryFn: () => api.employees.achievements(employeeId),
-    enabled: tab === "learning",
-  });
-  const { data: outcomeHistory, isLoading: outcomeLoading } = useQuery({
-    queryKey: ["employee", employeeId, "outcome-history"],
-    queryFn: () => api.employees.outcomeHistory(employeeId, 20),
-    enabled: tab === "learning",
-  });
-  const { data: businessImpact } = useQuery({
-    queryKey: ["employee", employeeId, "business-impact"],
-    queryFn: () => api.employees.businessImpact(employeeId),
-    enabled: tab === "learning",
   });
 
   const pauseMutation = useMutation({
@@ -334,27 +300,14 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
           </div>
         )}
 
-        {/* Career tab — Employee Profile Engine (EMP-001) */}
+        {/* Performance tab — Employee Profile Engine (EMP-001) */}
         {tab === "career" && (
           <CareerPanel profile={profile ?? undefined} loading={profileLoading} />
         )}
 
-        {/* Timeline tab — Career Timeline (EMP-002) */}
+        {/* Activity tab — Career Timeline (EMP-002) */}
         {tab === "timeline" && (
           <TimelinePanel entries={timeline ?? []} loading={timelineLoading} />
-        )}
-
-        {/* Learning tab — Autonomous Learning & Skill Evolution (EMP-002) */}
-        {tab === "learning" && (
-          <LearningPanel
-            patterns={patterns ?? []}
-            strengths={strengths ?? []}
-            weaknesses={weaknesses ?? []}
-            achievements={achievements ?? []}
-            outcomeHistory={outcomeHistory ?? []}
-            businessImpact={businessImpact}
-            loading={patternsLoading || strengthsLoading || weaknessesLoading || achievementsLoading || outcomeLoading}
-          />
         )}
 
         {/* Tasks tab */}
@@ -572,7 +525,7 @@ function CareerPanel({ profile, loading }: { profile?: ProfileData; loading: boo
                 <span className="text-sm text-zinc-400">· {p.title}</span>
               </div>
               <div className="mt-0.5 font-mono text-xs text-zinc-500">
-                {p.experiencePoints} XP · v{p.version} · updated {formatDateTime(p.updatedAt)}
+                Trust {p.trustScore.toFixed(1)} · v{p.version} · updated {formatDateTime(p.updatedAt)}
               </div>
             </div>
           </div>
@@ -590,44 +543,18 @@ function CareerPanel({ profile, loading }: { profile?: ProfileData; loading: boo
           </div>
         </div>
 
-        {/* Level progress bar */}
-        {nextLevel ? (
-          <div className="mt-4">
-            <div className="mb-1.5 flex items-center justify-between text-xs">
-              <span className="text-zinc-400">Progress to <span className="text-zinc-200">{nextLevel.title}</span> (Lv{nextLevel.level})</span>
-              <span className="font-mono text-zinc-500">
-                {p.experiencePoints - currentLevel.minXp} / {nextLevel.minXp - currentLevel.minXp} XP
-              </span>
-            </div>
-            <div className="h-2 overflow-hidden rounded-full bg-zinc-800">
-              <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all" style={{ width: `${progressPct}%` }} />
-            </div>
-            <div className="mt-1 text-right text-[0.6rem] text-zinc-500">{progressPct}%</div>
+        {/* Trust score progress bar */}
+        <div className="mt-4">
+          <div className="mb-1.5 flex items-center justify-between text-xs">
+            <span className="text-zinc-400">Trust Score</span>
+            <span className="font-mono text-zinc-500">{p.trustScore.toFixed(1)} / 100</span>
           </div>
-        ) : (
-          <div className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-400">
-            ★ Max level reached — Expert Employee
+          <div className="h-2 overflow-hidden rounded-full bg-zinc-800">
+            <div className={cn(
+              "h-full rounded-full transition-all",
+              p.trustScore >= 80 ? "bg-emerald-500" : p.trustScore >= 60 ? "bg-amber-500" : "bg-red-500"
+            )} style={{ width: `${p.trustScore}%` }} />
           </div>
-        )}
-
-        {/* Level ladder */}
-        <div className="mt-4 flex flex-wrap gap-1.5">
-          {LEVEL_LADDER.map((l) => (
-            <span
-              key={l.level}
-              className={cn(
-                "rounded-full px-2 py-0.5 text-[0.6rem] font-medium",
-                l.level === p.level
-                  ? "bg-emerald-500/15 text-emerald-400"
-                  : l.level < p.level
-                  ? "bg-zinc-800 text-zinc-400"
-                  : "bg-zinc-900 text-zinc-600"
-              )}
-              title={`${l.title} (${l.minXp} XP)`}
-            >
-              Lv{l.level} {l.title}
-            </span>
-          ))}
         </div>
       </div>
 

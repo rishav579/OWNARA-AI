@@ -3,7 +3,10 @@ import jwt from "jsonwebtoken";
 import { db } from "@/lib/db";
 import { cookies } from "next/headers";
 
-const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-in-production";
+// Hard-fail if JWT_SECRET is not set in production. Never silently fall back.
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === "production"
+  ? (() => { throw new Error("JWT_SECRET environment variable is required in production."); })()
+  : "dev-secret-not-for-production");
 const ACCESS_TOKEN_TTL = 60 * 15; // 15 minutes
 const REFRESH_TOKEN_TTL = 60 * 60 * 24 * 7; // 7 days
 

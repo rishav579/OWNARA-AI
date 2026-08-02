@@ -59,17 +59,6 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     items: [
       { path: "trust-center", label: "Trust Center", icon: Shield },
       { path: "audit", label: "Audit Timeline", icon: ScrollText },
-      { path: "governance", label: "Governance", icon: Scale },
-      { path: "knowledge", label: "Knowledge Base", icon: BookOpen },
-    ],
-  },
-  {
-    label: "Settings",
-    items: [
-      { path: "settings", label: "Settings", icon: Settings },
-      { path: "integrations", label: "Integrations", icon: Plug },
-      { path: "workspace-admin", label: "Administration", icon: Building2 },
-      { path: "billing", label: "Billing", icon: CreditCard },
     ],
   },
 ];
@@ -148,22 +137,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         ))}
       </nav>
 
-      {/* Upgrade card */}
-      <div className="px-3 pb-3">
-        <div className="rounded-xl border border-zinc-800 bg-gradient-to-br from-emerald-500/10 to-teal-500/5 p-3">
-          <div className="mb-1.5 flex items-center gap-1.5">
-            <Zap className="h-3.5 w-3.5 text-emerald-400" />
-            <span className="text-xs font-semibold text-zinc-200">Pro Plan</span>
-          </div>
-          <p className="mb-2 text-[0.7rem] leading-relaxed text-zinc-400">
-            2.6M / 10M tokens used this month
-          </p>
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
-            <div className="h-full rounded-full bg-emerald-500" style={{ width: "26%" }} />
-          </div>
-        </div>
-      </div>
-
       {/* User */}
       <div className="relative border-t border-zinc-800 p-3">
         <button
@@ -239,17 +212,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Menu className="h-5 w-5" />
           </button>
 
-          {/* Search */}
-          <div className="relative hidden flex-1 sm:block sm:max-w-md">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
-            <input
-              placeholder="Search employees, tasks, approvals…"
-              className="h-8 w-full rounded-lg border border-zinc-800 bg-zinc-900 pl-9 pr-12 text-xs text-zinc-200 outline-none transition-colors placeholder:text-zinc-600 focus:border-zinc-700"
-            />
-            <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 font-mono text-[0.6rem] text-zinc-500">
-              ⌘K
-            </kbd>
-          </div>
+          <div className="hidden flex-1 sm:block sm:max-w-md" />
 
           <div className="flex flex-1 items-center justify-end gap-1 sm:flex-initial">
             <button

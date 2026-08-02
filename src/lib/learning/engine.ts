@@ -694,8 +694,8 @@ async function detectPatternsFromOutcome(task: any, evaluation: any): Promise<vo
       });
       if (!invoice) continue;
 
-      // Invoices above ₹5 lakh (5000000 paise = ₹50000... actually ₹5L = 500000*100 = 50000000)
-      if (invoice.total >= 5000000) {
+      // Invoices above ₹5 lakh (₹5,00,000 = 50,000,000 paise)
+      if (invoice.total >= 50000000) {
         await upsertPattern({
           workspaceId,
           employeeId,

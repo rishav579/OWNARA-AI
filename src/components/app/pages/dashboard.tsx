@@ -343,8 +343,8 @@ export function DashboardPage() {
               <ApprovalPreviewCard
                 key={a.id}
                 approval={a}
-                onApprove={() => approveMutation.mutate({ id: a.id, reason: "Approved from Operations Center" })}
-                onReject={() => rejectMutation.mutate({ id: a.id, reason: "Rejected from Operations Center" })}
+                onApprove={() => approveMutation.mutate({ id: a.id, reason: "Approved" })}
+                onReject={() => rejectMutation.mutate({ id: a.id, reason: "Rejected" })}
                 onView={() => navigate("approvals")}
                 approving={approveMutation.isPending}
                 rejecting={rejectMutation.isPending}

@@ -62,13 +62,15 @@ export async function checkCapability(
 ): Promise<CapabilityCheckResult> {
   const requiredCapabilityCode = TOOL_CAPABILITY_MAP[toolName];
 
-  // If the tool is not in the map, allow it (backward compatibility)
+  // If the tool is not in the map, allow it (only for internal system tools
+  // like "plan" and "reasoning" that don't execute external actions).
+  // All external-facing tools MUST be in the map.
   if (!requiredCapabilityCode) {
     return {
       allowed: true,
       capabilityCode: "none",
-      capabilityName: "No capability required",
-      reason: `Tool "${toolName}" does not require a capability`,
+      capabilityName: "Internal tool",
+      reason: `Tool "${toolName}" is an internal system tool (no external action)`,
     };
   }
 

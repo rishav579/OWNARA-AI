@@ -127,14 +127,9 @@ function customerSupportPlan(title: string, tools: string[]): ExecutionPlan {
         "The drafted response is ready to send to the customer. This is a critical action — sending an external email requires human approval before execution.",
       tool: "send_email",
       toolInput: {
-        to: "customer@example.in",
+        to: "[recipient — to be determined by context]",
         subject: `Re: ${title}`,
-        body:
-          "Dear Customer,\n\nThank you for reaching out. Based on your query and our returns policy, " +
-          "I can confirm that your order is eligible for a return within the 7-day window. " +
-          "Your tracking number is DLV-8847 and you can track it at delhivery.com/track.\n\n" +
-          "Please let me know if you need any further assistance.\n\n" +
-          "Best regards,\nAI Customer Support",
+        body: "[email body — to be drafted by the employee during execution]",
       },
       confidence: 0.85,
     });
@@ -196,13 +191,9 @@ function salesOutreachPlan(title: string, tools: string[]): ExecutionPlan {
         "The outreach email is ready to send. This is a critical action — sending an external email to a prospect requires human approval.",
       tool: "send_email",
       toolInput: {
-        to: "prospect@logistics-co.in",
-        subject: "Helping [Company] reduce dispatch errors by 40%",
-        body:
-          "Hi,\n\nI noticed your recent expansion into Tamil Nadu. BIHARI AI helps logistics companies " +
-          "like yours automate dispatch routing and reduce manual errors by up to 40%.\n\n" +
-          "Would you have 20 minutes this week for a quick demo?\n\n" +
-          "Best regards,\nAI Sales Development",
+        to: "[prospect — to be determined by context]",
+        subject: "[subject — to be drafted by the employee during execution]",
+        body: "[email body — to be drafted by the employee during execution]",
       },
       confidence: 0.83,
     });

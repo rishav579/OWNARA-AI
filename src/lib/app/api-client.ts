@@ -266,13 +266,6 @@ export const api = {
       apiFetch<any>(`/employees/${employeeId}/capabilities?code=${capabilityCode}`, { method: "DELETE" }),
   },
 
-  // Employee Profile
-  profile: {
-    get: (employeeId: string) => apiFetch<any>(`/employees/${employeeId}/profile`),
-    performance: (employeeId: string) => apiFetch<any>(`/employees/${employeeId}/performance`),
-    history: (employeeId: string) => apiFetch<any[]>(`/employees/${employeeId}/history`),
-  },
-
   // Knowledge
   knowledge: {
     list: (params?: { status?: string; employeeId?: string }) => {

@@ -37,39 +37,6 @@ const TEMPLATES = [
     enabled: true,
     badge: "Available now",
   },
-  {
-    id: "t_csa",
-    name: "Customer Support Agent",
-    role: "customer_support_agent",
-    description: "Drafts and routes customer replies under human approval.",
-    defaultJobDescription: "Draft replies to customer queries about orders, returns, and product information. Route complex billing issues to the finance team.",
-    tools: ["draft_response", "send_email", "search_knowledge", "summarize"],
-    approvalRules: { send_email: "critical", draft_response: "non_critical", search_knowledge: "non_critical", summarize: "non_critical" },
-    enabled: false,
-    badge: "Coming soon",
-  },
-  {
-    id: "t_sdr",
-    name: "Sales Development Rep",
-    role: "sales_development_representative",
-    description: "Researches prospects and drafts personalized outreach emails.",
-    defaultJobDescription: "Research prospects and draft personalized outreach emails. Follow up on replies and schedule demos.",
-    tools: ["draft_response", "send_email", "search_knowledge", "summarize"],
-    approvalRules: { send_email: "critical", draft_response: "non_critical", search_knowledge: "non_critical", summarize: "non_critical" },
-    enabled: false,
-    badge: "Coming soon",
-  },
-  {
-    id: "t_ra",
-    name: "Research Analyst",
-    role: "research_analyst",
-    description: "Researches market trends and produces briefings for leadership.",
-    defaultJobDescription: "Research market trends, competitor moves, and industry reports. Summarize findings into briefings for the leadership team.",
-    tools: ["search_knowledge", "summarize", "draft_response"],
-    approvalRules: { draft_response: "non_critical", search_knowledge: "non_critical", summarize: "non_critical" },
-    enabled: false,
-    badge: "Coming soon",
-  },
 ];
 
 type EmployeeStatus = "draft" | "active" | "paused" | "retired";
@@ -323,7 +290,7 @@ export function EmployeesPage() {
               </div>
             </div>
             <div className="flex items-center justify-between border-t border-zinc-800 px-6 py-3">
-              <span className="text-xs text-zinc-500">1 available · 3 coming soon</span>
+              <span className="text-xs text-zinc-500">1 role available</span>
               <button
                 onClick={() => setShowHire(false)}
                 className="rounded-lg px-3 py-1.5 text-sm font-medium text-zinc-400 hover:text-zinc-200"

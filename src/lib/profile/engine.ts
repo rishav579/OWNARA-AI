@@ -229,7 +229,7 @@ export async function recordProfileEvent(event: ProfileUpdateEvent): Promise<voi
     updates.successfulTasks = { increment: 1 };
     updates.tasksAutomated = { increment: 1 };
     updates.lastTaskAt = new Date();
-    updates.hoursSaved = { increment: 0.5 }; // ~30 min per automated task
+    updates.hoursSaved = { increment: 0.25 }; // ~15 min per automated task (conservative estimate)
     if (event.executionTimeMs) {
       const newAvg = Math.round(
         (profile.averageExecutionTime * profile.completedTasks + event.executionTimeMs) /
@@ -248,19 +248,21 @@ export async function recordProfileEvent(event: ProfileUpdateEvent): Promise<voi
     updates.failedTasks = { increment: 1 };
   }
 
-  // Approval rate — only recomputed on the actual approval decision events.
-  // contract_approved/contract_rejected are bookkeeping events that co-occur
-  // with approval_approved/approval_rejected; including them here would
-  // recompute the same rate twice (harmless but wasteful and semantically wrong).
+  // Approval rate — tracks the ratio of approved to total approval decisions.
+  // Uses the profile's running counters: successfulTasks (approved) vs
+  // failedTasks (rejected). This is a simplification — a true approval rate
+  // would track individual approval decisions, not task outcomes. But since
+  // every approval rejection leads to a task failure, this is a reasonable
+  // proxy that avoids a separate counter.
   if (event.type === "approval_approved") {
-    const totalDecisions = profile.successfulTasks + profile.failedTasks + 1;
-    const newApprovalRate = (profile.successfulTasks + 1) / totalDecisions;
+    const totalDecisions = profile.completedTasks + profile.failedTasks + 1;
+    const newApprovalRate = (profile.completedTasks + 1) / totalDecisions;
     updates.approvalRate = Math.min(1.0, newApprovalRate);
   }
 
   if (event.type === "approval_rejected") {
-    const totalDecisions = profile.successfulTasks + profile.failedTasks + 1;
-    const newApprovalRate = profile.successfulTasks / totalDecisions;
+    const totalDecisions = profile.completedTasks + profile.failedTasks + 1;
+    const newApprovalRate = profile.completedTasks / totalDecisions;
     updates.approvalRate = Math.max(0.0, newApprovalRate);
   }
 

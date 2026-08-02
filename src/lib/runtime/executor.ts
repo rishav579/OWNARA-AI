@@ -433,8 +433,9 @@ async function executeStep(
 // ─── Reasoning Step ──────────────────────────────────────────────────────────
 
 async function executeReasoningStep(task: any, step: any, employee: any): Promise<ExecutionResult> {
-  const tokens = 500 + Math.floor(Math.random() * 400);
-  const durationMs = 1500 + Math.floor(Math.random() * 1500);
+  const startTime = Date.now();
+  const tokens = step.tokens || 0; // Real token count from LLM (0 if no LLM call was made)
+  const durationMs = Date.now() - startTime; // Real execution time
 
   await db.$transaction(async (tx) => {
     await tx.taskStep.update({
