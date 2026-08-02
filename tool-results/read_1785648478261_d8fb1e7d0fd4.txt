@@ -1,0 +1,1290 @@
+     1→     1→/**
+     2→     2→ * BIHARI AI — Task Executor
+     3→     3→ *
+     4→     4→ * Processes a single step of a task. The worker calls this function once per
+     5→     5→ * poll tick. This is the heart of the trust loop:
+     6→     6→ *
+     7→     7→ * 1. Find the next pending step
+     8→     8→ * 2. Execute it (or create an approval gate)
+     9→     9→ * 3. Write an audit entry atomically
+    10→    10→ * 4. If approval needed: set task to waiting_approval and STOP
+    11→    11→ * 5. If no more steps: set task to completed
+    12→    12→ *
+    13→    13→ * Per BED-001 §7: "The executor calls the LLM Gateway to produce the step's
+    14→    14→ * reasoning and proposed action. The executor persists a task_steps row with
+    15→    15→ * input, reasoning, and output."
+    16→    16→ *
+    17→    17→ * Per BED-001 §7: "If critical: creates an approvals row (status pending) with
+    18→    18→ * the proposed action, appends audit entry approval_requested, sends a
+    19→    19→ * notification, transitions the task to waiting_approval, and returns without
+    20→    20→ * executing."
+    21→    21→ */
+    22→    22→
+    23→    23→import { db } from "@/lib/db";
+    24→    24→import { appendAudit } from "./audit";
+    25→    25→import { generatePlan, executeTool, type PlannedStep } from "./planner";
+    26→    26→import { isFinanceTask, generateFinancePlan, generateBatchFinancePlan, executeFinanceTool } from "./finance-planner";
+    27→    27→import { buildFinanceContext, produceRecommendation, type FinanceRecommendation } from "@/lib/finance/brain";
+    28→    28→import { findInvoicesNeedingAttention } from "@/lib/finance/domain";
+    29→    29→import { updateMemoryAfterTask, recordApprovalFeedback, extractFinanceMemories } from "@/lib/memory/service";
+    30→    30→import { getLLMGateway } from "@/lib/llm";
+    31→    31→import { generateContract, approveContract, rejectContract, linkApprovalToContract, type ContractInput } from "@/lib/contracts/engine";
+    32→    32→import { checkCapability, recordCapabilityDenial } from "@/lib/capabilities/engine";
+    33→    33→import { recordProfileEvent } from "@/lib/profile/engine";
+    34→    34→
+    35→    35→// ─── Types ───────────────────────────────────────────────────────────────────
+    36→    36→
+    37→    37→export interface ExecutionResult {
+    38→    38→  action: "continue" | "waiting_approval" | "completed" | "failed";
+    39→    39→  message: string;
+    40→    40→}
+    41→    41→
+    42→    42→// ─── Tool Display Names ──────────────────────────────────────────────────────
+    43→    43→
+    44→    44→const TOOL_DISPLAY_NAMES: Record<string, string> = {
+    45→    45→  draft_response: "Draft Response",
+    46→    46→  send_email: "Send Email",
+    47→    47→  search_knowledge: "Search Knowledge",
+    48→    48→  summarize: "Summarize",
+    49→    49→  // Finance tools
+    50→    50→  generate_reminder: "Generate Reminder",
+    51→    51→  send_reminder: "Send Reminder",
+    52→    52→  update_collection_case: "Update Collection Case",
+    53→    53→};
+    54→    54→
+    55→    55→// ─── Main Entry Point ────────────────────────────────────────────────────────
+    56→    56→
+    57→    57→/**
+    58→    58→ * Processes one unit of work for a task.
+    59→    59→ *
+    60→    60→ * This function is called by the worker poll loop. It does ONE of:
+    61→    61→ * - Plans the task (if status is "queued")
+    62→    62→ * - Executes the next pending step (if status is "executing")
+    63→    63→ * - Resolves an approval gate (if status is "executing" and next step is
+    64→    64→ *   approval_gate with a decided approval)
+    65→    65→ * - Completes the task (if no pending steps remain)
+    66→    66→ *
+    67→    67→ * All state changes and audit entries are written in a single transaction.
+    68→    68→ */
+    69→    69→export async function processTask(taskId: string): Promise<ExecutionResult> {
+    70→    70→  const task = await db.task.findUnique({
+    71→    71→    where: { id: taskId },
+    72→    72→    include: {
+    73→    73→      employee: true,
+    74→    74→      steps: { orderBy: { stepNumber: "asc" } },
+    75→    75→    },
+    76→    76→  });
+    77→    77→
+    78→    78→  if (!task) {
+    79→    79→    return { action: "failed", message: "Task not found" };
+    80→    80→  }
+    81→    81→
+    82→    82→  // Don't process tasks that aren't in an active execution state
+    83→    83→  if (!["queued", "planning", "executing"].includes(task.status)) {
+    84→    84→    return { action: "continue", message: `Task is ${task.status}, skipping` };
+    85→    85→  }
+    86→    86→
+    87→    87→  // Check if the employee is paused
+    88→    88→  if (task.employee.status === "paused") {
+    89→    89→    // Pause the task
+    90→    90→    await db.$transaction(async (tx) => {
+    91→    91→      await tx.task.update({
+    92→    92→        where: { id: taskId },
+    93→    93→        data: { status: "paused" },
+    94→    94→      });
+    95→    95→      await appendAudit(tx, {
+    96→    96→        workspaceId: task.workspaceId,
+    97→    97→        entryType: "task_paused",
+    98→    98→        actorType: "system",
+    99→    99→        actorId: null,
+   100→   100→        actorName: "Runtime",
+   101→   101→        targetType: "task",
+   102→   102→        targetId: taskId,
+   103→   103→        payload: { reason: "Employee paused", employee: task.employee.name },
+   104→   104→      });
+   105→   105→    });
+   106→   106→    return { action: "continue", message: "Employee paused, task paused" };
+   107→   107→  }
+   108→   108→
+   109→   109→  // Phase 1: Planning — generate the step plan
+   110→   110→  if (task.status === "queued") {
+   111→   111→    return await planTask(task);
+   112→   112→  }
+   113→   113→
+   114→   114→  // Phase 2: Execution — process the next pending step
+   115→   115→  const pendingSteps = task.steps.filter((s) => s.status === "pending");
+   116→   116→
+   117→   117→  if (pendingSteps.length === 0) {
+   118→   118→    // No pending steps — task is complete
+   119→   119→    return await completeTask(task);
+   120→   120→  }
+   121→   121→
+   122→   122→  const nextStep = pendingSteps[0];
+   123→   123→  return await executeStep(task, nextStep, task.steps);
+   124→   124→}
+   125→   125→
+   126→   126→// ─── Planning Phase ──────────────────────────────────────────────────────────
+   127→   127→
+   128→   128→async function planTask(
+   129→   129→  task: NonNullable<Awaited<ReturnType<typeof db.task.findUnique>>> & {}
+   130→   130→): Promise<ExecutionResult> {
+   131→   131→  const employee = task.employee;
+   132→   132→  const employeeTools: string[] = JSON.parse(employee.tools);
+   133→   133→
+   134→   134→  // Transition to planning
+   135→   135→  await db.$transaction(async (tx) => {
+   136→   136→    await tx.task.update({
+   137→   137→      where: { id: task.id },
+   138→   138→      data: { status: "planning", startedAt: task.startedAt ?? new Date() },
+   139→   139→    });
+   140→   140→    await appendAudit(tx, {
+   141→   141→      workspaceId: task.workspaceId,
+   142→   142→      entryType: "task_started",
+   143→   143→      actorType: "user",
+   144→   144→      actorId: task.assignedBy,
+   145→   145→      actorName: "Runtime",
+   146→   146→      targetType: "task",
+   147→   147→      targetId: task.id,
+   148→   148→      payload: {
+   149→   149→        title: task.title,
+   150→   150→        employee: employee.name,
+   151→   151→        role: employee.role,
+   152→   152→      },
+   153→   153→    });
+   154→   154→  });
+   155→   155→
+   156→   156→  // Generate the plan
+   157→   157→  let plan: { steps: PlannedStep[] };
+   158→   158→
+   159→   159→  // Check if this is a finance task
+   160→   160→  if (isFinanceTask(employee.role, task.title, task.description)) {
+   161→   161→    // Finance planning: use the Finance Brain to build context + produce recommendation
+   162→   162→    const invoiceIdMatch = task.description.match(/invoice[_\s-]?id[:\s]+([a-zA-Z0-9]+)/i);
+   163→   163→    const invoiceNumMatch = task.description.match(/invoice[_\s-]?number[:\s]+([A-Z0-9-]+)/i);
+   164→   164→
+   165→   165→    if (invoiceIdMatch || invoiceNumMatch) {
+   166→   166→      // Single invoice processing — Finance Brain builds full context + recommendation
+   167→   167→      let invoiceId = invoiceIdMatch?.[1];
+   168→   168→
+   169→   169→      // If we have an invoice number but no ID, look it up
+   170→   170→      if (!invoiceId && invoiceNumMatch) {
+   171→   171→        const inv = await db.invoice.findFirst({
+   172→   172→          where: { invoiceNumber: invoiceNumMatch[1] },
+   173→   173→        });
+   174→   174→        invoiceId = inv?.id;
+   175→   175→      }
+   176→   176→
+   177→   177→      if (invoiceId) {
+   178→   178→        // Step 1: Build the complete FinanceContext (invoice, customer, payments, reminders, policies, memory, etc.)
+   179→   179→        const financeCtx = await buildFinanceContext(invoiceId, employee.id);
+   180→   180→        if (financeCtx) {
+   181→   181→          // Step 2: The Finance Brain reasons over the context (including memory) to produce a recommendation
+   182→   182→          const recommendation = produceRecommendation(financeCtx);
+   183→   183→          // Step 3: Generate the execution plan from the recommendation
+   184→   184→          plan = generateFinancePlan(recommendation, employeeTools);
+   185→   185→        } else {
+   186→   186→          plan = { steps: [] };
+   187→   187→        }
+   188→   188→      } else {
+   189→   189→        plan = { steps: [] };
+   190→   190→      }
+   191→   191→    } else {
+   192→   192→      // Batch processing: find invoices needing attention, then build full context + recommendation for each
+   193→   193→      const invoiceContexts = await findInvoicesNeedingAttention(task.workspaceId, 3); // Limit to 3 per task
+   194→   194→      if (invoiceContexts.length > 0) {
+   195→   195→        // For each invoice, build the full FinanceContext and produce a recommendation
+   196→   196→        const recommendations: FinanceRecommendation[] = [];
+   197→   197→        for (const ic of invoiceContexts) {
+   198→   198→          const financeCtx = await buildFinanceContext(ic.invoiceId, employee.id);
+   199→   199→          if (financeCtx) {
+   200→   200→            const rec = produceRecommendation(financeCtx);
+   201→   201→            recommendations.push(rec);
+   202→   202→          }
+   203→   203→        }
+   204→   204→        if (recommendations.length > 0) {
+   205→   205→          plan = generateBatchFinancePlan(recommendations, employeeTools);
+   206→   206→        } else {
+   207→   207→          plan = { steps: [] };
+   208→   208→        }
+   209→   209→      } else {
+   210→   210→        plan = { steps: [] };
+   211→   211→      }
+   212→   212→    }
+   213→   213→  } else {
+   214→   214→    // Generic planning
+   215→   215→    // Check if the LLM Gateway has a real provider available (not mock)
+   216→   216→    const gateway = getLLMGateway();
+   217→   217→    const router = (await import("@/lib/llm")).getModelRouter();
+   218→   218→    const { provider, route } = router.route("planning");
+   219→   219→
+   220→   220→    if (provider.name !== "mock") {
+   221→   221→      // ─── LLM-Gateway-Aware Planning ──────────────────────────────────────
+   222→   222→      // When a real LLM provider is configured, use the gateway to generate
+   223→   223→      // the execution plan. This replaces the deterministic mock planner
+   224→   224→      // with real AI planning.
+   225→   225→      try {
+   226→   226→        const response = await gateway.complete({
+   227→   227→          taskType: "planning",
+   228→   228→          promptId: "planning",
+   229→   229→          variables: {
+   230→   230→            title: task.title,
+   231→   231→            description: task.description,
+   232→   232→            role: employee.role,
+   233→   233→            tools: employeeTools.join(", "),
+   234→   234→          },
+   235→   235→          jsonMode: true,
+   236→   236→          jsonSchema: {
+   237→   237→            type: "object",
+   238→   238→            required: ["reasoning", "steps"],
+   239→   239→            properties: {
+   240→   240→              reasoning: { type: "string" },
+   241→   241→              steps: {
+   242→   242→                type: "array",
+   243→   243→                items: {
+   244→   244→                  type: "object",
+   245→   245→                  required: ["stepType", "reasoning", "confidence"],
+   246→   246→                  properties: {
+   247→   247→                    stepType: { type: "string" },
+   248→   248→                    reasoning: { type: "string" },
+   249→   249→                    tool: { type: "string" },
+   250→   250→                    confidence: { type: "number" },
+   251→   251→                  },
+   252→   252→                },
+   253→   253→              },
+   254→   254→            },
+   255→   255→          },
+   256→   256→          workspaceId: task.workspaceId,
+   257→   257→          employeeId: employee.id,
+   258→   258→          taskId: task.id,
+   259→   259→        });
+   260→   260→
+   261→   261→        // Parse the LLM-generated plan
+   262→   262→        const llmPlan = response.data as { reasoning: string; steps: PlannedStep[] } | null;
+   263→   263→        if (llmPlan && llmPlan.steps && Array.isArray(llmPlan.steps)) {
+   264→   264→          plan = { steps: llmPlan.steps };
+   265→   265→        } else {
+   266→   266→          // Fallback to deterministic planner if LLM response is invalid
+   267→   267→          plan = generatePlan(task.title, task.description, employee.role, employeeTools);
+   268→   268→        }
+   269→   269→      } catch (err) {
+   270→   270→        // On any gateway error, fall back to the deterministic planner
+   271→   271→        console.error("[Executor] LLM Gateway planning failed, falling back to deterministic planner:", err);
+   272→   272→        plan = generatePlan(task.title, task.description, employee.role, employeeTools);
+   273→   273→      }
+   274→   274→    } else {
+   275→   275→      // ─── Deterministic Planning (existing behavior) ─────────────────────
+   276→   276→      // No real LLM provider configured — use the existing mock planner.
+   277→   277→      // This maintains backward compatibility.
+   278→   278→      plan = generatePlan(task.title, task.description, employee.role, employeeTools);
+   279→   279→    }
+   280→   280→  }
+   281→   281→
+   282→   282→  if (plan.steps.length === 0) {
+   283→   283→    // No steps to execute — fail immediately
+   284→   284→    await db.$transaction(async (tx) => {
+   285→   285→      await tx.task.update({
+   286→   286→        where: { id: task.id },
+   287→   287→        data: { status: "failed" },
+   288→   288→      });
+   289→   289→      await appendAudit(tx, {
+   290→   290→        workspaceId: task.workspaceId,
+   291→   291→        entryType: "task_failed",
+   292→   292→        actorType: "employee",
+   293→   293→        actorId: employee.id,
+   294→   294→        actorName: employee.name,
+   295→   295→        targetType: "task",
+   296→   296→        targetId: task.id,
+   297→   297→        payload: { reason: "Plan generation produced no steps" },
+   298→   298→      });
+   299→   299→    });
+   300→   300→    return { action: "failed", message: "Plan generation produced no steps" };
+   301→   301→  }
+   302→   302→
+   303→   303→  // Check step cap
+   304→   304→  if (plan.steps.length > task.stepCap) {
+   305→   305→    plan.steps = plan.steps.slice(0, task.stepCap);
+   306→   306→  }
+   307→   307→
+   308→   308→  // Write the plan step (step 0 — the planning reasoning)
+   309→   309→  const approvalRules: Record<string, string> = JSON.parse(employee.approvalRules);
+   310→   310→
+   311→   311→  await db.$transaction(async (tx) => {
+   312→   312→    // Step 0: The plan itself
+   313→   313→    const isFinance = isFinanceTask(employee.role, task.title, task.description);
+   314→   314→    const criticalCount = plan.steps.filter((s) => s.tool === "send_email" || s.tool === "send_reminder").length;
+   315→   315→    await tx.taskStep.create({
+   316→   316→      data: {
+   317→   317→        taskId: task.id,
+   318→   318→        stepNumber: 0,
+   319→   319→        stepType: "plan",
+   320→   320→        reasoning: isFinance
+   321→   321→          ? `Planned ${plan.steps.length} steps for this finance collections task. The plan includes ${criticalCount} critical action(s) requiring human approval.`
+   322→   322→          : `Planned ${plan.steps.length} steps for this task. The plan includes ${criticalCount} email action(s) that will require human approval.`,
+   323→   323→        status: "completed",
+   324→   324→        tokens: 420,
+   325→   325→        durationMs: 3100,
+   326→   326→        startedAt: new Date(),
+   327→   327→        completedAt: new Date(),
+   328→   328→      },
+   329→   329→    });
+   330→   330→
+   331→   331→    // Write each planned step as pending
+   332→   332→    for (let i = 0; i < plan.steps.length; i++) {
+   333→   333→      const step = plan.steps[i];
+   334→   334→      const isCritical = step.tool ? approvalRules[step.tool] === "critical" : false;
+   335→   335→
+   336→   336→      await tx.taskStep.create({
+   337→   337→        data: {
+   338→   338→          taskId: task.id,
+   339→   339→          stepNumber: i + 1,
+   340→   340→          stepType: isCritical ? "approval_gate" : step.stepType,
+   341→   341→          input: JSON.stringify({
+   342→   342→            tool: step.tool || null,
+   343→   343→            ...step.toolInput,
+   344→   344→          }),
+   345→   345→          reasoning: step.reasoning,
+   346→   346→          status: "pending",
+   347→   347→          confidence: step.confidence,
+   348→   348→        },
+   349→   349→      });
+   350→   350→    }
+   351→   351→
+   352→   352→    // Transition to executing
+   353→   353→    await tx.task.update({
+   354→   354→      where: { id: task.id },
+   355→   355→      data: { status: "executing", stepCount: plan.steps.length + 1 },
+   356→   356→    });
+   357→   357→
+   358→   358→    await appendAudit(tx, {
+   359→   359→      workspaceId: task.workspaceId,
+   360→   360→      entryType: "plan_created",
+   361→   361→      actorType: "employee",
+   362→   362→      actorId: employee.id,
+   363→   363→      actorName: employee.name,
+   364→   364→      targetType: "task",
+   365→   365→      targetId: task.id,
+   366→   366→      payload: {
+   367→   367→        step_count: String(plan.steps.length),
+   368→   368→        critical_steps: String(plan.steps.filter((s) => s.tool && approvalRules[s.tool] === "critical").length),
+   369→   369→      },
+   370→   370→    });
+   371→   371→  });
+   372→   372→
+   373→   373→  return { action: "continue", message: `Planned ${plan.steps.length} steps, now executing` };
+   374→   374→}
+   375→   375→
+   376→   376→// ─── Step Execution ──────────────────────────────────────────────────────────
+   377→   377→
+   378→   378→async function executeStep(
+   379→   379→  task: any,
+   380→   380→  step: any,
+   381→   381→  allSteps: any[]
+   382→   382→): Promise<ExecutionResult> {
+   383→   383→  const employee = task.employee;
+   384→   384→
+   385→   385→  // Mark step as running
+   386→   386→  await db.taskStep.update({
+   387→   387→    where: { id: step.id },
+   388→   388→    data: { status: "running", startedAt: new Date() },
+   389→   389→  });
+   390→   390→
+   391→   391→  try {
+   392→   392→    switch (step.stepType) {
+   393→   393→      case "reasoning":
+   394→   394→        return await executeReasoningStep(task, step, employee);
+   395→   395→
+   396→   396→      case "tool_call":
+   397→   397→        return await executeToolStep(task, step, employee);
+   398→   398→
+   399→   399→      case "approval_gate":
+   400→   400→        return await executeApprovalGateStep(task, step, employee);
+   401→   401→
+   402→   402→      default:
+   403→   403→        return await executeReasoningStep(task, step, employee);
+   404→   404→    }
+   405→   405→  } catch (err) {
+   406→   406→    // Mark step as failed and fail the task
+   407→   407→    await db.$transaction(async (tx) => {
+   408→   408→      await tx.taskStep.update({
+   409→   409→        where: { id: step.id },
+   410→   410→        data: { status: "failed", completedAt: new Date() },
+   411→   411→      });
+   412→   412→      await tx.task.update({
+   413→   413→        where: { id: task.id },
+   414→   414→        data: { status: "failed" },
+   415→   415→      });
+   416→   416→      await appendAudit(tx, {
+   417→   417→        workspaceId: task.workspaceId,
+   418→   418→        entryType: "task_failed",
+   419→   419→        actorType: "employee",
+   420→   420→        actorId: employee.id,
+   421→   421→        actorName: employee.name,
+   422→   422→        targetType: "task",
+   423→   423→        targetId: task.id,
+   424→   424→        payload: {
+   425→   425→          reason: `Step ${step.stepNumber} failed: ${err instanceof Error ? err.message : "unknown error"}`,
+   426→   426→        },
+   427→   427→      });
+   428→   428→    });
+   429→   429→    return { action: "failed", message: `Step ${step.stepNumber} failed` };
+   430→   430→  }
+   431→   431→}
+   432→   432→
+   433→   433→// ─── Reasoning Step ──────────────────────────────────────────────────────────
+   434→   434→
+   435→   435→async function executeReasoningStep(task: any, step: any, employee: any): Promise<ExecutionResult> {
+   436→   436→  const tokens = 500 + Math.floor(Math.random() * 400);
+   437→   437→  const durationMs = 1500 + Math.floor(Math.random() * 1500);
+   438→   438→
+   439→   439→  await db.$transaction(async (tx) => {
+   440→   440→    await tx.taskStep.update({
+   441→   441→      where: { id: step.id },
+   442→   442→      data: {
+   443→   443→        status: "completed",
+   444→   444→        output: JSON.stringify({ type: "reasoning" }),
+   445→   445→        tokens,
+   446→   446→        durationMs,
+   447→   447→        completedAt: new Date(),
+   448→   448→      },
+   449→   449→    });
+   450→   450→
+   451→   451→    await tx.task.update({
+   452→   452→      where: { id: task.id },
+   453→   453→      data: { tokenUsage: { increment: tokens } },
+   454→   454→    });
+   455→   455→
+   456→   456→    await appendAudit(tx, {
+   457→   457→      workspaceId: task.workspaceId,
+   458→   458→      entryType: "step_executed",
+   459→   459→      actorType: "employee",
+   460→   460→      actorId: employee.id,
+   461→   461→      actorName: employee.name,
+   462→   462→      targetType: "task_step",
+   463→   463→      targetId: step.id,
+   464→   464→      payload: {
+   465→   465→        step: String(step.stepNumber),
+   466→   466→        type: "reasoning",
+   467→   467→        tokens: String(tokens),
+   468→   468→      },
+   469→   469→    });
+   470→   470→  });
+   471→   471→
+   472→   472→  return { action: "continue", message: `Reasoning step ${step.stepNumber} completed` };
+   473→   473→}
+   474→   474→
+   475→   475→// ─── Tool Call Step (non-critical) ───────────────────────────────────────────
+   476→   476→
+   477→   477→async function executeToolStep(task: any, step: any, employee: any): Promise<ExecutionResult> {
+   478→   478→  const input = JSON.parse(step.input);
+   479→   479→  const toolName = input.tool;
+   480→   480→
+   481→   481→  if (!toolName) {
+   482→   482→    // No tool specified — treat as reasoning
+   483→   483→    return await executeReasoningStep(task, step, employee);
+   484→   484→  }
+   485→   485→
+   486→   486→  // ─── Capability Verification ──────────────────────────────────────────────
+   487→   487→  // Before ANY tool execution, verify the employee has the required capability.
+   488→   488→  // If denied: stop execution, write audit event, fail the step.
+   489→   489→  const capCheck = await checkCapability(employee.id, toolName);
+   490→   490→  if (!capCheck.allowed) {
+   491→   491→    await db.$transaction(async (tx) => {
+   492→   492→      // Mark step as failed
+   493→   493→      await tx.taskStep.update({
+   494→   494→        where: { id: step.id },
+   495→   495→        data: {
+   496→   496→          status: "failed",
+   497→   497→          output: JSON.stringify({
+   498→   498→            error: "CAPABILITY_DENIED",
+   499→   499→            requiredCapability: capCheck.capabilityCode,
+   500→   500→            capabilityName: capCheck.capabilityName,
+   501→   501→            reason: capCheck.reason,
+   502→   502→          }),
+   503→   503→          completedAt: new Date(),
+   504→   504→        },
+   505→   505→      });
+   506→   506→
+   507→   507→      // Fail the task
+   508→   508→      await tx.task.update({
+   509→   509→        where: { id: task.id },
+   510→   510→        data: { status: "failed" },
+   511→   511→      });
+   512→   512→
+   513→   513→      // Update employee state
+   514→   514→      await tx.employee.update({
+   515→   515→        where: { id: employee.id },
+   516→   516→        data: { state: "idle" },
+   517→   517→      });
+   518→   518→
+   519→   519→      // Record the denial in the audit chain
+   520→   520→      await recordCapabilityDenial(tx, task.workspaceId, employee.id, employee.name, toolName, capCheck);
+   521→   521→    });
+   522→   522→
+   523→   523→    // ─── Update Employee Profile (capability denied) ───────────────────────
+   524→   524→    try {
+   525→   525→      await recordProfileEvent({
+   526→   526→        type: "capability_denied",
+   527→   527→        employeeId: employee.id,
+   528→   528→        workspaceId: task.workspaceId,
+   529→   529→        taskId: task.id,
+   530→   530→        toolName,
+   531→   531→      });
+   532→   532→    } catch (err) {
+   533→   533→      console.error(`[Executor] Profile update failed for capability denial:`, err);
+   534→   534→    }
+   535→   535→
+   536→   536→    return { action: "failed", message: `Capability denied: ${capCheck.capabilityCode} required for ${toolName}` };
+   537→   537→  }
+   538→   538→
+   539→   539→  // Check if this is a finance tool
+   540→   540→  const financeTools = ["generate_reminder", "send_reminder", "update_collection_case"];
+   541→   541→  const isFinanceTool = financeTools.includes(toolName);
+   542→   542→
+   543→   543→  // Execute the tool
+   544→   544→  let result: { output: Record<string, string>; tokens: number; durationMs: number };
+   545→   545→
+   546→   546→  if (isFinanceTool) {
+   547→   547→    result = await executeFinanceTool(toolName, input, task.workspaceId, employee.id);
+   548→   548→  } else {
+   549→   549→    result = executeTool(toolName, input);
+   550→   550→  }
+   551→   551→
+   552→   552→  // Determine the finance-specific audit entry type
+   553→   553→  let auditEntryType = "tool_executed";
+   554→   554→  if (toolName === "generate_reminder") auditEntryType = "reminder_drafted";
+   555→   555→  else if (toolName === "update_collection_case") auditEntryType = "collection_case_updated";
+   556→   556→
+   557→   557→  await db.$transaction(async (tx) => {
+   558→   558→    await tx.taskStep.update({
+   559→   559→      where: { id: step.id },
+   560→   560→      data: {
+   561→   561→        status: "completed",
+   562→   562→        output: JSON.stringify(result.output),
+   563→   563→        tokens: result.tokens,
+   564→   564→        durationMs: result.durationMs,
+   565→   565→        completedAt: new Date(),
+   566→   566→      },
+   567→   567→    });
+   568→   568→
+   569→   569→    await tx.task.update({
+   570→   570→      where: { id: task.id },
+   571→   571→      data: { tokenUsage: { increment: result.tokens } },
+   572→   572→    });
+   573→   573→
+   574→   574→    await appendAudit(tx, {
+   575→   575→      workspaceId: task.workspaceId,
+   576→   576→      entryType: auditEntryType,
+   577→   577→      actorType: "employee",
+   578→   578→      actorId: employee.id,
+   579→   579→      actorName: employee.name,
+   580→   580→      targetType: isFinanceTool ? "invoice" : "task_step",
+   581→   581→      targetId: input.invoiceId || step.id,
+   582→   582→      payload: {
+   583→   583→        tool: toolName,
+   584→   584→        status: "completed",
+   585→   585→        tokens: String(result.tokens),
+   586→   586→        ...(input.invoiceNumber ? { invoiceNumber: input.invoiceNumber } : {}),
+   587→   587→        ...(input.customerName ? { customer: input.customerName } : {}),
+   588→   588→      },
+   589→   589→    });
+   590→   590→  });
+   591→   591→
+   592→   592→  return { action: "continue", message: `Tool ${toolName} executed` };
+   593→   593→}
+   594→   594→
+   595→   595→// ─── Approval Gate Step (critical tool call) ─────────────────────────────────
+   596→   596→
+   597→   597→async function executeApprovalGateStep(task: any, step: any, employee: any): Promise<ExecutionResult> {
+   598→   598→  const input = JSON.parse(step.input);
+   599→   599→  const toolName = input.tool;
+   600→   600→
+   601→   601→  // ─── Capability Verification (pre-approval) ───────────────────────────────
+   602→   602→  // Before creating an approval gate, verify the employee has the capability.
+   603→   603→  // If denied: stop execution, write audit event, fail the step.
+   604→   604→  const capCheck = await checkCapability(employee.id, toolName);
+   605→   605→  if (!capCheck.allowed) {
+   606→   606→    await db.$transaction(async (tx) => {
+   607→   607→      await tx.taskStep.update({
+   608→   608→        where: { id: step.id },
+   609→   609→        data: {
+   610→   610→          status: "failed",
+   611→   611→          output: JSON.stringify({
+   612→   612→            error: "CAPABILITY_DENIED",
+   613→   613→            requiredCapability: capCheck.capabilityCode,
+   614→   614→            capabilityName: capCheck.capabilityName,
+   615→   615→            reason: capCheck.reason,
+   616→   616→          }),
+   617→   617→          completedAt: new Date(),
+   618→   618→        },
+   619→   619→      });
+   620→   620→      await tx.task.update({
+   621→   621→        where: { id: task.id },
+   622→   622→        data: { status: "failed" },
+   623→   623→      });
+   624→   624→      await tx.employee.update({
+   625→   625→        where: { id: employee.id },
+   626→   626→        data: { state: "idle" },
+   627→   627→      });
+   628→   628→      await recordCapabilityDenial(tx, task.workspaceId, employee.id, employee.name, toolName, capCheck);
+   629→   629→    });
+   630→   630→    return { action: "failed", message: `Capability denied: ${capCheck.capabilityCode} required for ${toolName}` };
+   631→   631→  }
+   632→   632→
+   633→   633→  // Check if an approval already exists for this task
+   634→   634→  const existingApproval = await db.approval.findFirst({
+   635→   635→    where: { taskId: task.id, status: "pending" },
+   636→   636→  });
+   637→   637→
+   638→   638→  if (existingApproval) {
+   639→   639→    // Approval already exists — task should be waiting_approval
+   640→   640→    // This shouldn't happen if the state machine is correct, but handle it
+   641→   641→    await db.task.update({
+   642→   642→      where: { id: task.id },
+   643→   643→      data: { status: "waiting_approval" },
+   644→   644→    });
+   645→   645→    return { action: "waiting_approval", message: "Approval already pending" };
+   646→   646→  }
+   647→   647→
+   648→   648→  // Create the approval
+   649→   649→  const proposedAction: Record<string, string> = {};
+   650→   650→  for (const [k, v] of Object.entries(input)) {
+   651→   651→    if (k !== "tool") proposedAction[k] = String(v);
+   652→   652→  }
+   653→   653→
+   654→   654→  const timeoutAt = new Date();
+   655→   655→  timeoutAt.setHours(timeoutAt.getHours() + 12); // 12-hour timeout
+   656→   656→
+   657→   657→  // ─── Generate Execution Contract ──────────────────────────────────────────
+   658→   658→  // Before creating the approval, generate an immutable Execution Contract.
+   659→   659→  // The contract captures the complete decision context at this moment.
+   660→   660→  // The approval references the contract — not mutable task state.
+   661→   661→  const isFinanceApproval = toolName === "send_reminder";
+   662→   662→
+   663→   663→  // Build contract input from the step's input (which contains the Finance
+   664→   664→  // Brain's recommendation for finance tasks, or the tool input for generic tasks)
+   665→   665→  const contractInput: ContractInput = {
+   666→   666→    taskId: task.id,
+   667→   667→    employeeId: employee.id,
+   668→   668→    workspaceId: task.workspaceId,
+   669→   669→    goal: isFinanceApproval
+   670→   670→      ? `Send collection reminder for Invoice ${input.invoiceNumber || "N/A"} to ${input.customerName || "customer"}`
+   671→   671→      : `Execute ${toolName} for task: ${task.title}`,
+   672→   672→    proposedAction,
+   673→   673→    confidence: input.confidence ? parseFloat(input.confidence) : 0.85,
+   674→   674→    evidence: input.evidence ? safeParseJson(input.evidence, []) : [],
+   675→   675→    memoriesUsed: [], // Populated from the Finance Brain context if available
+   676→   676→    policiesUsed: input.policyInfluence ? safeParseJson(input.policyInfluence, []) : [],
+   677→   677→    businessImpact: input.businessImpact || input.riskAssessment || "Critical action requiring human approval before execution.",
+   678→   678→    affectedSystems: isFinanceApproval
+   679→   679→      ? ["invoices", "reminders", "collection_cases"]
+   680→   680→      : ["task_steps"],
+   681→   681→    rollbackPlan: isFinanceApproval
+   682→   682→      ? `Mark the reminder as "not sent" in the reminders table. No external side effects if caught before the email provider sends. If already sent, send a follow-up correction email.`
+   683→   683→      : `Mark the tool execution as failed in the task step. No rollback needed for non-external actions.`,
+   684→   684→    estimatedBusinessOutcome: isFinanceApproval
+   685→   685→      ? `Prompt payment from ${input.customerName || "customer"}, reducing outstanding receivables by ${input.outstanding || "the outstanding amount"}.`
+   686→   686→      : `Complete the task step and continue execution.`,
+   687→   687→    estimatedTokenCost: 200,
+   688→   688→    estimatedExecutionTime: 1000,
+   689→   689→    requiredAuthority: "owner",
+   690→   690→  };
+   691→   691→
+   692→   692→  const contract = await generateContract(contractInput);
+   693→   693→
+   694→   694→  await db.$transaction(async (tx) => {
+   695→   695→    // Create the approval record — references the contract
+   696→   696→    const approval = await tx.approval.create({
+   697→   697→      data: {
+   698→   698→        workspaceId: task.workspaceId,
+   699→   699→        taskId: task.id,
+   700→   700→        employeeId: employee.id,
+   701→   701→        tool: toolName,
+   702→   702→        toolDisplayName: TOOL_DISPLAY_NAMES[toolName] || toolName,
+   703→   703→        proposedAction: JSON.stringify(proposedAction),
+   704→   704→        status: "pending",
+   705→   705→        criticality: "critical",
+   706→   706→        timeoutAt,
+   707→   707→      },
+   708→   708→    });
+   709→   709→
+   710→   710→    // Link the contract to the approval
+   711→   711→    // (done outside the transaction to avoid FK issues — best-effort)
+   712→   712→    // We store the contract ID in the step output instead
+   713→   713→
+   714→   714→    // Update the step to reference the approval AND the contract
+   715→   715→    await tx.taskStep.update({
+   716→   716→      where: { id: step.id },
+   717→   717→      data: {
+   718→   718→        status: "pending", // stays pending until approval is decided
+   719→   719→        output: JSON.stringify({
+   720→   720→          approvalId: approval.id,
+   721→   721→          contractId: contract.id,
+   722→   722→          contractNumber: contract.contractNumber,
+   723→   723→          contractVersion: contract.version,
+   724→   724→          contractHash: contract.contractHash,
+   725→   725→          status: "waiting",
+   726→   726→        }),
+   727→   727→      },
+   728→   728→    });
+   729→   729→
+   730→   730→    // Transition task to waiting_approval
+   731→   731→    await tx.task.update({
+   732→   732→      where: { id: task.id },
+   733→   733→      data: { status: "waiting_approval" },
+   734→   734→    });
+   735→   735→
+   736→   736→    // Update employee state
+   737→   737→    await tx.employee.update({
+   738→   738→      where: { id: employee.id },
+   739→   739→      data: { state: "waiting_approval", pendingApprovals: { increment: 1 } },
+   740→   740→    });
+   741→   741→
+   742→   742→    // Link contract to approval (best-effort, outside transaction boundary)
+   743→   743→    // We do this after the transaction commits to avoid FK constraint issues
+   744→   744→    // The contract ID is already in the step output, so it's recoverable
+   745→   745→
+   746→   746→    // Write audit entry — include finance reasoning chain AND contract hash
+   747→   747→    const isFinanceApproval = toolName === "send_reminder";
+   748→   748→    await appendAudit(tx, {
+   749→   749→      workspaceId: task.workspaceId,
+   750→   750→      entryType: isFinanceApproval ? "reminder_approval_requested" : "approval_requested",
+   751→   751→      actorType: "employee",
+   752→   752→      actorId: employee.id,
+   753→   753→      actorName: employee.name,
+   754→   754→      targetType: isFinanceApproval ? "invoice" : "approval",
+   755→   755→      targetId: isFinanceApproval ? (input.invoiceId || approval.id) : approval.id,
+   756→   756→      payload: {
+   757→   757→        tool: toolName,
+   758→   758→        task: task.title,
+   759→   759→        criticality: "critical",
+   760→   760→        // ─── Execution Contract Reference ──────────────────────────────────
+   761→   761→        contractId: contract.id,
+   762→   762→        contractNumber: contract.contractNumber,
+   763→   763→        contractVersion: String(contract.version),
+   764→   764→        contractHash: contract.contractHash,
+   765→   765→        // ─── Finance Brain Reasoning Chain ──────────────────────────────────
+   766→   766→        ...(input.invoiceNumber ? { invoiceNumber: input.invoiceNumber } : {}),
+   767→   767→        ...(input.customerName ? { customer: input.customerName } : {}),
+   768→   768→        ...(input.outstanding ? { outstanding: input.outstanding } : {}),
+   769→   769→        ...(input.daysOverdue ? { daysOverdue: input.daysOverdue } : {}),
+   770→   770→        ...(input.recommendedAction ? { recommendedAction: input.recommendedAction } : {}),
+   771→   771→        ...(input.why ? { why: input.why.substring(0, 500) } : {}),
+   772→   772→        ...(input.confidence ? { confidence: input.confidence } : {}),
+   773→   773→        ...(input.riskAssessment ? { riskAssessment: input.riskAssessment.substring(0, 200) } : {}),
+   774→   774→        ...(input.policyInfluence ? { policies: input.policyInfluence.substring(0, 300) } : {}),
+   775→   775→        ...(input.customerHistoryInfluence ? { customerHistory: input.customerHistoryInfluence.substring(0, 300) } : {}),
+   776→   776→        ...(input.rejectedAlternatives ? { rejectedAlternatives: input.rejectedAlternatives.substring(0, 300) } : {}),
+   777→   777→      },
+   778→   778→    });
+   779→   779→
+   780→   780→    // Create a notification for the user
+   781→   781→    const task2 = await tx.task.findUnique({ where: { id: task.id } });
+   782→   782→    if (task2) {
+   783→   783→      const notifTitle = isFinanceApproval
+   784→   784→        ? `${employee.name} needs approval to send a reminder`
+   785→   785→        : `${employee.name} needs your approval`;
+   786→   786→      const notifBody = isFinanceApproval
+   787→   787→        ? `Invoice ${input.invoiceNumber || ""} — ${input.customerName || ""}: ${input.why ? input.why.substring(0, 150) : "Reminder requires approval with full finance reasoning."}`
+   788→   788→        : `${TOOL_DISPLAY_NAMES[toolName] || toolName} — ${proposedAction.to || proposedAction.subject || "Action requires review"}`;
+   789→   789→      await tx.notification.create({
+   790→   790→        data: {
+   791→   791→          workspaceId: task.workspaceId,
+   792→   792→          userId: task2.assignedBy,
+   793→   793→          type: "approval_pending",
+   794→   794→          title: notifTitle,
+   795→   795→          body: notifBody,
+   796→   796→          referenceType: "approval",
+   797→   797→          referenceId: approval.id,
+   798→   798→          channel: "in_app",
+   799→   799→          status: "delivered",
+   800→   800→        },
+   801→   801→      });
+   802→   802→    }
+   803→   803→  });
+   804→   804→
+   805→   805→  return { action: "waiting_approval", message: `Approval requested for ${toolName}` };
+   806→   806→}
+   807→   807→
+   808→   808→// ─── Task Completion ─────────────────────────────────────────────────────────
+   809→   809→
+   810→   810→async function completeTask(task: any): Promise<ExecutionResult> {
+   811→   811→  const employee = task.employee;
+   812→   812→
+   813→   813→  await db.$transaction(async (tx) => {
+   814→   814→    await tx.task.update({
+   815→   815→      where: { id: task.id },
+   816→   816→      data: {
+   817→   817→        status: "completed",
+   818→   818→        completedAt: new Date(),
+   819→   819→      },
+   820→   820→    });
+   821→   821→
+   822→   822→    // Update employee state and counters
+   823→   823→    await tx.employee.update({
+   824→   824→      where: { id: employee.id },
+   825→   825→      data: {
+   826→   826→        state: "idle",
+   827→   827→        completedTasks: { increment: 1 },
+   828→   828→      },
+   829→   829→    });
+   830→   830→
+   831→   831→    await appendAudit(tx, {
+   832→   832→      workspaceId: task.workspaceId,
+   833→   833→      entryType: "task_completed",
+   834→   834→      actorType: "employee",
+   835→   835→      actorId: employee.id,
+   836→   836→      actorName: employee.name,
+   837→   837→      targetType: "task",
+   838→   838→      targetId: task.id,
+   839→   839→      payload: {
+   840→   840→        title: task.title,
+   841→   841→        steps: String(task.stepCount),
+   842→   842→        tokens: String(task.tokenUsage),
+   843→   843→      },
+   844→   844→    });
+   845→   845→
+   846→   846→    // Create a notification
+   847→   847→    await tx.notification.create({
+   848→   848→      data: {
+   849→   849→        workspaceId: task.workspaceId,
+   850→   850→        userId: task.assignedBy,
+   851→   851→        type: "task_completed",
+   852→   852→        title: `${employee.name} completed a task`,
+   853→   853→        body: task.title,
+   854→   854→        referenceType: "task",
+   855→   855→        referenceId: task.id,
+   856→   856→        channel: "in_app",
+   857→   857→        status: "delivered",
+   858→   858→      },
+   859→   859→    });
+   860→   860→  });
+   861→   861→
+   862→   862→  // ─── Update Employee Memory ──────────────────────────────────────────────
+   863→   863→  // After every completed task, the employee learns from the outcome.
+   864→   864→  // Generic memories (strategy, approval feedback, communication) are
+   865→   865→  // extracted first, then domain-specific memories (finance) if applicable.
+   866→   866→  try {
+   867→   867→    await updateMemoryAfterTask(employee.id, task.workspaceId, task.id);
+   868→   868→
+   869→   869→    // If this was a finance task, also extract finance-specific memories
+   870→   870→    if (isFinanceTask(employee.role, task.title, task.description)) {
+   871→   871→      await extractFinanceMemories(employee.id, task.workspaceId, task.id);
+   872→   872→    }
+   873→   873→  } catch (err) {
+   874→   874→    // Memory update failure should not fail the task — log and continue
+   875→   875→    console.error(`[Executor] Memory update failed for task ${task.id}:`, err);
+   876→   876→  }
+   877→   877→
+   878→   878→  // ─── Update Employee Profile ──────────────────────────────────────────────
+   879→   879→  // After every completed task, the employee's career profile is updated:
+   880→   880→  // XP, level, KPIs, trust score, skills, memory counts, capability counts.
+   881→   881→  try {
+   882→   882→    await recordProfileEvent({
+   883→   883→      type: "task_completed",
+   884→   884→      employeeId: employee.id,
+   885→   885→      workspaceId: task.workspaceId,
+   886→   886→      taskId: task.id,
+   887→   887→      executionTimeMs: task.startedAt && task.completedAt
+   888→   888→        ? new Date(task.completedAt).getTime() - new Date(task.startedAt).getTime()
+   889→   889→        : undefined,
+   890→   890→    });
+   891→   891→  } catch (err) {
+   892→   892→    console.error(`[Executor] Profile update failed for task ${task.id}:`, err);
+   893→   893→  }
+   894→   894→
+   895→   895→  // ─── Autonomous Learning & Skill Evolution (EMP-002) ──────────────────────
+   896→   896→  // After the profile is updated, run the learning engine to:
+   897→   897→  //   1. Build a deterministic OutcomeEvaluation scorecard
+   898→   898→  //   2. Reinforce skills based on real outcomes (not usage++)
+   899→   899→  //   3. Detect reusable patterns (customer behavior, reminder effectiveness)
+   900→   900→  //   4. Detect weaknesses (high rejection rate, low confidence, etc.)
+   901→   901→  //   5. Detect strengths (high approval rate, fast execution, etc.)
+   902→   902→  //   6. Record business outcomes (append-only ledger)
+   903→   903→  //   7. Append career timeline entries
+   904→   904→  //   8. Check for achievement unlocks
+   905→   905→  // All best-effort — learning failures NEVER break task completion.
+   906→   906→  try {
+   907→   907→    const { evaluateAndLearn } = await import("@/lib/learning/engine");
+   908→   908→    await evaluateAndLearn({
+   909→   909→      taskId: task.id,
+   910→   910→      employeeId: employee.id,
+   911→   911→      workspaceId: task.workspaceId,
+   912→   912→    });
+   913→   913→  } catch (err) {
+   914→   914→    console.error(`[Executor] Learning engine failed for task ${task.id}:`, err);
+   915→   915→  }
+   916→   916→
+   917→   917→  return { action: "completed", message: "Task completed" };
+   918→   918→}
+   919→   919→
+   920→   920→// ─── Resume After Approval ───────────────────────────────────────────────────
+   921→   921→
+   922→   922→/**
+   923→   923→ * Called by the approval API when a human approves an action.
+   924→   924→ * Marks the approval_gate step as completed and transitions the task back
+   925→   925→ * to executing so the worker can continue with the next step.
+   926→   926→ *
+   927→   927→ * Also "executes" the approved tool (e.g., actually sends the email in a
+   928→   928→ * real implementation).
+   929→   929→ */
+   930→   930→export async function resumeAfterApproval(
+   931→   931→  taskId: string,
+   932→   932→  approvalId: string,
+   933→   933→  approvedBy: string,
+   934→   934→  approvedByName: string
+   935→   935→): Promise<void> {
+   936→   936→  const task = await db.task.findUnique({
+   937→   937→    where: { id: taskId },
+   938→   938→    include: { employee: true, steps: { orderBy: { stepNumber: "asc" } } },
+   939→   939→  });
+   940→   940→
+   941→   941→  if (!task) return;
+   942→   942→
+   943→   943→  const approval = await db.approval.findUnique({ where: { id: approvalId } });
+   944→   944→  if (!approval) return;
+   945→   945→
+   946→   946→  // Find the approval_gate step that was waiting
+   947→   947→  const gateStep = task.steps.find(
+   948→   948→    (s) => s.stepType === "approval_gate" && s.status === "pending"
+   949→   949→  );
+   950→   950→
+   951→   951→  // ─── Capability Verification (post-approval) ──────────────────────────────
+   952→   952→  // Even after approval, verify the employee still has the capability.
+   953→   953→  // Capabilities can be revoked between approval and execution.
+   954→   954→  const postApprovalCapCheck = await checkCapability(task.employeeId, approval.tool);
+   955→   955→  if (!postApprovalCapCheck.allowed) {
+   956→   956→    // Capability was revoked after approval — fail the task
+   957→   957→    await db.$transaction(async (tx) => {
+   958→   958→      await tx.task.update({
+   959→   959→        where: { id: taskId },
+   960→   960→        data: { status: "failed" },
+   961→   961→      });
+   962→   962→      await tx.employee.update({
+   963→   963→        where: { id: task.employeeId },
+   964→   964→        data: { state: "idle", pendingApprovals: { decrement: 1 } },
+   965→   965→      });
+   966→   966→      await recordCapabilityDenial(tx, task.workspaceId, task.employeeId, task.employee.name, approval.tool, postApprovalCapCheck);
+   967→   967→    });
+   968→   968→    return;
+   969→   969→  }
+   970→   970→
+   971→   971→  // Execute the approved tool BEFORE the transaction (it may do DB operations)
+   972→   972→  const proposedAction = JSON.parse(approval.proposedAction);
+   973→   973→  const financeTools = ["generate_reminder", "send_reminder", "update_collection_case"];
+   974→   974→  const isFinanceTool = financeTools.includes(approval.tool);
+   975→   975→
+   976→   976→  let toolResult: { output: Record<string, string>; tokens: number; durationMs: number };
+   977→   977→  if (isFinanceTool) {
+   978→   978→    toolResult = await executeFinanceTool(approval.tool, proposedAction, task.workspaceId, task.employeeId);
+   979→   979→  } else {
+   980→   980→    toolResult = executeTool(approval.tool, proposedAction);
+   981→   981→  }
+   982→   982→
+   983→   983→  await db.$transaction(async (tx) => {
+   984→   984→    // Mark the gate step as completed
+   985→   985→    if (gateStep) {
+   986→   986→      await tx.taskStep.update({
+   987→   987→        where: { id: gateStep.id },
+   988→   988→        data: {
+   989→   989→          status: "completed",
+   990→   990→          output: JSON.stringify({
+   991→   991→            ...toolResult.output,
+   992→   992→            approvalId,
+   993→   993→            approvedBy: approvedByName,
+   994→   994→          }),
+   995→   995→          tokens: toolResult.tokens,
+   996→   996→          durationMs: toolResult.durationMs,
+   997→   997→          completedAt: new Date(),
+   998→   998→        },
+   999→   999→      });
+  1000→  1000→    }
+  1001→  1001→
+  1002→  1002→    // Transition task back to executing
+  1003→  1003→    await tx.task.update({
+  1004→  1004→      where: { id: taskId },
+  1005→  1005→      data: {
+  1006→  1006→        status: "executing",
+  1007→  1007→        tokenUsage: { increment: toolResult.tokens },
+  1008→  1008→      },
+  1009→  1009→    });
+  1010→  1010→
+  1011→  1011→    // Update employee state
+  1012→  1012→    await tx.employee.update({
+  1013→  1013→      where: { id: task.employeeId },
+  1014→  1014→      data: {
+  1015→  1015→        state: "executing",
+  1016→  1016→        pendingApprovals: { decrement: 1 },
+  1017→  1017→      },
+  1018→  1018→    });
+  1019→  1019→
+  1020→  1020→    // Write audit entry for the approval decision
+  1021→  1021→    const isFinanceApproval = approval.tool === "send_reminder";
+  1022→  1022→    await appendAudit(tx, {
+  1023→  1023→      workspaceId: task.workspaceId,
+  1024→  1024→      entryType: isFinanceApproval ? "reminder_approved" : "approval_decided",
+  1025→  1025→      actorType: "user",
+  1026→  1026→      actorId: approvedBy,
+  1027→  1027→      actorName: approvedByName,
+  1028→  1028→      targetType: isFinanceApproval ? "invoice" : "approval",
+  1029→  1029→      targetId: isFinanceApproval ? (proposedAction.invoiceId || approvalId) : approvalId,
+  1030→  1030→      payload: {
+  1031→  1031→        decision: "approved",
+  1032→  1032→        tool: approval.tool,
+  1033→  1033→        employee: task.employee.name,
+  1034→  1034→        ...(proposedAction.invoiceNumber ? { invoiceNumber: proposedAction.invoiceNumber } : {}),
+  1035→  1035→        ...(proposedAction.customerName ? { customer: proposedAction.customerName } : {}),
+  1036→  1036→      },
+  1037→  1037→    });
+  1038→  1038→
+  1039→  1039→    // Write audit entry for the tool execution
+  1040→  1040→    await appendAudit(tx, {
+  1041→  1041→      workspaceId: task.workspaceId,
+  1042→  1042→      entryType: isFinanceApproval ? "reminder_sent" : "tool_executed",
+  1043→  1043→      actorType: "employee",
+  1044→  1044→      actorId: task.employeeId,
+  1045→  1045→      actorName: task.employee.name,
+  1046→  1046→      targetType: isFinanceApproval ? "invoice" : "task_step",
+  1047→  1047→      targetId: proposedAction.invoiceId || gateStep?.id || "",
+  1048→  1048→      payload: {
+  1049→  1049→        tool: approval.tool,
+  1050→  1050→        status: "completed",
+  1051→  1051→        approved_by: approvedByName,
+  1052→  1052→        ...(proposedAction.invoiceNumber ? { invoiceNumber: proposedAction.invoiceNumber } : {}),
+  1053→  1053→        ...(proposedAction.customerName ? { customer: proposedAction.customerName } : {}),
+  1054→  1054→      },
+  1055→  1055→    });
+  1056→  1056→  });
+  1057→  1057→
+  1058→  1058→  // ─── Approve the Execution Contract ──────────────────────────────────────
+  1059→  1059→  // The contract becomes immutable. Its hash is locked.
+  1060→  1060→  try {
+  1061→  1061→    // Find the contract linked to this task's approval gate step
+  1062→  1062→    if (gateStep) {
+  1063→  1063→      const stepOutput = JSON.parse(gateStep.output || "{}");
+  1064→  1064→      if (stepOutput.contractId) {
+  1065→  1065→        await approveContract(stepOutput.contractId, approvedBy);
+  1066→  1066→        await linkApprovalToContract(stepOutput.contractId, approvalId);
+  1067→  1067→      }
+  1068→  1068→    }
+  1069→  1069→  } catch (err) {
+  1070→  1070→    console.error(`[Executor] Contract approval failed for approval ${approvalId}:`, err);
+  1071→  1071→  }
+  1072→  1072→
+  1073→  1073→  // ─── Record Approval Feedback in Memory ──────────────────────────────────
+  1074→  1074→  // The employee learns from the manager's approval decision immediately.
+  1075→  1075→  try {
+  1076→  1076→    await recordApprovalFeedback(
+  1077→  1077→      task.employeeId,
+  1078→  1078→      task.workspaceId,
+  1079→  1079→      approvalId,
+  1080→  1080→      "approved",
+  1081→  1081→      null,
+  1082→  1082→      approval.tool,
+  1083→  1083→      proposedAction
+  1084→  1084→    );
+  1085→  1085→  } catch (err) {
+  1086→  1086→    console.error(`[Executor] Memory recording failed for approval ${approvalId}:`, err);
+  1087→  1087→  }
+  1088→  1088→
+  1089→  1089→  // ─── Update Employee Profile (approval approved) ─────────────────────────
+  1090→  1090→  try {
+  1091→  1091→    await recordProfileEvent({
+  1092→  1092→      type: "approval_approved",
+  1093→  1093→      employeeId: task.employeeId,
+  1094→  1094→      workspaceId: task.workspaceId,
+  1095→  1095→      taskId,
+  1096→  1096→      toolName: approval.tool,
+  1097→  1097→    });
+  1098→  1098→    // If this was a reminder send, record the specific KPI
+  1099→  1099→    if (approval.tool === "send_reminder" || approval.tool === "send_email") {
+  1100→  1100→      await recordProfileEvent({
+  1101→  1101→        type: "reminder_sent",
+  1102→  1102→        employeeId: task.employeeId,
+  1103→  1103→        workspaceId: task.workspaceId,
+  1104→  1104→        taskId,
+  1105→  1105→        toolName: approval.tool,
+  1106→  1106→      });
+  1107→  1107→    }
+  1108→  1108→    // Bookkeeping: contract_approved is zero-XP (XP already counted via
+  1109→  1109→    // approval_approved) but nudges the accuracy score so the profile
+  1110→  1110→    // reflects the contract lifecycle separately from the approval lifecycle.
+  1111→  1111→    if (gateStep) {
+  1112→  1112→      const stepOutput = JSON.parse(gateStep.output || "{}");
+  1113→  1113→      if (stepOutput.contractId) {
+  1114→  1114→        await recordProfileEvent({
+  1115→  1115→          type: "contract_approved",
+  1116→  1116→          employeeId: task.employeeId,
+  1117→  1117→          workspaceId: task.workspaceId,
+  1118→  1118→          taskId,
+  1119→  1119→        });
+  1120→  1120→      }
+  1121→  1121→    }
+  1122→  1122→  } catch (err) {
+  1123→  1123→    console.error(`[Executor] Profile update failed for approval ${approvalId}:`, err);
+  1124→  1124→  }
+  1125→  1125→}
+  1126→  1126→
+  1127→  1127→/**
+  1128→  1128→ * Called by the approval API when a human rejects an action.
+  1129→  1129→ * Marks the approval_gate step as failed and transitions the task to failed.
+  1130→  1130→ */
+  1131→  1131→export async function failAfterApprovalRejection(
+  1132→  1132→  taskId: string,
+  1133→  1133→  approvalId: string,
+  1134→  1134→  rejectedBy: string,
+  1135→  1135→  rejectedByName: string,
+  1136→  1136→  reason?: string
+  1137→  1137→): Promise<void> {
+  1138→  1138→  const task = await db.task.findUnique({
+  1139→  1139→    where: { id: taskId },
+  1140→  1140→    include: { employee: true, steps: { orderBy: { stepNumber: "asc" } } },
+  1141→  1141→  });
+  1142→  1142→
+  1143→  1143→  if (!task) return;
+  1144→  1144→
+  1145→  1145→  // Fetch the approval to get the tool name
+  1146→  1146→  const approvalRecord = await db.approval.findUnique({ where: { id: approvalId } });
+  1147→  1147→
+  1148→  1148→  const gateStep = task.steps.find(
+  1149→  1149→    (s) => s.stepType === "approval_gate" && s.status === "pending"
+  1150→  1150→  );
+  1151→  1151→
+  1152→  1152→  await db.$transaction(async (tx) => {
+  1153→  1153→    // Mark the gate step as failed
+  1154→  1154→    if (gateStep) {
+  1155→  1155→      await tx.taskStep.update({
+  1156→  1156→        where: { id: gateStep.id },
+  1157→  1157→        data: {
+  1158→  1158→          status: "failed",
+  1159→  1159→          output: JSON.stringify({
+  1160→  1160→            approvalId,
+  1161→  1161→            rejectedBy: rejectedByName,
+  1162→  1162→            reason: reason || "Rejected by human",
+  1163→  1163→          }),
+  1164→  1164→          completedAt: new Date(),
+  1165→  1165→        },
+  1166→  1166→      });
+  1167→  1167→    }
+  1168→  1168→
+  1169→  1169→    // Transition task to failed
+  1170→  1170→    await tx.task.update({
+  1171→  1171→      where: { id: taskId },
+  1172→  1172→      data: { status: "failed" },
+  1173→  1173→    });
+  1174→  1174→
+  1175→  1175→    // Update employee state
+  1176→  1176→    await tx.employee.update({
+  1177→  1177→      where: { id: task.employeeId },
+  1178→  1178→      data: {
+  1179→  1179→        state: "idle",
+  1180→  1180→        pendingApprovals: { decrement: 1 },
+  1181→  1181→      },
+  1182→  1182→    });
+  1183→  1183→
+  1184→  1184→    // Write audit entry for the approval decision
+  1185→  1185→    await appendAudit(tx, {
+  1186→  1186→      workspaceId: task.workspaceId,
+  1187→  1187→      entryType: "approval_decided",
+  1188→  1188→      actorType: "user",
+  1189→  1189→      actorId: rejectedBy,
+  1190→  1190→      actorName: rejectedByName,
+  1191→  1191→      targetType: "approval",
+  1192→  1192→      targetId: approvalId,
+  1193→  1193→      payload: {
+  1194→  1194→        decision: "rejected",
+  1195→  1195→        tool: approvalRecord?.tool || "",
+  1196→  1196→        employee: task.employee.name,
+  1197→  1197→        reason: reason || "Rejected",
+  1198→  1198→      },
+  1199→  1199→    });
+  1200→  1200→
+  1201→  1201→    // Write task_failed audit
+  1202→  1202→    await appendAudit(tx, {
+  1203→  1203→      workspaceId: task.workspaceId,
+  1204→  1204→      entryType: "task_failed",
+  1205→  1205→      actorType: "user",
+  1206→  1206→      actorId: rejectedBy,
+  1207→  1207→      actorName: rejectedByName,
+  1208→  1208→      targetType: "task",
+  1209→  1209→      targetId: taskId,
+  1210→  1210→      payload: {
+  1211→  1211→        reason: `Approval rejected: ${reason || "No reason provided"}`,
+  1212→  1212→      },
+  1213→  1213→    });
+  1214→  1214→  });
+  1215→  1215→
+  1216→  1216→  // ─── Record Rejection Feedback in Memory ──────────────────────────────────
+  1217→  1217→  // The employee learns from the manager's rejection — this is especially
+  1218→  1218→  // important because rejections often carry a reason that teaches the
+  1219→  1219→  // employee what NOT to do next time.
+  1220→  1220→  try {
+  1221→  1221→    const proposedAction = JSON.parse(approvalRecord?.proposedAction || "{}");
+  1222→  1222→    await recordApprovalFeedback(
+  1223→  1223→      task.employeeId,
+  1224→  1224→      task.workspaceId,
+  1225→  1225→      approvalId,
+  1226→  1226→      "rejected",
+  1227→  1227→      reason || null,
+  1228→  1228→      approvalRecord?.tool || "",
+  1229→  1229→      proposedAction
+  1230→  1230→    );
+  1231→  1231→  } catch (err) {
+  1232→  1232→    console.error(`[Executor] Memory recording failed for rejection ${approvalId}:`, err);
+  1233→  1233→  }
+  1234→  1234→
+  1235→  1235→  // ─── Reject the Execution Contract ────────────────────────────────────────
+  1236→  1236→  // The contract is marked as rejected but remains permanently searchable.
+  1237→  1237→  try {
+  1238→  1238→    if (gateStep) {
+  1239→  1239→      const stepOutput = JSON.parse(gateStep.output || "{}");
+  1240→  1240→      if (stepOutput.contractId) {
+  1241→  1241→        await rejectContract(stepOutput.contractId, rejectedBy, reason);
+  1242→  1242→      }
+  1243→  1243→    }
+  1244→  1244→  } catch (err) {
+  1245→  1245→    console.error(`[Executor] Contract rejection failed for approval ${approvalId}:`, err);
+  1246→  1246→  }
+  1247→  1247→
+  1248→  1248→  // ─── Update Employee Profile (approval rejected) ─────────────────────────
+  1249→  1249→  try {
+  1250→  1250→    await recordProfileEvent({
+  1251→  1251→      type: "approval_rejected",
+  1252→  1252→      employeeId: task.employeeId,
+  1253→  1253→      workspaceId: task.workspaceId,
+  1254→  1254→      taskId,
+  1255→  1255→      toolName: approvalRecord?.tool || "",
+  1256→  1256→    });
+  1257→  1257→    await recordProfileEvent({
+  1258→  1258→      type: "task_failed",
+  1259→  1259→      employeeId: task.employeeId,
+  1260→  1260→      workspaceId: task.workspaceId,
+  1261→  1261→      taskId,
+  1262→  1262→    });
+  1263→  1263→    // Bookkeeping: contract_rejected is zero-XP (XP already counted via
+  1264→  1264→    // approval_rejected + task_failed) but nudges the accuracy score.
+  1265→  1265→    if (gateStep) {
+  1266→  1266→      const stepOutput = JSON.parse(gateStep.output || "{}");
+  1267→  1267→      if (stepOutput.contractId) {
+  1268→  1268→        await recordProfileEvent({
+  1269→  1269→          type: "contract_rejected",
+  1270→  1270→          employeeId: task.employeeId,
+  1271→  1271→          workspaceId: task.workspaceId,
+  1272→  1272→          taskId,
+  1273→  1273→        });
+  1274→  1274→      }
+  1275→  1275→    }
+  1276→  1276→  } catch (err) {
+  1277→  1277→    console.error(`[Executor] Profile update failed for rejection ${approvalId}:`, err);
+  1278→  1278→  }
+  1279→  1279→}
+  1280→  1280→
+  1281→  1281→// ─── Helper: Safe JSON Parse ─────────────────────────────────────────────────
+  1282→  1282→
+  1283→  1283→function safeParseJson<T>(str: string, fallback: T): T {
+  1284→  1284→  try {
+  1285→  1285→    return JSON.parse(str) as T;
+  1286→  1286→  } catch {
+  1287→  1287→    return fallback;
+  1288→  1288→  }
+  1289→  1289→}
+  1290→  1290→

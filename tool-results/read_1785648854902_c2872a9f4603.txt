@@ -1,0 +1,854 @@
+     1→     1→"use client";
+     2→     2→
+     3→     3→import { useState, useRef } from "react";
+     4→     4→import { useRouter, useAuth } from "@/lib/app/router";
+     5→     5→import { api, setAccessToken, setCurrentUser } from "@/lib/app/api-client";
+     6→     6→import {
+     7→     7→  Building2,
+     8→     8→  Bot,
+     9→     9→  Upload,
+    10→    10→  CheckCircle2,
+    11→    11→  ArrowRight,
+    12→    12→  ArrowLeft,
+    13→    13→  FileSpreadsheet,
+    14→    14→  Sparkles,
+    15→    15→  IndianRupee,
+    16→    16→  Loader2,
+    17→    17→  AlertCircle,
+    18→    18→  Play,
+    19→    19→} from "lucide-react";
+    20→    20→import { cn } from "@/lib/utils";
+    21→    21→
+    22→    22→/**
+    23→    23→ * MVP-001 — Onboarding Wizard
+    24→    24→ *
+    25→    25→ * 4-step wizard that gives a brand-new customer their "first value experience":
+    26→    26→ *
+    27→    27→ *   Step 1: Company details (name, industry, country, currency)
+    28→    28→ *   Step 2: Choose AI Employee (Finance Employee enabled, others "coming soon")
+    29→    29→ *   Step 3: Upload invoices (CSV paste or demo data)
+    30→    30→ *   Step 4: Review + Finish
+    31→    31→ *
+    32→    32→ * On finish, calls POST /api/onboarding/setup which:
+    33→    33→ *   - Hires a Finance Employee (Kavya)
+    34→    34→ *   - Imports the customers + invoices
+    35→    35→ *   - Auto-generates the first task: "Process overdue invoices"
+    36→    36→ *
+    37→    37→ * The customer is then redirected to the dashboard where they can watch
+    38→    38→ * Kavya start working immediately.
+    39→    39→ */
+    40→    40→
+    41→    41→type Step = 1 | 2 | 3 | 4;
+    42→    42→
+    43→    43→interface ParsedInvoice {
+    44→    44→  customerName: string;
+    45→    45→  customerEmail: string;
+    46→    46→  invoiceNumber: string;
+    47→    47→  issueDate: string;
+    48→    48→  dueDate: string;
+    49→    49→  subtotal: number;
+    50→    50→  tax: number;
+    51→    51→}
+    52→    52→
+    53→    53→const INDUSTRIES = [
+    54→    54→  { value: "manufacturing", label: "Manufacturing" },
+    55→    55→  { value: "trading", label: "Trading / Wholesale" },
+    56→    56→  { value: "services", label: "Services" },
+    57→    57→  { value: "technology", label: "Technology" },
+    58→    58→  { value: "retail", label: "Retail" },
+    59→    59→  { value: "pharma", label: "Pharmaceuticals" },
+    60→    60→  { value: "logistics", label: "Logistics" },
+    61→    61→  { value: "other", label: "Other" },
+    62→    62→];
+    63→    63→
+    64→    64→const COUNTRIES = [
+    65→    65→  { value: "IN", label: "India" },
+    66→    66→  { value: "US", label: "United States" },
+    67→    67→  { value: "UK", label: "United Kingdom" },
+    68→    68→  { value: "AE", label: "United Arab Emirates" },
+    69→    69→  { value: "SG", label: "Singapore" },
+    70→    70→  { value: "AU", label: "Australia" },
+    71→    71→];
+    72→    72→
+    73→    73→const CURRENCIES = [
+    74→    74→  { value: "INR", label: "₹ INR (Indian Rupee)" },
+    75→    75→  { value: "USD", label: "$ USD (US Dollar)" },
+    76→    76→  { value: "EUR", label: "€ EUR (Euro)" },
+    77→    77→  { value: "GBP", label: "£ GBP (British Pound)" },
+    78→    78→  { value: "AED", label: "AED (UAE Dirham)" },
+    79→    79→];
+    80→    80→
+    81→    81→const EMPLOYEE_TEMPLATES = [
+    82→    82→  {
+    83→    83→    id: "finance",
+    84→    84→    name: "Finance Employee",
+    85→    85→    role: "finance_employee",
+    86→    86→    description: "Processes overdue invoices, generates collection reminders, and manages accounts receivable — all under human approval.",
+    87→    87→    enabled: true,
+    88→    88→    badge: "Available now",
+    89→    89→    capabilities: ["Invoice Analysis", "Collections", "Credit Risk", "Reminder Strategy"],
+    90→    90→  },
+    91→    91→  {
+    92→    92→    id: "back-office",
+    93→    93→    name: "Back Office Employee",
+    94→    94→    role: "back_office_employee",
+    95→    95→    description: "Handles data entry, document processing, and operational workflows.",
+    96→    96→    enabled: false,
+    97→    97→    badge: "Coming soon",
+    98→    98→    capabilities: ["Data Entry", "Document Processing", "Workflow Automation"],
+    99→    99→  },
+   100→   100→  {
+   101→   101→    id: "hr",
+   102→   102→    name: "HR Employee",
+   103→   103→    role: "hr_employee",
+   104→   104→    description: "Manages onboarding, leave tracking, and employee queries.",
+   105→   105→    enabled: false,
+   106→   106→    badge: "Coming soon",
+   107→   107→    capabilities: ["Employee Onboarding", "Leave Management", "Policy Queries"],
+   108→   108→  },
+   109→   109→  {
+   110→   110→    id: "sales-ops",
+   111→   111→    name: "Sales Ops Employee",
+   112→   112→    role: "sales_ops_employee",
+   113→   113→    description: "Researches prospects, drafts outreach, and manages CRM updates.",
+   114→   114→    enabled: false,
+   115→   115→    badge: "Coming soon",
+   116→   116→    capabilities: ["Lead Research", "Outreach Drafting", "CRM Updates"],
+   117→   117→  },
+   118→   118→];
+   119→   119→
+   120→   120→const SAMPLE_CSV = `customer_name,customer_email,invoice_number,issue_date,due_date,subtotal,tax
+   121→   121→Sundar Electronics,accounts@sundar-electronics.in,INV-2025-001,2025-07-25,2025-08-24,150000,27000
+   122→   122→Nair Textiles Pvt Ltd,finance@nair-textiles.in,INV-2025-002,2025-06-15,2025-07-30,85000,15300
+   123→   123→BlueDart Logistics,ap@bluedart-logistics.in,INV-2025-003,2025-05-15,2025-06-14,120000,21600
+   124→   124→FastFreight India,billing@fastfreight.in,INV-2025-004,2025-04-15,2025-04-30,45000,8100
+   125→   125→Acme Pharma Ltd,accounts@acme-pharma.in,INV-2024-098,2025-04-15,2025-06-14,220000,39600`;
+   126→   126→
+   127→   127→export function OnboardingPage() {
+   128→   128→  const { navigate } = useRouter();
+   129→   129→  const { user } = useAuth();
+   130→   130→  const [step, setStep] = useState<Step>(1);
+   131→   131→  const [submitting, setSubmitting] = useState(false);
+   132→   132→  const [error, setError] = useState("");
+   133→   133→
+   134→   134→  // Step 1 state
+   135→   135→  const [industry, setIndustry] = useState("trading");
+   136→   136→  const [country, setCountry] = useState("IN");
+   137→   137→  const [currency, setCurrency] = useState("INR");
+   138→   138→
+   139→   139→  // Step 2 state
+   140→   140→  const [selectedEmployee, setSelectedEmployee] = useState("finance");
+   141→   141→
+   142→   142→  // Step 3 state
+   143→   143→  const [csvText, setCsvText] = useState("");
+   144→   144→  const [useDemoData, setUseDemoData] = useState(false);
+   145→   145→  const [parsedInvoices, setParsedInvoices] = useState<ParsedInvoice[]>([]);
+   146→   146→  const [parseError, setParseError] = useState("");
+   147→   147→  const fileInputRef = useRef<HTMLInputElement>(null);
+   148→   148→
+   149→   149→  // ─── CSV parsing ─────────────────────────────────────────────────────────
+   150→   150→  function parseCsv(text: string): ParsedInvoice[] {
+   151→   151→    const lines = text.trim().split(/\r?\n/).filter((l) => l.trim());
+   152→   152→    if (lines.length < 2) {
+   153→   153→      throw new Error("CSV must have a header row and at least one data row.");
+   154→   154→    }
+   155→   155→
+   156→   156→    const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
+   157→   157→    const required = ["customer_name", "customer_email", "invoice_number", "issue_date", "due_date", "subtotal", "tax"];
+   158→   158→    for (const req of required) {
+   159→   159→      if (!headers.includes(req)) {
+   160→   160→        throw new Error(`Missing required column: ${req}. Expected columns: ${required.join(", ")}`);
+   161→   161→      }
+   162→   162→    }
+   163→   163→
+   164→   164→    const invoices: ParsedInvoice[] = [];
+   165→   165→    for (let i = 1; i < lines.length; i++) {
+   166→   166→      const cols = parseCsvLine(lines[i]);
+   167→   167→      if (cols.length < headers.length) {
+   168→   168→        throw new Error(`Row ${i + 1} has ${cols.length} columns, expected ${headers.length}.`);
+   169→   169→      }
+   170→   170→
+   171→   171→      const row: Record<string, string> = {};
+   172→   172→      headers.forEach((h, idx) => { row[h] = cols[idx]?.trim() || ""; });
+   173→   173→
+   174→   174→      // Convert amounts from rupees to paise (1 INR = 100 paise)
+   175→   175→      const subtotal = Math.round(parseFloat(row.subtotal) * 100);
+   176→   176→      const tax = Math.round(parseFloat(row.tax) * 100);
+   177→   177→
+   178→   178→      if (isNaN(subtotal) || isNaN(tax)) {
+   179→   179→        throw new Error(`Row ${i + 1}: subtotal and tax must be numbers.`);
+   180→   180→      }
+   181→   181→
+   182→   182→      invoices.push({
+   183→   183→        customerName: row.customer_name,
+   184→   184→        customerEmail: row.customer_email,
+   185→   185→        invoiceNumber: row.invoice_number,
+   186→   186→        issueDate: row.issue_date,
+   187→   187→        dueDate: row.due_date,
+   188→   188→        subtotal,
+   189→   189→        tax,
+   190→   190→      });
+   191→   191→    }
+   192→   192→
+   193→   193→    return invoices;
+   194→   194→  }
+   195→   195→
+   196→   196→  function parseCsvLine(line: string): string[] {
+   197→   197→    const result: string[] = [];
+   198→   198→    let current = "";
+   199→   199→    let inQuotes = false;
+   200→   200→    for (let i = 0; i < line.length; i++) {
+   201→   201→      const char = line[i];
+   202→   202→      if (char === '"') {
+   203→   203→        inQuotes = !inQuotes;
+   204→   204→      } else if (char === "," && !inQuotes) {
+   205→   205→        result.push(current);
+   206→   206→        current = "";
+   207→   207→      } else {
+   208→   208→        current += char;
+   209→   209→      }
+   210→   210→    }
+   211→   211→    result.push(current);
+   212→   212→    return result;
+   213→   213→  }
+   214→   214→
+   215→   215→  function handleParseCsv() {
+   216→   216→    setParseError("");
+   217→   217→    try {
+   218→   218→      const invoices = parseCsv(csvText);
+   219→   219→      setParsedInvoices(invoices);
+   220→   220→    } catch (err: any) {
+   221→   221→      setParsedInvoices([]);
+   222→   222→      setParseError(err.message);
+   223→   223→    }
+   224→   224→  }
+   225→   225→
+   226→   226→  function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+   227→   227→    const file = e.target.files?.[0];
+   228→   228→    if (!file) return;
+   229→   229→    const reader = new FileReader();
+   230→   230→    reader.onload = (ev) => {
+   231→   231→      const text = ev.target?.result as string;
+   232→   232→      setCsvText(text);
+   233→   233→      // Auto-parse on upload
+   234→   234→      try {
+   235→   235→        const invoices = parseCsv(text);
+   236→   236→        setParsedInvoices(invoices);
+   237→   237→        setParseError("");
+   238→   238→      } catch (err: any) {
+   239→   239→        setParsedInvoices([]);
+   240→   240→        setParseError(err.message);
+   241→   241→      }
+   242→   242→    };
+   243→   243→    reader.readAsText(file);
+   244→   244→  }
+   245→   245→
+   246→   246→  function loadSampleCsv() {
+   247→   247→    setCsvText(SAMPLE_CSV);
+   248→   248→    try {
+   249→   249→      const invoices = parseCsv(SAMPLE_CSV);
+   250→   250→      setParsedInvoices(invoices);
+   251→   251→      setParseError("");
+   252→   252→    } catch (err: any) {
+   253→   253→      setParseError(err.message);
+   254→   254→    }
+   255→   255→  }
+   256→   256→
+   257→   257→  // ─── Submit ──────────────────────────────────────────────────────────────
+   258→   258→  async function handleFinish() {
+   259→   259→    setSubmitting(true);
+   260→   260→    setError("");
+   261→   261→    try {
+   262→   262→      const result = await api.onboarding.setup({
+   263→   263→        industry,
+   264→   264→        country,
+   265→   265→        currency,
+   266→   266→        invoices: useDemoData ? undefined : parsedInvoices,
+   267→   267→        useDemoData,
+   268→   268→      });
+   269→   269→
+   270→   270→      // Invalidate the dashboard query so it refreshes with the new data
+   271→   271→      // (React Query will refetch on navigation)
+   272→   272→
+   273→   273→      // Navigate to the dashboard — the customer should see Kavya working
+   274→   274→      navigate("dashboard");
+   275→   275→    } catch (err: any) {
+   276→   276→      setError(err.message || "Onboarding failed. Please try again.");
+   277→   277→    } finally {
+   278→   278→      setSubmitting(false);
+   279→   279→    }
+   280→   280→  }
+   281→   281→
+   282→   282→  // ─── Demo mode (instant) ─────────────────────────────────────────────────
+   283→   283→  async function handleDemoMode() {
+   284→   284→    setSubmitting(true);
+   285→   285→    setError("");
+   286→   286→    try {
+   287→   287→      const result = await api.onboarding.demo();
+   288→   288→      setAccessToken(result.accessToken);
+   289→   289→      window.sessionStorage.setItem("bihari_token", result.accessToken);
+   290→   290→      const fullUser = {
+   291→   291→        ...result.user,
+   292→   292→        workspaceId: result.workspace.id,
+   293→   293→        workspaceName: result.workspace.name,
+   294→   294→        workspaceSlug: result.workspace.slug,
+   295→   295→        role: "owner",
+   296→   296→      };
+   297→   297→      setCurrentUser(fullUser);
+   298→   298→      // Reload to pick up the new auth state
+   299→   299→      window.location.hash = "#/dashboard";
+   300→   300→      window.location.reload();
+   301→   301→    } catch (err: any) {
+   302→   302→      setError(err.message || "Demo mode failed. Please try again.");
+   303→   303→    } finally {
+   304→   304→      setSubmitting(false);
+   305→   305→    }
+   306→   306→  }
+   307→   307→
+   308→   308→  // ─── Render ──────────────────────────────────────────────────────────────
+   309→   309→  const steps = [
+   310→   310→    { num: 1, label: "Company", icon: Building2 },
+   311→   311→    { num: 2, label: "AI Employee", icon: Bot },
+   312→   312→    { num: 3, label: "Invoices", icon: Upload },
+   313→   313→    { num: 4, label: "Review", icon: CheckCircle2 },
+   314→   314→  ];
+   315→   315→
+   316→   316→  return (
+   317→   317→    <div className="min-h-screen bg-zinc-950 text-zinc-100">
+   318→   318→      {/* Top bar */}
+   319→   319→      <div className="border-b border-zinc-900">
+   320→   320→        <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-4 sm:px-6">
+   321→   321→          <button onClick={() => navigate("")} className="flex items-center gap-2.5">
+   322→   322→            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 font-bold text-white">
+   323→   323→              B
+   324→   324→            </div>
+   325→   325→            <span className="text-sm font-bold tracking-tight">BIHARI AI</span>
+   326→   326→          </button>
+   327→   327→          <div className="text-xs text-zinc-500">
+   328→   328→            Welcome, <span className="text-zinc-300">{user?.name}</span>
+   329→   329→          </div>
+   330→   330→        </div>
+   331→   331→      </div>
+   332→   332→
+   333→   333→      <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
+   334→   334→        {/* Demo mode banner */}
+   335→   335→        {step === 1 && (
+   336→   336→          <div className="mb-8 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-5">
+   337→   337→            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+   338→   338→              <div className="flex items-center gap-3">
+   339→   339→                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-400">
+   340→   340→                  <Sparkles className="h-5 w-5" />
+   341→   341→                </div>
+   342→   342→                <div>
+   343→   343→                  <div className="text-sm font-semibold text-zinc-100">Want to see it in action first?</div>
+   344→   344→                  <div className="text-xs text-zinc-400">Load a demo company with sample data — ready in 10 seconds.</div>
+   345→   345→                </div>
+   346→   346→              </div>
+   347→   347→              <button
+   348→   348→                onClick={handleDemoMode}
+   349→   349→                disabled={submitting}
+   350→   350→                className="flex items-center justify-center gap-1.5 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 transition-colors hover:bg-emerald-400 disabled:opacity-50"
+   351→   351→              >
+   352→   352→                <Play className="h-4 w-4" />
+   353→   353→                {submitting ? "Loading demo…" : "Load Demo Company"}
+   354→   354→              </button>
+   355→   355→            </div>
+   356→   356→          </div>
+   357→   357→        )}
+   358→   358→
+   359→   359→        {/* Stepper */}
+   360→   360→        <div className="mb-8 flex items-center justify-between">
+   361→   361→          {steps.map((s, idx) => {
+   362→   362→            const Icon = s.icon;
+   363→   363→            const isActive = step === s.num;
+   364→   364→            const isComplete = step > s.num;
+   365→   365→            return (
+   366→   366→              <div key={s.num} className="flex flex-1 items-center">
+   367→   367→                <div className="flex flex-col items-center gap-1.5">
+   368→   368→                  <div
+   369→   369→                    className={cn(
+   370→   370→                      "flex h-9 w-9 items-center justify-center rounded-full border-2 transition-colors",
+   371→   371→                      isActive && "border-emerald-500 bg-emerald-500/10 text-emerald-400",
+   372→   372→                      isComplete && "border-emerald-500 bg-emerald-500 text-emerald-950",
+   373→   373→                      !isActive && !isComplete && "border-zinc-700 bg-zinc-900 text-zinc-500"
+   374→   374→                    )}
+   375→   375→                  >
+   376→   376→                    {isComplete ? <CheckCircle2 className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
+   377→   377→                  </div>
+   378→   378→                  <span className={cn(
+   379→   379→                    "text-[0.65rem] font-medium",
+   380→   380→                    isActive ? "text-zinc-200" : "text-zinc-500"
+   381→   381→                  )}>
+   382→   382→                    {s.label}
+   383→   383→                  </span>
+   384→   384→                </div>
+   385→   385→                {idx < steps.length - 1 && (
+   386→   386→                  <div className={cn(
+   387→   387→                    "mx-2 h-px flex-1 transition-colors",
+   388→   388→                    step > s.num ? "bg-emerald-500" : "bg-zinc-800"
+   389→   389→                  )} />
+   390→   390→                )}
+   391→   391→              </div>
+   392→   392→            );
+   393→   393→          })}
+   394→   394→        </div>
+   395→   395→
+   396→   396→        {/* Step content */}
+   397→   397→        <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-6 sm:p-8">
+   398→   398→          {/* Step 1: Company */}
+   399→   399→          {step === 1 && (
+   400→   400→            <div>
+   401→   401→              <h2 className="text-lg font-semibold text-zinc-50">Tell us about your company</h2>
+   402→   402→              <p className="mt-1 text-sm text-zinc-400">This helps us customize your AI Employee's behavior.</p>
+   403→   403→
+   404→   404→              <div className="mt-6 space-y-4">
+   405→   405→                <div>
+   406→   406→                  <label className="mb-1.5 block text-xs font-medium text-zinc-300">Industry</label>
+   407→   407→                  <select
+   408→   408→                    value={industry}
+   409→   409→                    onChange={(e) => setIndustry(e.target.value)}
+   410→   410→                    className="h-10 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-emerald-500"
+   411→   411→                  >
+   412→   412→                    {INDUSTRIES.map((i) => (
+   413→   413→                      <option key={i.value} value={i.value}>{i.label}</option>
+   414→   414→                    ))}
+   415→   415→                  </select>
+   416→   416→                </div>
+   417→   417→
+   418→   418→                <div className="grid gap-4 sm:grid-cols-2">
+   419→   419→                  <div>
+   420→   420→                    <label className="mb-1.5 block text-xs font-medium text-zinc-300">Country</label>
+   421→   421→                    <select
+   422→   422→                      value={country}
+   423→   423→                      onChange={(e) => setCountry(e.target.value)}
+   424→   424→                      className="h-10 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-emerald-500"
+   425→   425→                    >
+   426→   426→                      {COUNTRIES.map((c) => (
+   427→   427→                        <option key={c.value} value={c.value}>{c.label}</option>
+   428→   428→                      ))}
+   429→   429→                    </select>
+   430→   430→                  </div>
+   431→   431→                  <div>
+   432→   432→                    <label className="mb-1.5 block text-xs font-medium text-zinc-300">Currency</label>
+   433→   433→                    <select
+   434→   434→                      value={currency}
+   435→   435→                      onChange={(e) => setCurrency(e.target.value)}
+   436→   436→                      className="h-10 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-emerald-500"
+   437→   437→                    >
+   438→   438→                      {CURRENCIES.map((c) => (
+   439→   439→                        <option key={c.value} value={c.value}>{c.label}</option>
+   440→   440→                      ))}
+   441→   441→                    </select>
+   442→   442→                  </div>
+   443→   443→                </div>
+   444→   444→              </div>
+   445→   445→
+   446→   446→              <div className="mt-8 flex justify-end">
+   447→   447→                <button
+   448→   448→                  onClick={() => setStep(2)}
+   449→   449→                  className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 transition-colors hover:bg-emerald-400"
+   450→   450→                >
+   451→   451→                  Continue
+   452→   452→                  <ArrowRight className="h-4 w-4" />
+   453→   453→                </button>
+   454→   454→              </div>
+   455→   455→            </div>
+   456→   456→          )}
+   457→   457→
+   458→   458→          {/* Step 2: Choose AI Employee */}
+   459→   459→          {step === 2 && (
+   460→   460→            <div>
+   461→   461→              <h2 className="text-lg font-semibold text-zinc-50">Hire your first AI Employee</h2>
+   462→   462→              <p className="mt-1 text-sm text-zinc-400">Choose a role to get started. More roles are coming soon.</p>
+   463→   463→
+   464→   464→              <div className="mt-6 space-y-3">
+   465→   465→                {EMPLOYEE_TEMPLATES.map((t) => (
+   466→   466→                  <button
+   467→   467→                    key={t.id}
+   468→   468→                    onClick={() => t.enabled && setSelectedEmployee(t.id)}
+   469→   469→                    disabled={!t.enabled}
+   470→   470→                    className={cn(
+   471→   471→                      "flex w-full items-start gap-3 rounded-xl border p-4 text-left transition-colors",
+   472→   472→                      selectedEmployee === t.id
+   473→   473→                        ? "border-emerald-500 bg-emerald-500/5"
+   474→   474→                        : t.enabled
+   475→   475→                        ? "border-zinc-800 bg-zinc-900/50 hover:border-zinc-700"
+   476→   476→                        : "border-zinc-800/50 bg-zinc-900/30 opacity-60 cursor-not-allowed"
+   477→   477→                    )}
+   478→   478→                  >
+   479→   479→                    <div className={cn(
+   480→   480→                      "flex h-10 w-10 items-center justify-center rounded-lg",
+   481→   481→                      t.enabled ? "bg-emerald-500/10 text-emerald-400" : "bg-zinc-800 text-zinc-500"
+   482→   482→                    )}>
+   483→   483→                      <Bot className="h-5 w-5" />
+   484→   484→                    </div>
+   485→   485→                    <div className="min-w-0 flex-1">
+   486→   486→                      <div className="flex items-center gap-2">
+   487→   487→                        <h3 className="text-sm font-semibold text-zinc-100">{t.name}</h3>
+   488→   488→                        <span className={cn(
+   489→   489→                          "rounded-full px-2 py-0.5 text-[0.6rem] font-medium",
+   490→   490→                          t.enabled ? "bg-emerald-500/15 text-emerald-400" : "bg-zinc-800 text-zinc-500"
+   491→   491→                        )}>
+   492→   492→                          {t.badge}
+   493→   493→                        </span>
+   494→   494→                      </div>
+   495→   495→                      <p className="mt-0.5 text-xs text-zinc-400">{t.description}</p>
+   496→   496→                      <div className="mt-2 flex flex-wrap gap-1">
+   497→   497→                        {t.capabilities.map((cap) => (
+   498→   498→                          <span key={cap} className="rounded bg-zinc-800 px-1.5 py-0.5 text-[0.6rem] text-zinc-400">
+   499→   499→                            {cap}
+   500→   500→                          </span>
+   501→   501→                        ))}
+   502→   502→                      </div>
+   503→   503→                    </div>
+   504→   504→                    {selectedEmployee === t.id && (
+   505→   505→                      <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-400" />
+   506→   506→                    )}
+   507→   507→                  </button>
+   508→   508→                ))}
+   509→   509→              </div>
+   510→   510→
+   511→   511→              <div className="mt-8 flex justify-between">
+   512→   512→                <button
+   513→   513→                  onClick={() => setStep(1)}
+   514→   514→                  className="flex items-center gap-1.5 rounded-lg border border-zinc-800 px-4 py-2 text-sm font-medium text-zinc-300 hover:border-zinc-700"
+   515→   515→                >
+   516→   516→                  <ArrowLeft className="h-4 w-4" />
+   517→   517→                  Back
+   518→   518→                </button>
+   519→   519→                <button
+   520→   520→                  onClick={() => setStep(3)}
+   521→   521→                  className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 transition-colors hover:bg-emerald-400"
+   522→   522→                >
+   523→   523→                  Continue
+   524→   524→                  <ArrowRight className="h-4 w-4" />
+   525→   525→                </button>
+   526→   526→              </div>
+   527→   527→            </div>
+   528→   528→          )}
+   529→   529→
+   530→   530→          {/* Step 3: Upload Invoices */}
+   531→   531→          {step === 3 && (
+   532→   532→            <div>
+   533→   533→              <h2 className="text-lg font-semibold text-zinc-50">Upload your invoices</h2>
+   534→   534→              <p className="mt-1 text-sm text-zinc-400">
+   535→   535→                Your AI Employee will analyze these and start working immediately.
+   536→   536→              </p>
+   537→   537→
+   538→   538→              {/* Demo data option */}
+   539→   539→              <div className="mt-6">
+   540→   540→                <button
+   541→   541→                  onClick={() => {
+   542→   542→                    setUseDemoData(!useDemoData);
+   543→   543→                    if (!useDemoData) {
+   544→   544→                      setCsvText("");
+   545→   545→                      setParsedInvoices([]);
+   546→   546→                      setParseError("");
+   547→   547→                    }
+   548→   548→                  }}
+   549→   549→                  className={cn(
+   550→   550→                    "flex w-full items-start gap-3 rounded-xl border p-4 text-left transition-colors",
+   551→   551→                    useDemoData
+   552→   552→                      ? "border-emerald-500 bg-emerald-500/5"
+   553→   553→                      : "border-zinc-800 bg-zinc-900/50 hover:border-zinc-700"
+   554→   554→                  )}
+   555→   555→                >
+   556→   556→                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400">
+   557→   557→                    <Sparkles className="h-5 w-5" />
+   558→   558→                  </div>
+   559→   559→                  <div className="min-w-0 flex-1">
+   560→   560→                    <h3 className="text-sm font-semibold text-zinc-100">Use sample data</h3>
+   561→   561→                    <p className="mt-0.5 text-xs text-zinc-400">
+   562→   562→                      Load 5 sample customers + 8 invoices (various aging) — perfect for a test run.
+   563→   563→                    </p>
+   564→   564→                  </div>
+   565→   565→                  {useDemoData && <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-400" />}
+   566→   566→                </button>
+   567→   567→              </div>
+   568→   568→
+   569→   569→              {/* Divider */}
+   570→   570→              <div className="my-6 flex items-center gap-3">
+   571→   571→                <div className="h-px flex-1 bg-zinc-800" />
+   572→   572→                <span className="text-xs text-zinc-600">or upload your own</span>
+   573→   573→                <div className="h-px flex-1 bg-zinc-800" />
+   574→   574→              </div>
+   575→   575→
+   576→   576→              {/* CSV upload */}
+   577→   577→              <div className={cn("transition-opacity", useDemoData && "opacity-40 pointer-events-none")}>
+   578→   578→                {/* File upload zone */}
+   579→   579→                <div
+   580→   580→                  onClick={() => fileInputRef.current?.click()}
+   581→   581→                  className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-zinc-700 bg-zinc-900/30 p-8 text-center transition-colors hover:border-emerald-500/50"
+   582→   582→                >
+   583→   583→                  <FileSpreadsheet className="h-8 w-8 text-zinc-500" />
+   584→   584→                  <p className="mt-2 text-sm font-medium text-zinc-300">Click to upload CSV</p>
+   585→   585→                  <p className="text-xs text-zinc-500">or drag and drop</p>
+   586→   586→                  <input
+   587→   587→                    ref={fileInputRef}
+   588→   588→                    type="file"
+   589→   589→                    accept=".csv,.txt"
+   590→   590→                    onChange={handleFileUpload}
+   591→   591→                    className="hidden"
+   592→   592→                  />
+   593→   593→                </div>
+   594→   594→
+   595→   595→                {/* Sample CSV loader */}
+   596→   596→                <div className="mt-3 flex items-center justify-between">
+   597→   597→                  <button
+   598→   598→                    onClick={loadSampleCsv}
+   599→   599→                    className="text-xs text-emerald-400 hover:text-emerald-300"
+   600→   600→                  >
+   601→   601→                    Load sample CSV format →
+   602→   602→                  </button>
+   603→   603→                  {csvText && (
+   604→   604→                    <button
+   605→   605→                      onClick={() => {
+   606→   606→                        setCsvText("");
+   607→   607→                        setParsedInvoices([]);
+   608→   608→                        setParseError("");
+   609→   609→                      }}
+   610→   610→                      className="text-xs text-zinc-500 hover:text-zinc-300"
+   611→   611→                    >
+   612→   612→                      Clear
+   613→   613→                    </button>
+   614→   614→                  )}
+   615→   615→                </div>
+   616→   616→
+   617→   617→                {/* CSV text area */}
+   618→   618→                {csvText && (
+   619→   619→                  <div className="mt-3">
+   620→   620→                    <textarea
+   621→   621→                      value={csvText}
+   622→   622→                      onChange={(e) => setCsvText(e.target.value)}
+   623→   623→                      onBlur={handleParseCsv}
+   624→   624→                      rows={6}
+   625→   625→                      className="w-full rounded-lg border border-zinc-800 bg-zinc-950 p-3 font-mono text-xs text-zinc-300 outline-none focus:border-emerald-500"
+   626→   626→                      placeholder="customer_name,customer_email,invoice_number,issue_date,due_date,subtotal,tax"
+   627→   627→                    />
+   628→   628→                    <button
+   629→   629→                      onClick={handleParseCsv}
+   630→   630→                      className="mt-2 rounded-lg border border-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:border-zinc-700"
+   631→   631→                    >
+   632→   632→                      Parse CSV
+   633→   633→                    </button>
+   634→   634→                  </div>
+   635→   635→                )}
+   636→   636→
+   637→   637→                {/* Parse error */}
+   638→   638→                {parseError && (
+   639→   639→                  <div className="mt-3 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400">
+   640→   640→                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+   641→   641→                    <span>{parseError}</span>
+   642→   642→                  </div>
+   643→   643→                )}
+   644→   644→
+   645→   645→                {/* Parsed preview */}
+   646→   646→                {parsedInvoices.length > 0 && (
+   647→   647→                  <div className="mt-4">
+   648→   648→                    <div className="mb-2 flex items-center justify-between">
+   649→   649→                      <span className="text-xs font-medium text-zinc-300">
+   650→   650→                        {parsedInvoices.length} invoices ready to import
+   651→   651→                      </span>
+   652→   652→                      <span className="text-xs text-zinc-500">
+   653→   653→                        {parsedInvoices.filter((i) => new Date(i.dueDate) < new Date()).length} overdue
+   654→   654→                      </span>
+   655→   655→                    </div>
+   656→   656→                    <div className="max-h-48 overflow-y-auto rounded-lg border border-zinc-800">
+   657→   657→                      <table className="w-full text-xs">
+   658→   658→                        <thead className="sticky top-0 bg-zinc-900">
+   659→   659→                          <tr className="text-left text-zinc-500">
+   660→   660→                            <th className="px-3 py-2 font-medium">Invoice</th>
+   661→   661→                            <th className="px-3 py-2 font-medium">Customer</th>
+   662→   662→                            <th className="px-3 py-2 font-medium">Due</th>
+   663→   663→                            <th className="px-3 py-2 text-right font-medium">Amount</th>
+   664→   664→                          </tr>
+   665→   665→                        </thead>
+   666→   666→                        <tbody className="divide-y divide-zinc-800">
+   667→   667→                          {parsedInvoices.map((inv, idx) => {
+   668→   668→                            const isOverdue = new Date(inv.dueDate) < new Date();
+   669→   669→                            const total = (inv.subtotal + inv.tax) / 100;
+   670→   670→                            return (
+   671→   671→                              <tr key={idx} className="text-zinc-300">
+   672→   672→                                <td className="px-3 py-2 font-mono">{inv.invoiceNumber}</td>
+   673→   673→                                <td className="px-3 py-2 truncate">{inv.customerName}</td>
+   674→   674→                                <td className="px-3 py-2">
+   675→   675→                                  <span className={isOverdue ? "text-amber-400" : "text-zinc-400"}>
+   676→   676→                                    {new Date(inv.dueDate).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+   677→   677→                                  </span>
+   678→   678→                                </td>
+   679→   679→                                <td className="px-3 py-2 text-right font-mono">
+   680→   680→                                  ₹{total.toLocaleString("en-IN")}
+   681→   681→                                </td>
+   682→   682→                              </tr>
+   683→   683→                            );
+   684→   684→                          })}
+   685→   685→                        </tbody>
+   686→   686→                      </table>
+   687→   687→                    </div>
+   688→   688→                  </div>
+   689→   689→                )}
+   690→   690→              </div>
+   691→   691→
+   692→   692→              <div className="mt-8 flex justify-between">
+   693→   693→                <button
+   694→   694→                  onClick={() => setStep(2)}
+   695→   695→                  className="flex items-center gap-1.5 rounded-lg border border-zinc-800 px-4 py-2 text-sm font-medium text-zinc-300 hover:border-zinc-700"
+   696→   696→                >
+   697→   697→                  <ArrowLeft className="h-4 w-4" />
+   698→   698→                  Back
+   699→   699→                </button>
+   700→   700→                <button
+   701→   701→                  onClick={() => setStep(4)}
+   702→   702→                  disabled={!useDemoData && parsedInvoices.length === 0}
+   703→   703→                  className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 transition-colors hover:bg-emerald-400 disabled:opacity-50"
+   704→   704→                >
+   705→   705→                  Continue
+   706→   706→                  <ArrowRight className="h-4 w-4" />
+   707→   707→                </button>
+   708→   708→              </div>
+   709→   709→            </div>
+   710→   710→          )}
+   711→   711→
+   712→   712→          {/* Step 4: Review */}
+   713→   713→          {step === 4 && (
+   714→   714→            <div>
+   715→   715→              <h2 className="text-lg font-semibold text-zinc-50">Review and finish</h2>
+   716→   716→              <p className="mt-1 text-sm text-zinc-400">
+   717→   717→                Your AI Employee will start working the moment you click Finish.
+   718→   718→              </p>
+   719→   719→
+   720→   720→              <div className="mt-6 space-y-4">
+   721→   721→                {/* Company summary */}
+   722→   722→                <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+   723→   723→                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+   724→   724→                    <Building2 className="h-3.5 w-3.5" /> Company
+   725→   725→                  </div>
+   726→   726→                  <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+   727→   727→                    <div>
+   728→   728→                      <div className="text-xs text-zinc-500">Industry</div>
+   729→   729→                      <div className="text-zinc-200">{INDUSTRIES.find((i) => i.value === industry)?.label}</div>
+   730→   730→                    </div>
+   731→   731→                    <div>
+   732→   732→                      <div className="text-xs text-zinc-500">Country</div>
+   733→   733→                      <div className="text-zinc-200">{COUNTRIES.find((c) => c.value === country)?.label}</div>
+   734→   734→                    </div>
+   735→   735→                    <div>
+   736→   736→                      <div className="text-xs text-zinc-500">Currency</div>
+   737→   737→                      <div className="text-zinc-200">{currency}</div>
+   738→   738→                    </div>
+   739→   739→                  </div>
+   740→   740→                </div>
+   741→   741→
+   742→   742→                {/* Employee summary */}
+   743→   743→                <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+   744→   744→                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+   745→   745→                    <Bot className="h-3.5 w-3.5" /> AI Employee
+   746→   746→                  </div>
+   747→   747→                  <div className="mt-3 flex items-center gap-3">
+   748→   748→                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400">
+   749→   749→                      <Bot className="h-5 w-5" />
+   750→   750→                    </div>
+   751→   751→                    <div>
+   752→   752→                      <div className="text-sm font-medium text-zinc-100">Kavya — Finance Employee</div>
+   753→   753→                      <div className="text-xs text-zinc-500">
+   754→   754→                        Will process overdue invoices and generate collection reminders under your approval.
+   755→   755→                      </div>
+   756→   756→                    </div>
+   757→   757→                  </div>
+   758→   758→                </div>
+   759→   759→
+   760→   760→                {/* Invoices summary */}
+   761→   761→                <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+   762→   762→                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+   763→   763→                    <Upload className="h-3.5 w-3.5" /> Invoices
+   764→   764→                  </div>
+   765→   765→                  <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+   766→   766→                    <div>
+   767→   767→                      <div className="text-xs text-zinc-500">Source</div>
+   768→   768→                      <div className="text-zinc-200">{useDemoData ? "Sample data" : "CSV upload"}</div>
+   769→   769→                    </div>
+   770→   770→                    <div>
+   771→   771→                      <div className="text-xs text-zinc-500">Invoices</div>
+   772→   772→                      <div className="text-zinc-200">
+   773→   773→                        {useDemoData ? "8" : parsedInvoices.length}
+   774→   774→                      </div>
+   775→   775→                    </div>
+   776→   776→                    <div>
+   777→   777→                      <div className="text-xs text-zinc-500">Overdue</div>
+   778→   778→                      <div className="text-amber-400">
+   779→   779→                        {useDemoData
+   780→   780→                          ? "6"
+   781→   781→                          : parsedInvoices.filter((i) => new Date(i.dueDate) < new Date()).length}
+   782→   782→                      </div>
+   783→   783→                    </div>
+   784→   784→                  </div>
+   785→   785→                </div>
+   786→   786→
+   787→   787→                {/* What happens next */}
+   788→   788→                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4">
+   789→   789→                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-emerald-400">
+   790→   790→                    <Sparkles className="h-3.5 w-3.5" /> What happens next
+   791→   791→                  </div>
+   792→   792→                  <ul className="mt-3 space-y-2 text-sm text-zinc-300">
+   793→   793→                    <li className="flex items-start gap-2">
+   794→   794→                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+   795→   795→                      Kavya (Finance Employee) is hired and ready to work.
+   796→   796→                    </li>
+   797→   797→                    <li className="flex items-start gap-2">
+   798→   798→                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+   799→   799→                      Your invoices are imported and analyzed for overdue status.
+   800→   800→                    </li>
+   801→   801→                    <li className="flex items-start gap-2">
+   802→   802→                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+   803→   803→                      Kavya automatically starts processing overdue invoices.
+   804→   804→                    </li>
+   805→   805→                    <li className="flex items-start gap-2">
+   806→   806→                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+   807→   807→                      You'll get approval requests in the Decision Center before any email is sent.
+   808→   808→                    </li>
+   809→   809→                  </ul>
+   810→   810→                </div>
+   811→   811→              </div>
+   812→   812→
+   813→   813→              {error && (
+   814→   814→                <div className="mt-4 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400">
+   815→   815→                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+   816→   816→                  <span>{error}</span>
+   817→   817→                </div>
+   818→   818→              )}
+   819→   819→
+   820→   820→              <div className="mt-8 flex justify-between">
+   821→   821→                <button
+   822→   822→                  onClick={() => setStep(3)}
+   823→   823→                  disabled={submitting}
+   824→   824→                  className="flex items-center gap-1.5 rounded-lg border border-zinc-800 px-4 py-2 text-sm font-medium text-zinc-300 hover:border-zinc-700 disabled:opacity-50"
+   825→   825→                >
+   826→   826→                  <ArrowLeft className="h-4 w-4" />
+   827→   827→                  Back
+   828→   828→                </button>
+   829→   829→                <button
+   830→   830→                  onClick={handleFinish}
+   831→   831→                  disabled={submitting}
+   832→   832→                  className="flex items-center gap-2 rounded-lg bg-emerald-500 px-6 py-2 text-sm font-semibold text-emerald-950 transition-colors hover:bg-emerald-400 disabled:opacity-50"
+   833→   833→                >
+   834→   834→                  {submitting ? (
+   835→   835→                    <>
+   836→   836→                      <Loader2 className="h-4 w-4 animate-spin" />
+   837→   837→                      Setting up…
+   838→   838→                    </>
+   839→   839→                  ) : (
+   840→   840→                    <>
+   841→   841→                      <CheckCircle2 className="h-4 w-4" />
+   842→   842→                      Finish — Start working
+   843→   843→                    </>
+   844→   844→                  )}
+   845→   845→                </button>
+   846→   846→              </div>
+   847→   847→            </div>
+   848→   848→          )}
+   849→   849→        </div>
+   850→   850→      </div>
+   851→   851→    </div>
+   852→   852→  );
+   853→   853→}
+   854→   854→

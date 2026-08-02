@@ -1,0 +1,1092 @@
+     1→/**
+     2→ * BIHARI AI — Finance Brain
+     3→ *
+     4→ * The reasoning layer that transforms the Finance Employee from a workflow
+     5→ * engine into an intelligent Accounts Receivable Manager.
+     6→ *
+     7→ * Before every financial action, the Finance Brain:
+     8→ * 1. Gathers ALL relevant context (invoice, customer, payments, reminders,
+     9→ *    collection cases, policies, knowledge, approvals, human feedback)
+    10→ * 2. Reasons over that context to produce a structured recommendation
+    11→ * 3. Explains WHY the action was chosen, WHAT evidence was used, WHICH
+    12→ *    policies influenced the decision, and WHY alternatives were rejected
+    13→ *
+    14→ * This is NOT a mock. The reasoning is deterministic and grounded in real
+    15→ * data from the database. Every recommendation is traceable to specific
+    16→ * evidence, specific policies, and specific customer history.
+    17→ *
+    18→ * The planner uses the recommendation to generate steps with rich reasoning.
+    19→ * The executor stores the recommendation in the approval's proposed action.
+    20→ * The audit log captures the complete reasoning chain.
+    21→ */
+    22→
+    23→import { db } from "@/lib/db";
+    24→import {
+    25→  calculateDaysOverdue,
+    26→  calculateAgingBucket,
+    27→  agingBucketLabel,
+    28→  determineCollectionPriority,
+    29→  formatRupees,
+    30→  formatDate,
+    31→} from "@/lib/finance/domain";
+    32→
+    33→// ─── Types ───────────────────────────────────────────────────────────────────
+    34→
+    35→/** The complete context the Finance Brain reasons over. One structured object. */
+    36→export interface FinanceContext {
+    37→  // Invoice
+    38→  invoice: {
+    39→    id: string;
+    40→    invoiceNumber: string;
+    41→    issueDate: Date;
+    42→    dueDate: Date;
+    43→    subtotal: number;
+    44→    tax: number;
+    45→    total: number;
+    46→    amountPaid: number;
+    47→    outstanding: number;
+    48→    status: string;
+    49→    paymentTerms: number;
+    50→    notes: string | null;
+    51→  };
+    52→
+    53→  // Customer profile
+    54→  customer: {
+    55→    id: string;
+    56→    name: string;
+    57→    email: string;
+    58→    phone: string | null;
+    59→    gstin: string | null;
+    60→    billingAddress: string | null;
+    61→    paymentTerms: number;
+    62→    creditLimit: number;
+    63→    riskLevel: string;
+    64→    status: string;
+    65→    notes: string | null;
+    66→  };
+    67→
+    68→  // Payment history for this invoice
+    69→  paymentHistory: Array<{
+    70→    id: string;
+    71→    amount: number;
+    72→    paymentDate: Date;
+    73→    method: string;
+    74→    reference: string | null;
+    75→    status: string;
+    76→  }>;
+    77→
+    78→  // All previous reminders for this invoice (chronological)
+    79→  reminderHistory: Array<{
+    80→    id: string;
+    81→    reminderType: string;
+    82→    subject: string;
+    83→    status: string;
+    84→    sentAt: Date | null;
+    85→    respondedAt: Date | null;
+    86→    responseNotes: string | null;
+    87→    createdAt: Date;
+    88→  }>;
+    89→
+    90→  // Collection case history for this invoice
+    91→  collectionCaseHistory: Array<{
+    92→    id: string;
+    93→    status: string;
+    94→    priority: string;
+    95→    agingBucket: string;
+    96→    daysOverdue: number;
+    97→    escalationLevel: number;
+    98→    openedAt: Date;
+    99→    resolvedAt: Date | null;
+   100→    resolution: string | null;
+   101→    followUps: Array<{
+   102→      action: string;
+   103→      description: string;
+   104→      performedAt: Date;
+   105→    }>;
+   106→  }>;
+   107→
+   108→  // Company finance policies that apply
+   109→  companyPolicies: Array<{
+   110→    id: string;
+   111→    name: string;
+   112→    code: string;
+   113→    category: string;
+   114→    description: string;
+   115→    severity: string;
+   116→    rules: Array<Record<string, string>>;
+   117→  }>;
+   118→
+   119→  // Finance knowledge documents
+   120→  knowledgeDocuments: Array<{
+   121→    id: string;
+   122→    filename: string;
+   123→    status: string;
+   124→    chunkCount: number;
+   125→  }>;
+   126→
+   127→  // Credit terms summary
+   128→  creditTerms: {
+   129→    customerPaymentTerms: number;
+   130→    invoicePaymentTerms: number;
+   131→    creditLimit: number;
+   132→    totalOutstandingForCustomer: number;
+   133→    availableCredit: number;
+   134→  };
+   135→
+   136→  // Customer risk assessment
+   137→  customerRiskLevel: string;
+   138→
+   139→  // Total outstanding exposure across ALL customer invoices
+   140→  outstandingExposure: number;
+   141→
+   142→  // Previous approval decisions on this invoice or customer
+   143→  previousApprovals: Array<{
+   144→    id: string;
+   145→    tool: string;
+   146→    status: string;
+   147→    decision: string | null;
+   148→    reason: string | null;
+   149→    decidedAt: Date | null;
+   150→  }>;
+   151→
+   152→  // Human feedback on earlier decisions (from approval reasons)
+   153→  humanFeedback: Array<{
+   154→    decision: string;
+   155→    reason: string;
+   156→    tool: string;
+   157→    decidedAt: Date;
+   158→  }>;
+   159→
+   160→  // Employee Memory — persistent learnings from past interactions
+   161→  // Retrieved before reasoning, updated after task completion
+   162→  employeeMemories: Array<{
+   163→    memoryType: string;
+   164→    entityType: string;
+   165→    entityId: string;
+   166→    entityLabel: string;
+   167→    key: string;
+   168→    value: Record<string, string>;
+   169→    confidence: number;
+   170→    reinforcementCount: number;
+   171→    updatedAt: Date;
+   172→  }>;
+   173→
+   174→  // Computed
+   175→  daysOverdue: number;
+   176→  agingBucket: string;
+   177→  collectionPriority: string;
+   178→}
+   179→
+   180→/** A structured recommendation produced by the Finance Brain. */
+   181→export interface FinanceRecommendation {
+   182→  // The recommended action
+   183→  action: string;
+   184→
+   185→  // WHY this action was chosen — detailed, human-readable explanation
+   186→  why: string;
+   187→
+   188→  // The evidence used to reach this recommendation
+   189→  evidence: EvidenceItem[];
+   190→
+   191→  // Which company policies influenced the decision
+   192→  policyInfluence: PolicyInfluence[];
+   193→
+   194→  // Which customer history influenced the decision
+   195→  customerHistoryInfluence: string;
+   196→
+   197→  // Why alternative actions were rejected
+   198→  rejectedAlternatives: RejectedAlternative[];
+   199→
+   200→  // Confidence in the recommendation (0.0–1.0)
+   201→  confidence: number;
+   202→
+   203→  // Risk assessment for this action
+   204→  riskAssessment: string;
+   205→
+   206→  // A natural-language summary for the approval screen
+   207→  humanReadableSummary: string;
+   208→
+   209→  // The invoice context for the planner (backward compatible)
+   210→  invoiceId: string;
+   211→  invoiceNumber: string;
+   212→  customerId: string;
+   213→  customerName: string;
+   214→  customerEmail: string;
+   215→  outstanding: number;
+   216→  daysOverdue: number;
+   217→  agingBucket: string;
+   218→  paymentTerms: number;
+   219→  previousReminderCount: number;
+   220→  collectionPriority: string;
+   221→}
+   222→
+   223→export interface EvidenceItem {
+   224→  source: "invoice" | "customer" | "payment_history" | "reminder_history" | "collection_case" | "policy" | "knowledge" | "approval_history" | "human_feedback";
+   225→  fact: string;
+   226→  weight: "high" | "medium" | "low";
+   227→}
+   228→
+   229→export interface PolicyInfluence {
+   230→  policyCode: string;
+   231→  policyName: string;
+   232→  howItInfluenced: string;
+   233→}
+   234→
+   235→export interface RejectedAlternative {
+   236→  action: string;
+   237→  reason: string;
+   238→}
+   239→
+   240→// ─── Finance Context Builder ─────────────────────────────────────────────────
+   241→
+   242→/**
+   243→ * Builds the complete FinanceContext for an invoice.
+   244→ *
+   245→ * This is the SINGLE entry point for all finance reasoning. The planner
+   246→ * and executor call this function instead of loading raw invoice data.
+   247→ *
+   248→ * It gathers:
+   249→ * - Invoice details
+   250→ * - Customer profile (risk, credit limit, payment terms)
+   251→ * - Full payment history
+   252→ * - Full reminder history (with response status)
+   253→ * - Collection case history (with follow-up actions)
+   254→ * - Company finance policies
+   255→ * - Finance knowledge documents
+   256→ * - Credit terms (including total customer exposure)
+   257→ * - Previous approval decisions
+   258→ * - Human feedback from past decisions
+   259→ *
+   260→ * Then computes aging, priority, and exposure.
+   261→ */
+   262→export async function buildFinanceContext(
+   263→  invoiceId: string,
+   264→  employeeId?: string
+   265→): Promise<FinanceContext | null> {
+   266→  // Load everything in one query
+   267→  const invoice = await db.invoice.findUnique({
+   268→    where: { id: invoiceId },
+   269→    include: {
+   270→      customer: {
+   271→        include: {
+   272→          invoices: {
+   273→            where: { outstanding: { gt: 0 } },
+   274→            select: { id: true, outstanding: true, status: true, dueDate: true },
+   275→          },
+   276→        },
+   277→      },
+   278→      payments: { orderBy: { paymentDate: "desc" } },
+   279→      reminders: { orderBy: { createdAt: "desc" } },
+   280→      collectionCases: {
+   281→        orderBy: { openedAt: "desc" },
+   282→        include: { followUps: { orderBy: { performedAt: "desc" } } },
+   283→      },
+   284→    },
+   285→  });
+   286→
+   287→  if (!invoice) return null;
+   288→
+   289→  const workspaceId = invoice.workspaceId;
+   290→
+   291→  // Load company policies (finance category)
+   292→  const companyPolicies = await db.policy.findMany({
+   293→    where: {
+   294→      workspaceId,
+   295→      status: "active",
+   296→      category: { in: ["financial", "communication", "escalation", "compliance"] },
+   297→    },
+   298→  });
+   299→
+   300→  // Load finance knowledge documents
+   301→  const knowledgeDocuments = await db.knowledgeDocument.findMany({
+   302→    where: { workspaceId, status: "ready" },
+   303→    select: { id: true, filename: true, status: true, chunkCount: true },
+   304→  });
+   305→
+   306→  // Load previous approvals for this invoice's tasks
+   307→  const invoiceTasks = await db.task.findFirst({
+   308→    where: { id: { in: (await db.approval.findMany({ where: { taskId: { not: undefined } }, select: { taskId: true } })).map((a) => a.taskId) } },
+   309→    select: { id: true },
+   310→  });
+   311→
+   312→  // Actually, let's get approvals related to this invoice via the task
+   313→  const tasksForInvoice = await db.task.findMany({
+   314→    where: {
+   315→      workspaceId,
+   316→      title: { contains: invoice.invoiceNumber },
+   317→    },
+   318→    select: { id: true },
+   319→  });
+   320→
+   321→  const taskIds = tasksForInvoice.map((t) => t.id);
+   322→  const previousApprovals = taskIds.length > 0
+   323→    ? await db.approval.findMany({
+   324→        where: { taskId: { in: taskIds } },
+   325→        orderBy: { createdAt: "desc" },
+   326→        select: {
+   327→          id: true,
+   328→          tool: true,
+   329→          status: true,
+   330→          decision: true,
+   331→          reason: true,
+   332→          decidedAt: true,
+   333→        },
+   334→      })
+   335→    : [];
+   336→
+   337→  // Extract human feedback (reasons from decided approvals)
+   338→  const humanFeedback = previousApprovals
+   339→    .filter((a) => a.decision && a.reason)
+   340→    .map((a) => ({
+   341→      decision: a.decision!,
+   342→      reason: a.reason!,
+   343→      tool: a.tool,
+   344→      decidedAt: a.decidedAt!,
+   345→    }));
+   346→
+   347→  // Compute total outstanding exposure for this customer
+   348→  const totalOutstandingForCustomer = invoice.customer.invoices.reduce(
+   349→    (sum, inv) => sum + inv.outstanding,
+   350→    0
+   351→  );
+   352→
+   353→  // Compute aging
+   354→  const daysOverdue = calculateDaysOverdue(invoice.dueDate);
+   355→  const agingBucket = calculateAgingBucket(daysOverdue);
+   356→  const collectionPriority = determineCollectionPriority(
+   357→    daysOverdue,
+   358→    invoice.outstanding,
+   359→    invoice.customer.riskLevel
+   360→  );
+   361→
+   362→  // ─── Retrieve Employee Memory ────────────────────────────────────────────
+   363→  // The employee recalls what it has learned about this customer and invoice
+   364→  // from past interactions. This is what makes the employee "get better over time."
+   365→  let employeeMemories: FinanceContext["employeeMemories"] = [];
+   366→  if (employeeId) {
+   367→    const { getMemoriesForEntity } = await import("@/lib/memory/service");
+   368→    // Get all memories about this customer
+   369→    const customerMemories = await getMemoriesForEntity(employeeId, "customer", invoice.customerId);
+   370→    // Get all memories about this invoice
+   371→    const invoiceMemories = await getMemoriesForEntity(employeeId, "invoice", invoice.id);
+   372→    employeeMemories = [...customerMemories, ...invoiceMemories].map((m) => ({
+   373→      memoryType: m.memoryType,
+   374→      entityType: m.entityType,
+   375→      entityId: m.entityId,
+   376→      entityLabel: m.entityLabel,
+   377→      key: m.key,
+   378→      value: m.value,
+   379→      confidence: m.confidence,
+   380→      reinforcementCount: m.reinforcementCount,
+   381→      updatedAt: m.updatedAt,
+   382→    }));
+   383→  }
+   384→
+   385→  return {
+   386→    invoice: {
+   387→      id: invoice.id,
+   388→      invoiceNumber: invoice.invoiceNumber,
+   389→      issueDate: invoice.issueDate,
+   390→      dueDate: invoice.dueDate,
+   391→      subtotal: invoice.subtotal,
+   392→      tax: invoice.tax,
+   393→      total: invoice.total,
+   394→      amountPaid: invoice.amountPaid,
+   395→      outstanding: invoice.outstanding,
+   396→      status: invoice.status,
+   397→      paymentTerms: invoice.paymentTerms,
+   398→      notes: invoice.notes,
+   399→    },
+   400→    customer: {
+   401→      id: invoice.customer.id,
+   402→      name: invoice.customer.name,
+   403→      email: invoice.customer.email,
+   404→      phone: invoice.customer.phone,
+   405→      gstin: invoice.customer.gstin,
+   406→      billingAddress: invoice.customer.billingAddress,
+   407→      paymentTerms: invoice.customer.paymentTerms,
+   408→      creditLimit: invoice.customer.creditLimit,
+   409→      riskLevel: invoice.customer.riskLevel,
+   410→      status: invoice.customer.status,
+   411→      notes: invoice.customer.notes,
+   412→    },
+   413→    paymentHistory: invoice.payments.map((p) => ({
+   414→      id: p.id,
+   415→      amount: p.amount,
+   416→      paymentDate: p.paymentDate,
+   417→      method: p.method,
+   418→      reference: p.reference,
+   419→      status: p.status,
+   420→    })),
+   421→    reminderHistory: invoice.reminders.map((r) => ({
+   422→      id: r.id,
+   423→      reminderType: r.reminderType,
+   424→      subject: r.subject,
+   425→      status: r.status,
+   426→      sentAt: r.sentAt,
+   427→      respondedAt: r.respondedAt,
+   428→      responseNotes: r.responseNotes,
+   429→      createdAt: r.createdAt,
+   430→    })),
+   431→    collectionCaseHistory: invoice.collectionCases.map((c) => ({
+   432→      id: c.id,
+   433→      status: c.status,
+   434→      priority: c.priority,
+   435→      agingBucket: c.agingBucket,
+   436→      daysOverdue: c.daysOverdue,
+   437→      escalationLevel: c.escalationLevel,
+   438→      openedAt: c.openedAt,
+   439→      resolvedAt: c.resolvedAt,
+   440→      resolution: c.resolution,
+   441→      followUps: c.followUps.map((f) => ({
+   442→        action: f.action,
+   443→        description: f.description,
+   444→        performedAt: f.performedAt,
+   445→      })),
+   446→    })),
+   447→    companyPolicies: companyPolicies.map((p) => ({
+   448→      id: p.id,
+   449→      name: p.name,
+   450→      code: p.code,
+   451→      category: p.category,
+   452→      description: p.description,
+   453→      severity: p.severity,
+   454→      rules: JSON.parse(p.rules),
+   455→    })),
+   456→    knowledgeDocuments,
+   457→    creditTerms: {
+   458→      customerPaymentTerms: invoice.customer.paymentTerms,
+   459→      invoicePaymentTerms: invoice.paymentTerms,
+   460→      creditLimit: invoice.customer.creditLimit,
+   461→      totalOutstandingForCustomer,
+   462→      availableCredit: Math.max(0, invoice.customer.creditLimit - totalOutstandingForCustomer),
+   463→    },
+   464→    customerRiskLevel: invoice.customer.riskLevel,
+   465→    outstandingExposure: totalOutstandingForCustomer,
+   466→    previousApprovals: previousApprovals.map((a) => ({
+   467→      id: a.id,
+   468→      tool: a.tool,
+   469→      status: a.status,
+   470→      decision: a.decision,
+   471→      reason: a.reason,
+   472→      decidedAt: a.decidedAt,
+   473→    })),
+   474→    humanFeedback,
+   475→    employeeMemories,
+   476→    daysOverdue,
+   477→    agingBucket,
+   478→    collectionPriority,
+   479→  };
+   480→}
+   481→
+   482→// ─── Finance Brain: Recommendation Engine ────────────────────────────────────
+   483→
+   484→/**
+   485→ * Reasons over a FinanceContext to produce a structured recommendation.
+   486→ *
+   487→ * This is the brain of the Finance Employee. It:
+   488→ * 1. Determines the recommended action based on ALL available evidence
+   489→ * 2. Explains WHY that action was chosen
+   490→ * 3. Lists the evidence used (with source and weight)
+   491→ * 4. Identifies which policies influenced the decision
+   492→ * 5. Explains which customer history influenced the decision
+   493→ * 6. Explains why alternative actions were rejected
+   494→ *
+   495→ * The output is stored in the approval's proposed action and in the audit log,
+   496→ * so a finance manager can see the complete reasoning chain.
+   497→ */
+   498→export function produceRecommendation(ctx: FinanceContext): FinanceRecommendation {
+   499→  const evidence: EvidenceItem[] = [];
+   500→  const policyInfluence: PolicyInfluence[] = [];
+   501→  const rejectedAlternatives: RejectedAlternative[] = [];
+   502→
+   503→  const amount = formatRupees(ctx.invoice.outstanding);
+   504→  const customerName = ctx.customer.name;
+   505→  const invoiceNum = ctx.invoice.invoiceNumber;
+   506→  const daysOverdue = ctx.daysOverdue;
+   507→  const bucket = agingBucketLabel(ctx.agingBucket);
+   508→  const prevReminders = ctx.reminderHistory.length;
+   509→  const hasResponse = ctx.reminderHistory.some((r) => r.status === "responded");
+   510→  const paymentCount = ctx.paymentHistory.length;
+   511→  const hasPartialPayment = ctx.invoice.amountPaid > 0;
+   512→  const totalExposure = formatRupees(ctx.outstandingExposure);
+   513→
+   514→  // ─── Gather Evidence ──────────────────────────────────────────────────────
+   515→
+   516→  // Invoice evidence
+   517→  evidence.push({
+   518→    source: "invoice",
+   519→    fact: `Invoice ${invoiceNum} has ${amount} outstanding (of ${formatRupees(ctx.invoice.total)} total), ${daysOverdue} days overdue (${bucket} bucket). Status: ${ctx.invoice.status}.`,
+   520→    weight: "high",
+   521→  });
+   522→
+   523→  if (hasPartialPayment) {
+   524→    evidence.push({
+   525→      source: "invoice",
+   526→      fact: `Partial payment of ${formatRupees(ctx.invoice.amountPaid)} has been received. Remaining: ${amount}.`,
+   527→      weight: "high",
+   528→    });
+   529→  }
+   530→
+   531→  // Customer evidence
+   532→  evidence.push({
+   533→    source: "customer",
+   534→    fact: `Customer ${customerName} has risk level "${ctx.customerRiskLevel}", credit limit ${formatRupees(ctx.creditTerms.creditLimit)}, and total outstanding exposure of ${totalExposure} across all invoices.`,
+   535→    weight: "high",
+   536→  });
+   537→
+   538→  if (ctx.customer.notes) {
+   539→    evidence.push({
+   540→      source: "customer",
+   541→      fact: `Customer notes: "${ctx.customer.notes}"`,
+   542→      weight: "medium",
+   543→    });
+   544→  }
+   545→
+   546→  // Payment history evidence
+   547→  if (paymentCount > 0) {
+   548→    const lastPayment = ctx.paymentHistory[0];
+   549→    evidence.push({
+   550→      source: "payment_history",
+   551→      fact: `${paymentCount} payment(s) recorded. Last payment: ${formatRupees(lastPayment.amount)} via ${lastPayment.method} on ${formatDate(lastPayment.paymentDate)}.`,
+   552→      weight: "medium",
+   553→    });
+   554→  } else {
+   555→    evidence.push({
+   556→      source: "payment_history",
+   557→      fact: `No payments have been recorded against this invoice.`,
+   558→      weight: "high",
+   559→    });
+   560→  }
+   561→
+   562→  // Reminder history evidence
+   563→  if (prevReminders > 0) {
+   564→    const lastReminder = ctx.reminderHistory[0];
+   565→    evidence.push({
+   566→      source: "reminder_history",
+   567→      fact: `${prevReminders} reminder(s) sent. Last reminder: "${lastReminder.subject}" sent on ${lastReminder.sentAt ? formatDate(lastReminder.sentAt) : "N/A"}, status: ${lastReminder.status}.`,
+   568→      weight: "high",
+   569→    });
+   570→
+   571→    if (hasResponse) {
+   572→      const responded = ctx.reminderHistory.find((r) => r.status === "responded");
+   573→      evidence.push({
+   574→        source: "reminder_history",
+   575→        fact: `Customer responded to a previous reminder${responded?.responseNotes ? `: "${responded.responseNotes}"` : ""}.`,
+   576→        weight: "medium",
+   577→      });
+   578→    } else {
+   579→      evidence.push({
+   580→        source: "reminder_history",
+   581→        fact: `Customer has NOT responded to any previous reminders.`,
+   582→        weight: "high",
+   583→      });
+   584→    }
+   585→  } else {
+   586→    evidence.push({
+   587→      source: "reminder_history",
+   588→      fact: `No previous reminders have been sent for this invoice.`,
+   589→      weight: "high",
+   590→    });
+   591→  }
+   592→
+   593→  // Collection case evidence
+   594→  if (ctx.collectionCaseHistory.length > 0) {
+   595→    const activeCase = ctx.collectionCaseHistory.find((c) => c.status === "open" || c.status === "escalated");
+   596→    if (activeCase) {
+   597→      evidence.push({
+   598→        source: "collection_case",
+   599→        fact: `Active collection case: priority ${activeCase.priority}, escalation level ${activeCase.escalationLevel}, opened on ${formatDate(activeCase.openedAt)}. ${activeCase.followUps.length} follow-up action(s) recorded.`,
+   600→        weight: "high",
+   601→      });
+   602→    }
+   603→  }
+   604→
+   605→  // Approval history evidence
+   606→  if (ctx.previousApprovals.length > 0) {
+   607→    const lastApproval = ctx.previousApprovals[0];
+   608→    evidence.push({
+   609→      source: "approval_history",
+   610→      fact: `Previous approval: ${lastApproval.tool} was ${lastApproval.decision || lastApproval.status}${lastApproval.reason ? ` (reason: "${lastApproval.reason}")` : ""}.`,
+   611→      weight: "medium",
+   612→    });
+   613→  }
+   614→
+   615→  // Human feedback evidence
+   616→  if (ctx.humanFeedback.length > 0) {
+   617→    const lastFeedback = ctx.humanFeedback[0];
+   618→    evidence.push({
+   619→      source: "human_feedback",
+   620→      fact: `Human previously ${lastFeedback.decision} a ${lastFeedback.tool} action${lastFeedback.reason ? ` with reason: "${lastFeedback.reason}"` : ""}.`,
+   621→      weight: "high",
+   622→    });
+   623→  }
+   624→
+   625→  // Knowledge document evidence
+   626→  if (ctx.knowledgeDocuments.length > 0) {
+   627→    evidence.push({
+   628→      source: "knowledge",
+   629→      fact: `${ctx.knowledgeDocuments.length} finance knowledge document(s) available for reference: ${ctx.knowledgeDocuments.map((d) => d.filename).join(", ")}.`,
+   630→      weight: "low",
+   631→    });
+   632→  }
+   633→
+   634→  // ─── Employee Memory Evidence ──────────────────────────────────────────────
+   635→  // The employee's accumulated learnings from past interactions with this
+   636→  // customer and invoice. This is what makes the employee get better over time.
+   637→  if (ctx.employeeMemories.length > 0) {
+   638→    // Payment habits memory
+   639→    const paymentHabits = ctx.employeeMemories.filter((m) => m.memoryType === "payment_habits");
+   640→    if (paymentHabits.length > 0) {
+   641→      const latest = paymentHabits[0];
+   642→      evidence.push({
+   643→        source: "human_feedback",
+   644→        fact: `[MEMORY | ${latest.confidence > 0.7 ? "reinforced" : "observed"}] Payment habits: ${latest.value.daysOverdue || "N/A"} days overdue on ${latest.value.invoiceNumber || "a previous invoice"}, aging bucket ${latest.value.agingBucket || "N/A"}. Observed ${latest.reinforcementCount} time(s).`,
+   645→        weight: latest.confidence > 0.7 ? "high" : "medium",
+   646→      });
+   647→    }
+   648→
+   649→    // Customer behavior memory
+   650→    const behaviorMems = ctx.employeeMemories.filter((m) => m.memoryType === "customer_behavior");
+   651→    if (behaviorMems.length > 0) {
+   652→      const riskMem = behaviorMems.find((m) => m.key === "risk_level");
+   653→      if (riskMem) {
+   654→        evidence.push({
+   655→          source: "human_feedback",
+   656→          fact: `[MEMORY] Customer risk level previously assessed as "${riskMem.value.riskLevel}" with priority "${riskMem.value.collectionPriority}". Reinforced ${riskMem.reinforcementCount} time(s).`,
+   657→          weight: riskMem.confidence > 0.7 ? "high" : "medium",
+   658→        });
+   659→      }
+   660→
+   661→      const responseRate = behaviorMems.find((m) => m.key === "reminder_response_rate");
+   662→      if (responseRate) {
+   663→        evidence.push({
+   664→          source: "human_feedback",
+   665→          fact: `[MEMORY] Customer has received ${responseRate.value.remindersSent} reminder(s) with response: ${responseRate.value.responded === "true" ? "responded" : "no response"}. Reinforced ${responseRate.reinforcementCount} time(s).`,
+   666→          weight: responseRate.confidence > 0.7 ? "high" : "medium",
+   667→        });
+   668→      }
+   669→    }
+   670→
+   671→    // Manager feedback memory
+   672→    const feedbackMems = ctx.employeeMemories.filter((m) => m.memoryType === "manager_feedback");
+   673→    if (feedbackMems.length > 0) {
+   674→      const latest = feedbackMems[0];
+   675→      evidence.push({
+   676→        source: "human_feedback",
+   677→        fact: `[MEMORY] Manager previously ${latest.value.decision} a ${latest.value.tool} action${latest.value.reason ? ` with reason: "${latest.value.reason}"` : ""}. Reinforced ${latest.reinforcementCount} time(s).`,
+   678→        weight: "high",
+   679→      });
+   680→    }
+   681→
+   682→    // Strategy effectiveness memory
+   683→    const strategyMems = ctx.employeeMemories.filter((m) => m.memoryType === "strategy_effectiveness");
+   684→    if (strategyMems.length > 0) {
+   685→      const effectiveStrategies = strategyMems.filter((m) => m.value.wasEffective === "true");
+   686→      const ineffectiveStrategies = strategyMems.filter((m) => m.value.wasEffective === "false");
+   687→      if (effectiveStrategies.length > 0) {
+   688→        evidence.push({
+   689→          source: "human_feedback",
+   690→          fact: `[MEMORY] ${effectiveStrategies.length} previous strategy(ies) were effective (approved by manager) for this customer.`,
+   691→          weight: "medium",
+   692→        });
+   693→      }
+   694→      if (ineffectiveStrategies.length > 0) {
+   695→        evidence.push({
+   696→          source: "human_feedback",
+   697→          fact: `[MEMORY] ${ineffectiveStrategies.length} previous strategy(ies) were ineffective (rejected by manager) for this customer.`,
+   698→          weight: "high",
+   699→        });
+   700→      }
+   701→    }
+   702→
+   703→    // Communication preference memory
+   704→    const commMems = ctx.employeeMemories.filter((m) => m.memoryType === "communication_preference");
+   705→    if (commMems.length > 0) {
+   706→      const latest = commMems[0];
+   707→      evidence.push({
+   708→        source: "human_feedback",
+   709→        fact: `[MEMORY] Last communicated with this customer via ${latest.value.channel || "email"} on ${latest.value.lastContactedAt ? formatDate(new Date(latest.value.lastContactedAt)) : "N/A"}.`,
+   710→        weight: "low",
+   711→      });
+   712→    }
+   713→  }
+   714→
+   715→  // ─── Determine Action ─────────────────────────────────────────────────────
+   716→
+   717→  let action = "monitor";
+   718→  let confidence = 0.85;
+   719→
+   720→  if (daysOverdue <= 0 || ctx.invoice.outstanding <= 0) {
+   721→    action = "no_action";
+   722→    confidence = 0.99;
+   723→  } else if (daysOverdue > 90) {
+   724→    if (prevReminders >= 3 && !hasResponse) {
+   725→      action = "mark_for_write_off";
+   726→      confidence = 0.88;
+   727→    } else {
+   728→      action = "escalate_to_legal";
+   729→      confidence = 0.86;
+   730→    }
+   731→  } else if (daysOverdue > 60) {
+   732→    if (prevReminders >= 2 && !hasResponse) {
+   733→      action = "escalate_to_manager";
+   734→      confidence = 0.87;
+   735→    } else {
+   736→      action = "send_follow_up_reminder";
+   737→      confidence = 0.89;
+   738→    }
+   739→  } else if (daysOverdue > 30) {
+   740→    if (prevReminders === 0) {
+   741→      action = "send_first_reminder";
+   742→      confidence = 0.92;
+   743→    } else if (prevReminders >= 1 && !hasResponse) {
+   744→      action = "send_follow_up_reminder";
+   745→      confidence = 0.88;
+   746→    } else {
+   747→      action = "monitor";
+   748→      confidence = 0.90;
+   749→    }
+   750→  } else if (daysOverdue > 0) {
+   751→    if (prevReminders === 0) {
+   752→      action = "send_first_reminder";
+   753→      confidence = 0.91;
+   754→    } else if (prevReminders >= 1 && !hasResponse) {
+   755→      action = "send_follow_up_reminder";
+   756→      confidence = 0.85;
+   757→    } else {
+   758→      action = "monitor";
+   759→      confidence = 0.88;
+   760→    }
+   761→  }
+   762→
+   763→  // Adjust confidence based on human feedback
+   764→  if (ctx.humanFeedback.length > 0) {
+   765→    const lastFeedback = ctx.humanFeedback[0];
+   766→    if (lastFeedback.decision === "rejected") {
+   767→      // If the last similar action was rejected, lower confidence
+   768→      confidence = Math.max(0.6, confidence - 0.1);
+   769→    }
+   770→  }
+   771→
+   772→  // ─── Policy Influence ─────────────────────────────────────────────────────
+   773→
+   774→  for (const policy of ctx.companyPolicies) {
+   775→    let influenced = false;
+   776→    let how = "";
+   777→
+   778→    // Check if this policy is relevant to the current action
+   779→    if (policy.category === "financial" && policy.description.toLowerCase().includes("refund")) {
+   780→      if (ctx.invoice.outstanding > 0) {
+   781→        influenced = true;
+   782→        how = `Policy requires human approval for financial actions above threshold. Outstanding amount ${amount} triggers this policy.`;
+   783→      }
+   784→    } else if (policy.category === "communication" && policy.description.toLowerCase().includes("email")) {
+   785→      if (action.startsWith("send_") || action.startsWith("escalate_")) {
+   786→        influenced = true;
+   787→        how = `Policy requires human approval for all outbound customer communications. The ${action.replace(/_/g, " ")} action triggers this policy.`;
+   788→      }
+   789→    } else if (policy.category === "escalation") {
+   790→      if (action.startsWith("escalate_") || action === "mark_for_write_off") {
+   791→        influenced = true;
+   792→        how = `Policy governs escalation procedures. ${daysOverdue} days overdue with ${prevReminders} unanswered reminders triggers escalation per this policy.`;
+   793→      }
+   794→    } else if (policy.category === "compliance" && policy.description.toLowerCase().includes("citation")) {
+   795→      if (action.startsWith("send_")) {
+   796→        influenced = true;
+   797→        how = `Policy requires that all customer communications cite relevant invoice details. The reminder will reference invoice number, amount, and due date.`;
+   798→      }
+   799→    }
+   800→
+   801→    if (influenced) {
+   802→      policyInfluence.push({
+   803→        policyCode: policy.code,
+   804→        policyName: policy.name,
+   805→        howItInfluenced: how,
+   806→      });
+   807→    }
+   808→  }
+   809→
+   810→  // ─── Customer History Influence ───────────────────────────────────────────
+   811→
+   812→  let customerHistoryInfluence = "";
+   813→
+   814→  const historyParts: string[] = [];
+   815→
+   816→  if (ctx.customerRiskLevel === "high") {
+   817→    historyParts.push(`Customer is classified as HIGH risk, which increases the collection priority and suggests more aggressive collection actions are warranted.`);
+   818→  } else if (ctx.customerRiskLevel === "medium") {
+   819→    historyParts.push(`Customer is classified as MEDIUM risk, indicating occasional payment delays. Standard collection procedures are appropriate.`);
+   820→  } else {
+   821→    historyParts.push(`Customer is classified as LOW risk, indicating a history of reliable payments. A softer approach in the first reminder is appropriate.`);
+   822→  }
+   823→
+   824→  if (ctx.outstandingExposure > ctx.creditLimit && ctx.creditLimit > 0) {
+   825→    historyParts.push(`Total outstanding exposure (${totalExposure}) exceeds the customer's credit limit (${formatRupees(ctx.creditLimit)}), indicating potential credit risk that warrants immediate attention.`);
+   826→  }
+   827→
+   828→  if (paymentCount > 0) {
+   829→    historyParts.push(`The customer has made ${paymentCount} payment(s) on this invoice, suggesting willingness to pay but possibly experiencing cash flow difficulties.`);
+   830→  } else if (daysOverdue > 30) {
+   831→    historyParts.push(`No payments have been made against this invoice despite being ${daysOverdue} days overdue, suggesting potential collection difficulty.`);
+   832→  }
+   833→
+   834→  if (prevReminders > 0 && !hasResponse) {
+   835→    historyParts.push(`The customer has not responded to ${prevReminders} previous reminder(s), indicating either communication issues or unwillingness to pay.`);
+   836→  } else if (hasResponse) {
+   837→    historyParts.push(`The customer has responded to a previous reminder, suggesting they are engaged in the collection process.`);
+   838→  }
+   839→
+   840→  if (ctx.collectionCaseHistory.length > 0) {
+   841→    const activeCase = ctx.collectionCaseHistory.find((c) => c.status === "open" || c.status === "escalated");
+   842→    if (activeCase) {
+   843→      historyParts.push(`An active collection case exists (escalation level ${activeCase.escalationLevel}) with ${activeCase.followUps.length} recorded follow-up actions, indicating this is an ongoing collection effort.`);
+   844→    }
+   845→  }
+   846→
+   847→  if (ctx.humanFeedback.length > 0) {
+   848→    const lastFeedback = ctx.humanFeedback[0];
+   849→    if (lastFeedback.decision === "approved") {
+   850→      historyParts.push(`The human manager previously approved a similar action, suggesting alignment with collection strategy.`);
+   851→    } else if (lastFeedback.decision === "rejected") {
+   852→      historyParts.push(`The human manager previously rejected a similar action (${lastFeedback.reason}), which has been considered in this recommendation.`);
+   853→    }
+   854→  }
+   855→
+   856→  customerHistoryInfluence = historyParts.join(" ");
+   857→
+   858→  // ─── Rejected Alternatives ────────────────────────────────────────────────
+   859→
+   860→  const allActions = [
+   861→    "send_first_reminder",
+   862→    "send_follow_up_reminder",
+   863→    "escalate_to_manager",
+   864→    "escalate_to_legal",
+   865→    "mark_for_write_off",
+   866→    "monitor",
+   867→    "no_action",
+   868→  ];
+   869→
+   870→  for (const alt of allActions) {
+   871→    if (alt === action) continue;
+   872→
+   873→    let reason = "";
+   874→
+   875→    if (alt === "no_action") {
+   876→      reason = `Not appropriate because the invoice is ${daysOverdue} days overdue with ${amount} outstanding. Inaction would allow the receivable to age further.`;
+   877→    } else if (alt === "monitor") {
+   878→      reason = action === "send_first_reminder"
+   879→        ? `Not appropriate because no previous reminders have been sent. Monitoring without a first reminder would delay collection.`
+   880→        : `Not appropriate because ${prevReminders} reminder(s) have already been sent without response. Further monitoring without action is unlikely to produce payment.`;
+   881→    } else if (alt === "send_first_reminder") {
+   882→      reason = prevReminders > 0
+   883→        ? `Not appropriate because ${prevReminders} reminder(s) have already been sent. A "first reminder" would be redundant and confuse the customer.`
+   884→        : `Not the strongest option — ${daysOverdue} days overdue and ${ctx.customerRiskLevel} risk warrant a more direct approach.`;
+   885→    } else if (alt === "send_follow_up_reminder") {
+   886→      reason = prevReminders === 0
+   887→        ? `Not appropriate because no first reminder has been sent yet. A follow-up implies a prior communication that doesn't exist.`
+   888→        : daysOverdue > 60
+   889→          ? `Insufficient — ${daysOverdue} days overdue with ${prevReminders} unanswered reminders warrants escalation, not just another reminder.`
+   890→          : `Considered but the current action is more appropriate for the aging bucket.`;
+   891→    } else if (alt === "escalate_to_manager") {
+   892→      reason = daysOverdue <= 60
+   893→        ? `Premature — escalation to manager is reserved for invoices 60+ days overdue with multiple unanswered reminders. Current aging (${daysOverdue} days) does not meet this threshold.`
+   894→        : prevReminders < 2
+   895→          ? `Premature — escalation to manager requires at least 2 unanswered reminders. Only ${prevReminders} reminder(s) have been sent.`
+   896→          : `Considered but the current action is more appropriate given the specific circumstances.`;
+   897→    } else if (alt === "escalate_to_legal") {
+   898→      reason = daysOverdue <= 90
+   899→        ? `Premature — legal escalation is reserved for invoices 90+ days overdue. Current aging (${daysOverdue} days) does not meet this threshold.`
+   900→        : `Considered but the current action is more appropriate given the specific circumstances.`;
+   901→    } else if (alt === "mark_for_write_off") {
+   902→      reason = daysOverdue <= 90
+   903→        ? `Premature — write-off is the last resort, reserved for invoices 90+ days overdue with 3+ unanswered reminders. Current aging (${daysOverdue} days) and reminder count (${prevReminders}) do not meet this threshold.`
+   904→        : prevReminders < 3
+   905→          ? `Premature — write-off requires at least 3 unanswered reminders to demonstrate exhaustive collection effort. Only ${prevReminders} reminder(s) have been sent.`
+   906→          : `Considered but the current action is more appropriate given the specific circumstances.`;
+   907→    }
+   908→
+   909→    if (reason) {
+   910→      rejectedAlternatives.push({ action: alt, reason });
+   911→    }
+   912→  }
+   913→
+   914→  // ─── Why (detailed explanation) ───────────────────────────────────────────
+   915→
+   916→  const why = buildWhyExplanation(ctx, action, evidence, policyInfluence, customerHistoryInfluence, rejectedAlternatives);
+   917→
+   918→  // ─── Risk Assessment ──────────────────────────────────────────────────────
+   919→
+   920→  let riskAssessment = "";
+   921→  if (action === "no_action") {
+   922→    riskAssessment = "No risk — no action is being taken.";
+   923→  } else if (action === "monitor") {
+   924→    riskAssessment = "Low risk — monitoring does not involve external communication.";
+   925→  } else if (action.startsWith("send_")) {
+   926→    riskAssessment = `Medium risk — sending an external communication to ${customerName}. The reminder tone is ${action === "send_first_reminder" ? "friendly" : "firm but professional"}. No financial changes are made.`;
+   927→  } else if (action === "escalate_to_manager") {
+   928→    riskAssessment = `Medium-high risk — escalation involves a stronger tone and threat of service suspension. Customer relationship may be affected.`;
+   929→  } else if (action === "escalate_to_legal") {
+   930→    riskAssessment = `High risk — legal escalation is an adversarial action that may damage the customer relationship permanently. Should only be used when all other options are exhausted.`;
+   931→  } else if (action === "mark_for_write_off") {
+   932→    riskAssessment = `High risk — write-off is a financial loss. This action should only be taken when recovery is deemed impossible.`;
+   933→  }
+   934→
+   935→  // ─── Human-Readable Summary ──────────────────────────────────────────────
+   936→
+   937→  const humanReadableSummary = buildHumanReadableSummary(ctx, action, why, evidence, policyInfluence, rejectedAlternatives, confidence, riskAssessment);
+   938→
+   939→  return {
+   940→    action,
+   941→    why,
+   942→    evidence,
+   943→    policyInfluence,
+   944→    customerHistoryInfluence,
+   945→    rejectedAlternatives,
+   946→    confidence,
+   947→    riskAssessment,
+   948→    humanReadableSummary,
+   949→    // Backward-compatible fields for the planner
+   950→    invoiceId: ctx.invoice.id,
+   951→    invoiceNumber: ctx.invoice.invoiceNumber,
+   952→    customerId: ctx.customer.id,
+   953→    customerName: ctx.customer.name,
+   954→    customerEmail: ctx.customer.email,
+   955→    outstanding: ctx.invoice.outstanding,
+   956→    daysOverdue: ctx.daysOverdue,
+   957→    agingBucket: ctx.agingBucket,
+   958→    paymentTerms: ctx.invoice.paymentTerms,
+   959→    previousReminderCount: prevReminders,
+   960→    collectionPriority: ctx.collectionPriority,
+   961→  };
+   962→}
+   963→
+   964→// ─── Why Explanation Builder ─────────────────────────────────────────────────
+   965→
+   966→function buildWhyExplanation(
+   967→  ctx: FinanceContext,
+   968→  action: string,
+   969→  evidence: EvidenceItem[],
+   970→  policyInfluence: PolicyInfluence[],
+   971→  customerHistoryInfluence: string,
+   972→  rejectedAlternatives: RejectedAlternative[]
+   973→): string {
+   974→  const amount = formatRupees(ctx.invoice.outstanding);
+   975→  const customerName = ctx.customer.name;
+   976→  const invoiceNum = ctx.invoice.invoiceNumber;
+   977→  const days = ctx.daysOverdue;
+   978→  const bucket = agingBucketLabel(ctx.agingBucket);
+   979→  const prevReminders = ctx.reminderHistory.length;
+   980→
+   981→  const parts: string[] = [];
+   982→
+   983→  // Core reasoning
+   984→  parts.push(
+   985→    `Recommendation: ${action.replace(/_/g, " ")} for Invoice ${invoiceNum} (${customerName}).`
+   986→  );
+   987→
+   988→  parts.push(
+   989→    `\nThis action was chosen because the invoice is ${days} days overdue (${bucket} aging bucket) with ${amount} outstanding. ` +
+   990→    `${prevReminders > 0 ? `${prevReminders} previous reminder(s) have been sent` : "No previous reminders have been sent"}` +
+   991→    `${prevReminders > 0 && !ctx.reminderHistory.some((r) => r.status === "responded") ? " without customer response" : ""}.`
+   992→  );
+   993→
+   994→  // Customer risk context
+   995→  if (ctx.customerRiskLevel === "high") {
+   996→    parts.push(
+   997→      `\nThe customer's HIGH risk level increases the urgency of this action. ` +
+   998→      `Total outstanding exposure across all invoices: ${formatRupees(ctx.outstandingExposure)}.`
+   999→    );
+  1000→  }
+  1001→
+  1002→  // Payment history context
+  1003→  if (ctx.paymentHistory.length > 0) {
+  1004→    parts.push(
+  1005→      `\nThe customer has made ${ctx.paymentHistory.length} payment(s) on this invoice, ` +
+  1006→      `indicating some willingness to pay but suggesting cash flow difficulties.`
+  1007→    );
+  1008→  }
+  1009→
+  1010→  // Policy context
+  1011→  if (policyInfluence.length > 0) {
+  1012→    parts.push(`\nThis decision is influenced by ${policyInfluence.length} company finance ${policyInfluence.length === 1 ? "policy" : "policies"}:`);
+  1013→    for (const p of policyInfluence) {
+  1014→      parts.push(`  • ${p.policyCode} (${p.policyName}): ${p.howItInfluenced}`);
+  1015→    }
+  1016→  }
+  1017→
+  1018→  // Human feedback context
+  1019→  if (ctx.humanFeedback.length > 0) {
+  1020→    const last = ctx.humanFeedback[0];
+  1021→    parts.push(
+  1022→      `\nPrevious human feedback was considered: the manager ${last.decision} a ${last.tool} action` +
+  1023→      `${last.reason ? ` with reason "${last.reason}"` : ""}.`
+  1024→    );
+  1025→  }
+  1026→
+  1027→  // Rejected alternatives summary
+  1028→  if (rejectedAlternatives.length > 0) {
+  1029→    parts.push(`\n${rejectedAlternatives.length} alternative action(s) were considered and rejected:`);
+  1030→    for (const alt of rejectedAlternatives.slice(0, 4)) { // Top 4 for brevity
+  1031→      parts.push(`  • ${alt.action.replace(/_/g, " ")}: ${alt.reason}`);
+  1032→    }
+  1033→  }
+  1034→
+  1035→  return parts.join("\n");
+  1036→}
+  1037→
+  1038→// ─── Human-Readable Summary Builder ──────────────────────────────────────────
+  1039→
+  1040→function buildHumanReadableSummary(
+  1041→  ctx: FinanceContext,
+  1042→  action: string,
+  1043→  why: string,
+  1044→  evidence: EvidenceItem[],
+  1045→  policyInfluence: PolicyInfluence[],
+  1046→  rejectedAlternatives: RejectedAlternative[],
+  1047→  confidence: number,
+  1048→  riskAssessment: string
+  1049→): string {
+  1050→  const amount = formatRupees(ctx.invoice.outstanding);
+  1051→  const customerName = ctx.customer.name;
+  1052→  const invoiceNum = ctx.invoice.invoiceNumber;
+  1053→  const days = ctx.daysOverdue;
+  1054→
+  1055→  const lines: string[] = [];
+  1056→
+  1057→  lines.push(`=== FINANCE EMPLOYEE REASONING ===`);
+  1058→  lines.push(``);
+  1059→  lines.push(`Invoice: ${invoiceNum}`);
+  1060→  lines.push(`Customer: ${customerName} (Risk: ${ctx.customerRiskLevel.toUpperCase()})`);
+  1061→  lines.push(`Outstanding: ${amount} | ${days} days overdue`);
+  1062→  lines.push(`Recommended Action: ${action.replace(/_/g, " ")}`);
+  1063→  lines.push(`Confidence: ${(confidence * 100).toFixed(0)}%`);
+  1064→  lines.push(``);
+  1065→  lines.push(`--- WHY THIS ACTION ---`);
+  1066→  lines.push(why);
+  1067→  lines.push(``);
+  1068→  lines.push(`--- EVIDENCE USED (${evidence.length} items) ---`);
+  1069→  for (const e of evidence) {
+  1070→    lines.push(`[${e.source.toUpperCase()} | ${e.weight} weight] ${e.fact}`);
+  1071→  }
+  1072→  lines.push(``);
+  1073→  lines.push(`--- POLICY INFLUENCE (${policyInfluence.length} policies) ---`);
+  1074→  if (policyInfluence.length > 0) {
+  1075→    for (const p of policyInfluence) {
+  1076→      lines.push(`${p.policyCode}: ${p.howItInfluenced}`);
+  1077→    }
+  1078→  } else {
+  1079→    lines.push(`No specific policies influenced this decision.`);
+  1080→  }
+  1081→  lines.push(``);
+  1082→  lines.push(`--- REJECTED ALTERNATIVES (${rejectedAlternatives.length} considered) ---`);
+  1083→  for (const alt of rejectedAlternatives.slice(0, 5)) {
+  1084→    lines.push(`${alt.action.replace(/_/g, " ")}: ${alt.reason}`);
+  1085→  }
+  1086→  lines.push(``);
+  1087→  lines.push(`--- RISK ASSESSMENT ---`);
+  1088→  lines.push(riskAssessment);
+  1089→
+  1090→  return lines.join("\n");
+  1091→}
+  1092→
