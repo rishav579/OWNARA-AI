@@ -23,7 +23,6 @@ import {
   ArrowLeft,
   Pause,
   Play,
-  MoreVertical,
   Bot,
   ListTodo,
   Shield,
@@ -155,9 +154,6 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
               <Play className="h-3.5 w-3.5" /> Resume
             </button>
           ) : null}
-          <button className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900 text-zinc-400 transition-colors hover:border-zinc-700">
-            <MoreVertical className="h-4 w-4" />
-          </button>
         </div>
       </div>
 
@@ -395,39 +391,27 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
         {tab === "config" && (
           <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
             <h3 className="mb-4 text-sm font-semibold text-zinc-100">Configuration</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-zinc-400">Employee name</label>
-                <input
-                  defaultValue={employee.name}
-                  className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-emerald-500"
-                />
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-zinc-500">Employee name</span>
+                <span className="text-zinc-200">{employee.name}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-zinc-500">Role</span>
+                <span className="text-zinc-200">{employee.roleName}</span>
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-medium text-zinc-400">Job description</label>
-                <textarea
-                  defaultValue={employee.jobDescription}
-                  rows={4}
-                  className="w-full rounded-lg border border-zinc-800 bg-zinc-900 p-3 text-sm text-zinc-100 outline-none focus:border-emerald-500"
-                />
+                <span className="text-sm text-zinc-500">Job description</span>
+                <p className="mt-1 text-sm text-zinc-300">{employee.jobDescription}</p>
               </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-zinc-400">Usage limit</label>
-                <input
-                  type="number"
-                  defaultValue={employee.tokenCap}
-                  className="h-9 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-emerald-500"
-                />
-              </div>
-              <div className="flex gap-2 pt-2">
-                <button className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 transition-colors hover:bg-emerald-400">
-                  Save changes
-                </button>
-                <button className="rounded-lg border border-zinc-800 px-4 py-2 text-sm font-medium text-zinc-300 hover:border-zinc-700">
-                  Cancel
-                </button>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-zinc-500">Usage limit</span>
+                <span className="font-mono text-zinc-300">{formatNumber(employee.tokenCap)}</span>
               </div>
             </div>
+            <p className="mt-4 text-xs text-zinc-600">
+              Employee configuration changes will be available in a future update.
+            </p>
           </div>
         )}
       </div>

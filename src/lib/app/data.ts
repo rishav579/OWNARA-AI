@@ -964,3 +964,14 @@ export const TOOLS = [
     defaultCriticality: "non_critical" as const,
   },
 ];
+
+// ─── Shared Formatters ──────────────────────────────────────────────────────
+
+/** Formats paise (1 INR = 100 paise) into human-readable Indian currency. */
+export function formatINRfinance(paise: number): string {
+  const rupees = paise / 100;
+  if (rupees >= 10000000) return `₹${(rupees / 10000000).toFixed(2)} Cr`;
+  if (rupees >= 100000) return `₹${(rupees / 100000).toFixed(2)} L`;
+  if (rupees >= 1000) return `₹${(rupees / 1000).toFixed(1)}K`;
+  return `₹${rupees.toLocaleString("en-IN")}`;
+}

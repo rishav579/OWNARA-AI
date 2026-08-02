@@ -16,15 +16,8 @@ import {
 } from "@/components/app/ui";
 import { cn } from "@/lib/utils";
 import { Bot, Plus, Search, MoreVertical, Sparkles, Mail, Clock, CheckCircle2 } from "lucide-react";
-import { TOOL_LABELS } from "@/lib/app/data";
+import { TOOL_LABELS, formatINRfinance } from "@/lib/app/data";
 
-function formatINRfinance(paise: number): string {
-  const rupees = paise / 100;
-  if (rupees >= 10000000) return `₹${(rupees / 10000000).toFixed(2)} Cr`;
-  if (rupees >= 100000) return `₹${(rupees / 100000).toFixed(2)} L`;
-  if (rupees >= 1000) return `₹${(rupees / 1000).toFixed(1)}K`;
-  return `₹${rupees.toLocaleString("en-IN")}`;
-}
 
 const TEMPLATES = [
   {

@@ -4,6 +4,7 @@ import { useRouter, formatRelativeTime, formatNumber, formatINR, formatDateTime 
 import { api } from "@/lib/app/api-client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/app/router";
+import { formatINRfinance } from "@/lib/app/data";
 import {
   Avatar,
   EmployeeStatusBadge,
@@ -47,13 +48,6 @@ import {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function formatINRfinance(paise: number): string {
-  const rupees = paise / 100;
-  if (rupees >= 10000000) return `₹${(rupees / 10000000).toFixed(2)} Cr`;
-  if (rupees >= 100000) return `₹${(rupees / 100000).toFixed(2)} L`;
-  if (rupees >= 1000) return `₹${(rupees / 1000).toFixed(1)}K`;
-  return `₹${rupees.toLocaleString("en-IN")}`;
-}
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString("en-IN", {
