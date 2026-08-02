@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { requireWorkspace } from "@/lib/auth";
 import { success, handleApiError } from "@/lib/api-response";
+import { translateAuditEvent } from "@/lib/shared-helpers";
 
 // Business-readable activity feed — translates technical audit entries into business events
 export async function GET(request: NextRequest) {
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest) {
     const data = entries.map((e) => {
       const payload = JSON.parse(e.payload);
       // Translate technical entryType + payload into business-readable text
-      const business = translateToBusiness(e.entryType, e.actorName, e.actorType, payload, e.targetType);
+      const business = translateAuditEvent(e.entryType, e.actorName, e.actorType, payload, e.targetType);
       return {
         id: e.id,
         sequenceNumber: e.sequenceNumber,

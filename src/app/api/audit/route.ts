@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { requireWorkspace } from "@/lib/auth";
 import { success, error, handleApiError } from "@/lib/api-response";
+import { translateAuditEvent } from "@/lib/shared-helpers";
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,7 +22,7 @@ export async function GET(request: NextRequest) {
 
     const data = entries.map((e) => {
       const payload = JSON.parse(e.payload);
-      const business = translateBusiness(e.entryType, e.actorName, e.actorType, payload, e.targetType);
+      const business = translateAuditEvent(e.entryType, e.actorName, e.actorType, payload, e.targetType);
       return {
         id: e.id,
         sequenceNumber: e.sequenceNumber,

@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { requireWorkspace } from "@/lib/auth";
 import { success, handleApiError } from "@/lib/api-response";
+import { AVATAR_COLORS, ROLE_LABELS, translateAuditEvent } from "@/lib/shared-helpers";
 
 export async function GET(request: NextRequest) {
   try {
@@ -128,7 +129,8 @@ export async function GET(request: NextRequest) {
     // Business activity (translated)
     const businessFeed = auditLogs.map((e) => {
       const payload = JSON.parse(e.payload);
-      return translateBusiness(e.entryType, e.actorName, e.actorType, payload, e.targetType, e.id, e.sequenceNumber, e.createdAt);
+      const translated = translateAuditEvent(e.entryType, e.actorName, e.actorType, payload, e.targetType);
+      return { id: e.id, sequenceNumber: e.sequenceNumber, entryType: e.entryType, actorName: e.actorName, actorType: e.actorType, targetType: e.targetType, targetId: null, payload, businessEvent: translated.event, businessDescription: translated.description, category: translated.category, severity: translated.severity, createdAt: e.createdAt };
     });
 
     // Trust scores
@@ -289,65 +291,10 @@ function generateTaskActivity(tasks: any[]) {
   return days;
 }
 
-function translateBusiness(entryType: string, actorName: string, actorType: string, payload: any, targetType: string | null, id: string, seq: number, createdAt: Date) {
-  let event = entryType.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-  let description = `${actorName} (${actorType}) performed an action.`;
-  let category = "system";
-  let severity = "info";
-
-  if (entryType === "approval_requested") {
-    event = "Approval Required";
-    description = `${actorName} requested approval to ${payload.tool?.replace(/_/g, " ") || "perform an action"}.`;
-    category = "approval";
-    severity = payload.criticality === "critical" ? "warning" : "info";
-  } else if (entryType === "approval_decided") {
-    event = payload.decision === "approved" ? "Action Approved" : payload.decision === "rejected" ? "Action Rejected" : "Approval Under Review";
-    description = `${actorName} ${payload.decision} the ${payload.tool?.replace(/_/g, " ") || "action"} for ${payload.employee || "an AI Employee"}.`;
-    category = "approval";
-    severity = payload.decision === "rejected" ? "warning" : payload.decision === "approved" ? "success" : "info";
-  } else if (entryType === "task_started") {
-    event = "Work Delegated";
-    description = `${actorName} assigned "${payload.title}" to ${payload.employee}.`;
-    category = "task";
-  } else if (entryType === "task_completed") {
-    event = "Task Completed";
-    description = `${payload.employee || "An AI Employee"} completed a task.`;
-    category = "task";
-    severity = "success";
-  } else if (entryType === "tool_executed") {
-    event = "Tool Executed";
-    description = `${actorName} used the ${payload.tool?.replace(/_/g, " ")} tool.`;
-    category = "task";
-  } else if (entryType === "llm_call") {
-    event = "AI Model Called";
-    description = `LLM Gateway called ${payload.model} (${payload.tokens} tokens).`;
-    category = "system";
-  } else if (entryType === "employee_resumed") {
-    event = "AI Employee Resumed";
-    description = `${actorName} resumed ${payload.employee}.`;
-    category = "employee";
-    severity = "success";
-  }
-
-  return { id, sequenceNumber: seq, entryType, actorName, actorType, targetType, targetId: null, payload, businessEvent: event, businessDescription: description, category, severity, createdAt };
-}
-
 function isToday(date: Date): boolean {
   const d = new Date(date);
   const now = new Date();
   return d.getDate() === now.getDate() && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
 }
 
-const ROLE_LABELS = {
-  customer_support_agent: "Customer Support Agent",
-  sales_development_representative: "Sales Development Rep",
-  research_analyst: "Research Analyst",
-};
 
-const AVATAR_COLORS: Record<string, string> = {
-  Saanvi: "#10b981",
-  Arjun: "#f59e0b",
-  Meera: "#8b5cf6",
-  Vikram: "#ec4899",
-  Priya: "#64748b",
-};

@@ -2,20 +2,9 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { requireWorkspace } from "@/lib/auth";
 import { success, error, handleApiError } from "@/lib/api-response";
+import { AVATAR_COLORS, ROLE_LABELS } from "@/lib/shared-helpers";
 
-const ROLE_LABELS = {
-  customer_support_agent: "Customer Support Agent",
-  sales_development_representative: "Sales Development Rep",
-  research_analyst: "Research Analyst",
-};
 
-const AVATAR_COLORS: Record<string, string> = {
-  Saanvi: "#10b981",
-  Arjun: "#f59e0b",
-  Meera: "#8b5cf6",
-  Vikram: "#ec4899",
-  Priya: "#64748b",
-};
 
 function serialize(e: typeof db.employee extends { findUnique: infer F } ? never : any) {
   return {

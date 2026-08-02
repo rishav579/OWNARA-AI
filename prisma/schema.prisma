@@ -203,6 +203,10 @@ model Task {
   employee    Employee   @relation(fields: [employeeId], references: [id])
   workspace   Workspace  @relation(fields: [workspaceId], references: [id])
   steps       TaskStep[]
+
+  @@index([workspaceId, status])
+  @@index([employeeId, status])
+  @@index([workspaceId, createdAt])
 }
 
 model TaskStep {
@@ -223,6 +227,8 @@ model TaskStep {
   knowledgeRefs String?
   policyRefs    String?
   task          Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, status])
 }
 
 model Approval {
@@ -252,6 +258,9 @@ model Approval {
   employee        Employee  @relation(fields: [employeeId], references: [id])
   task            Task      @relation(fields: [taskId], references: [id])
   workspace       Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@index([workspaceId, status])
+  @@index([employeeId, status])
 }
 
 model KnowledgeDocument {
@@ -290,6 +299,8 @@ model AuditLog {
   workspace      Workspace @relation(fields: [workspaceId], references: [id])
 
   @@unique([workspaceId, sequenceNumber])
+  @@index([workspaceId, createdAt])
+  @@index([workspaceId, entryType])
 }
 
 model Notification {
@@ -448,6 +459,10 @@ model Invoice {
   workspace       Workspace        @relation(fields: [workspaceId], references: [id])
   payments        Payment[]
   reminders       Reminder[]
+
+  @@index([workspaceId, status])
+  @@index([workspaceId, dueDate])
+  @@index([customerId, status])
 }
 
 model Payment {
@@ -485,6 +500,9 @@ model Reminder {
   customer      Customer  @relation(fields: [customerId], references: [id])
   invoice       Invoice   @relation(fields: [invoiceId], references: [id])
   workspace     Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@index([invoiceId, status])
+  @@index([createdBy, status])
 }
 
 model CollectionCase {
