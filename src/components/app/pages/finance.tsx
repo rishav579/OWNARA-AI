@@ -179,6 +179,16 @@ function InvoicesTab() {
     "90_plus": "text-red-600",
   };
 
+  if (invoices.length === 0) {
+    return (
+      <EmptyState
+        icon={FileText}
+        title="No invoices found"
+        description="Upload invoices via the onboarding wizard to get started."
+      />
+    );
+  }
+
   return (
     <div className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/50">
       <table className="w-full text-left text-sm">
@@ -231,9 +241,6 @@ function InvoicesTab() {
           ))}
         </tbody>
       </table>
-      {invoices.length === 0 && (
-        <div className="px-4 py-8 text-center text-sm text-zinc-500">No invoices found</div>
-      )}
     </div>
   );
 }

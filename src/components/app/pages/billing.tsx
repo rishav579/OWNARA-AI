@@ -66,7 +66,7 @@ export function BillingPage() {
           <div className="mb-1 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Zap className="h-4 w-4 text-emerald-400" />
-              <span className="text-sm font-semibold text-zinc-100">Token Usage</span>
+              <span className="text-sm font-semibold text-zinc-100">API Usage</span>
             </div>
             <span className="text-xs text-zinc-500">This month</span>
           </div>

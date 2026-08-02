@@ -31,7 +31,7 @@ export function LandingPage() {
           <div className="hidden items-center gap-8 md:flex">
             <a href="#features" className="text-sm text-zinc-400 transition-colors hover:text-zinc-100">Features</a>
             <a href="#trust" className="text-sm text-zinc-400 transition-colors hover:text-zinc-100">Trust</a>
-            <a href="#how" className="text-sm text-zinc-400 transition-colors hover:text-zinc-100">How it works</a>
+            <a href="#trust" className="text-sm text-zinc-400 transition-colors hover:text-zinc-100">How it works</a>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -81,7 +81,7 @@ export function LandingPage() {
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
             </button>
             <button
-              onClick={() => navigate("dashboard")}
+              onClick={() => navigate("login")}
               className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/50 px-5 py-2.5 text-sm font-semibold text-zinc-200 transition-colors hover:border-zinc-700"
             >
               <Terminal className="h-4 w-4" />

@@ -172,7 +172,7 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
           <div className="mt-1 text-lg font-bold text-amber-400">{employee.pendingApprovals}</div>
         </div>
         <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
-          <div className="flex items-center gap-1.5 text-xs text-zinc-500"><Zap className="h-3.5 w-3.5" /> Tokens</div>
+          <div className="flex items-center gap-1.5 text-xs text-zinc-500"><Zap className="h-3.5 w-3.5" /> Usage</div>
           <div className="mt-1 text-lg font-bold text-zinc-50">{formatNumber(employee.tokenUsage)}</div>
         </div>
         <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
@@ -181,10 +181,10 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
         </div>
       </div>
 
-      {/* Token usage bar */}
+      {/* API usage bar */}
       <div className="mt-4 rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
         <div className="mb-2 flex items-center justify-between text-xs">
-          <span className="text-zinc-400">Token budget usage</span>
+          <span className="text-zinc-400">API usage budget</span>
           <span className="font-mono text-zinc-500">
             {formatNumber(employee.tokenUsage)} / {formatNumber(employee.tokenCap)} ({tokenPct.toFixed(1)}%)
           </span>
@@ -412,7 +412,7 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
                 />
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-medium text-zinc-400">Token cap</label>
+                <label className="mb-1.5 block text-xs font-medium text-zinc-400">Usage limit</label>
                 <input
                   type="number"
                   defaultValue={employee.tokenCap}

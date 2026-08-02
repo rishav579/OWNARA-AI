@@ -94,7 +94,7 @@ export function TasksPage() {
     <div>
       <PageHeader
         title="Tasks"
-        description={`${tasks.length} total · ${tasks.filter((t: any) => t.status === "waiting_approval").length} waiting approval`}
+        description={isLoading ? undefined : `${tasks.length} total · ${tasks.filter((t: any) => t.status === "waiting_approval").length} waiting approval`}
         actions={
           <button
             onClick={() => setShowCreate(true)}
@@ -137,7 +137,7 @@ export function TasksPage() {
       {isLoading ? (
         <ListSkeleton rows={5} />
       ) : isError ? (
-        <ErrorState message="Failed to load tasks" onRetry={() => refetch()} />
+        <ErrorState message="Failed to load tasks" cause="The server may be unreachable." action="Try refreshing the page." onRetry={() => refetch()} />
       ) : filtered.length === 0 ? (
         <EmptyState
           icon={ListTodo}
@@ -320,11 +320,11 @@ export function TasksPage() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium text-zinc-400">Step cap</label>
+                  <label className="mb-1.5 block text-xs font-medium text-zinc-400">Max steps</label>
                   <input type="number" value={form.stepCap} onChange={(e) => setForm({ ...form, stepCap: parseInt(e.target.value) || 20 })} className="h-10 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-emerald-500" />
                 </div>
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium text-zinc-400">Token cap</label>
+                  <label className="mb-1.5 block text-xs font-medium text-zinc-400">Usage limit</label>
                   <input type="number" value={form.tokenCap} onChange={(e) => setForm({ ...form, tokenCap: parseInt(e.target.value) || 100000 })} className="h-10 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-emerald-500" />
                 </div>
               </div>

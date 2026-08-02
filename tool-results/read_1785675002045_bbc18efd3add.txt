@@ -1,0 +1,737 @@
+     1→"use client";
+     2→
+     3→import { useRouter, formatRelativeTime, formatNumber, formatINR, formatDateTime } from "@/lib/app/router";
+     4→import { api } from "@/lib/app/api-client";
+     5→import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+     6→import { useAuth } from "@/lib/app/router";
+     7→import {
+     8→  Avatar,
+     9→  EmployeeStatusBadge,
+    10→  EmployeeStateBadge,
+    11→  ErrorState,
+    12→  PageSkeleton,
+    13→  SeverityDot,
+    14→  CategoryBadge,
+    15→  EmptyState,
+    16→  TrustScoreBadge,
+    17→  ConfidenceBar,
+    18→} from "@/components/app/ui";
+    19→import { cn } from "@/lib/utils";
+    20→import {
+    21→  Bot,
+    22→  ShieldCheck,
+    23→  Lock,
+    24→  ArrowRight,
+    25→  IndianRupee,
+    26→  Clock,
+    27→  AlertTriangle,
+    28→  Sparkles,
+    29→  TrendingUp,
+    30→  Users,
+    31→  Mail,
+    32→  CheckCircle2,
+    33→  Zap,
+    34→  Scale,
+    35→  FileText,
+    36→  AlertCircle,
+    37→  Play,
+    38→  Upload,
+    39→  ChevronRight,
+    40→  Sun,
+    41→  Activity,
+    42→  Trophy,
+    43→  Lightbulb,
+    44→  XCircle,
+    45→  Loader2,
+    46→} from "lucide-react";
+    47→
+    48→// ─── Helpers ─────────────────────────────────────────────────────────────────
+    49→
+    50→function formatINRfinance(paise: number): string {
+    51→  const rupees = paise / 100;
+    52→  if (rupees >= 10000000) return `₹${(rupees / 10000000).toFixed(2)} Cr`;
+    53→  if (rupees >= 100000) return `₹${(rupees / 100000).toFixed(2)} L`;
+    54→  if (rupees >= 1000) return `₹${(rupees / 1000).toFixed(1)}K`;
+    55→  return `₹${rupees.toLocaleString("en-IN")}`;
+    56→}
+    57→
+    58→function formatTime(iso: string): string {
+    59→  return new Date(iso).toLocaleTimeString("en-IN", {
+    60→    hour: "2-digit",
+    61→    minute: "2-digit",
+    62→    hour12: true,
+    63→  });
+    64→}
+    65→
+    66→function greeting(): string {
+    67→  const h = new Date().getHours();
+    68→  if (h < 12) return "Good morning";
+    69→  if (h < 17) return "Good afternoon";
+    70→  return "Good evening";
+    71→}
+    72→
+    73→// ─── Main Page ───────────────────────────────────────────────────────────────
+    74→
+    75→export function DashboardPage() {
+    76→  const { navigate } = useRouter();
+    77→  const { user } = useAuth();
+    78→  const queryClient = useQueryClient();
+    79→
+    80→  // ─── Compose existing APIs (no duplicate queries) ─────────────────────────
+    81→  // 1. Dashboard API — businessImpact, employees.list, businessFeed, finance
+    82→  const { data: dash, isLoading, isError, refetch } = useQuery({
+    83→    queryKey: ["dashboard"],
+    84→    queryFn: () => api.dashboard.get(),
+    85→  });
+    86→
+    87→  // 2. Pending Approvals API — rich data (contract + capability + profile)
+    88→  const { data: pending = [] } = useQuery({
+    89→    queryKey: ["approvals", "pending"],
+    90→    queryFn: () => api.approvals.pending(),
+    91→    refetchInterval: 15000,
+    92→  });
+    93→
+    94→  // 3. Finance Metrics API — aging buckets, avgCollectionTime, escalatedCases
+    95→  const { data: finance } = useQuery({
+    96→    queryKey: ["finance", "metrics"],
+    97→    queryFn: () => api.finance.metrics(),
+    98→  });
+    99→
+   100→  // 4. Audit API — richer than dashboard.businessFeed (includes hashes, decisions)
+   101→  const { data: auditEntries = [] } = useQuery({
+   102→    queryKey: ["audit", "ops-center"],
+   103→    queryFn: () => api.audit.list({ limit: 20 }),
+   104→  });
+   105→
+   106→  // 5. Learning data for the first active employee (patterns for insights)
+   107→  const firstEmployeeId = dash?.employees?.list?.[0]?.id;
+   108→  const { data: patterns = [] } = useQuery({
+   109→    queryKey: ["employee", firstEmployeeId, "patterns"],
+   110→    queryFn: () => api.employees.patterns(firstEmployeeId!, 10),
+   111→    enabled: !!firstEmployeeId,
+   112→  });
+   113→
+   114→  // ─── Inline approval mutations (compose Decision Center) ──────────────────
+   115→  const approveMutation = useMutation({
+   116→    mutationFn: ({ id, reason }: { id: string; reason?: string }) =>
+   117→      api.approvals.approve(id, { reason }),
+   118→    onSuccess: () => {
+   119→      queryClient.invalidateQueries({ queryKey: ["approvals"] });
+   120→      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+   121→      queryClient.invalidateQueries({ queryKey: ["audit"] });
+   122→    },
+   123→  });
+   124→  const rejectMutation = useMutation({
+   125→    mutationFn: ({ id, reason }: { id: string; reason?: string }) =>
+   126→      api.approvals.reject(id, reason),
+   127→    onSuccess: () => {
+   128→      queryClient.invalidateQueries({ queryKey: ["approvals"] });
+   129→      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+   130→      queryClient.invalidateQueries({ queryKey: ["audit"] });
+   131→    },
+   132→  });
+   133→
+   134→  // ─── Loading / error states ───────────────────────────────────────────────
+   135→  if (isLoading) return <PageSkeleton variant="dashboard" />;
+   136→  if (isError || !dash) return <ErrorState message="Failed to load Operations Center" onRetry={() => refetch()} />;
+   137→
+   138→  // ─── Onboarding CTA ───────────────────────────────────────────────────────
+   139→  if (dash.needsOnboarding) {
+   140→    return (
+   141→      <div>
+   142→        <PageHeader title="Welcome to BIHARI AI" description="Hire your first AI Employee to get started" />
+   143→        <EmptyState
+   144→          icon={Bot}
+   145→          title="No AI Employees yet"
+   146→          description="Your workspace is ready. Hire a Finance Employee to start processing overdue invoices, generating reminders, and recovering payments — all under your approval."
+   147→          action={
+   148→            <button onClick={() => navigate("onboarding")} className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 hover:bg-emerald-400">
+   149→              <Sparkles className="h-4 w-4" /> Start Onboarding
+   150→            </button>
+   151→          }
+   152→        />
+   153→      </div>
+   154→    );
+   155→  }
+   156→
+   157→  const impact = dash.businessImpact || {};
+   158→  const employees = dash.employees.list || [];
+   159→  const feed = auditEntries.length > 0 ? auditEntries : (dash.businessFeed || dash.recentActivity || []);
+   160→
+   161→  // ─── Compute "overnight" activity (last 12 hours) ─────────────────────────
+   162→  const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
+   163→  const overnightEntries = feed.filter((e: any) => new Date(e.createdAt) >= twelveHoursAgo);
+   164→  const overnightActions = overnightEntries.length;
+   165→  const overnightReminders = overnightEntries.filter((e: any) =>
+   166→    e.entryType?.includes("reminder") || e.businessEvent?.includes("Reminder")
+   167→  ).length;
+   168→  const overnightEscalations = overnightEntries.filter((e: any) =>
+   169→    e.entryType?.includes("escalat") || e.businessEvent?.includes("Escalat")
+   170→  ).length;
+   171→
+   172→  // ─── Risks computation ────────────────────────────────────────────────────
+   173→  const risks: Array<{ severity: "critical" | "warning" | "info"; title: string; description: string; action?: { label: string; path: string } }> = [];
+   174→
+   175→  if (pending.length > 0) {
+   176→    risks.push({
+   177→      severity: "warning",
+   178→      title: `${pending.length} approval${pending.length > 1 ? "s" : ""} pending`,
+   179→      description: "AI Employees are paused until you review.",
+   180→      action: { label: "Review", path: "approvals" },
+   181→    });
+   182→  }
+   183→  if (dash.tasks.failed > 0) {
+   184→    risks.push({
+   185→      severity: "critical",
+   186→      title: `${dash.tasks.failed} failed automation${dash.tasks.failed > 1 ? "s" : ""}`,
+   187→      description: "Tasks failed and need investigation.",
+   188→      action: { label: "Investigate", path: "tasks" },
+   189→    });
+   190→  }
+   191→  if (finance?.overdueCount > 0) {
+   192→    risks.push({
+   193→      severity: "warning",
+   194→      title: `${finance.overdueCount} overdue invoice${finance.overdueCount > 1 ? "s" : ""}`,
+   195→      description: `${formatINRfinance(finance.totalOverdue)} outstanding across ${finance.overdueCount} invoices.`,
+   196→      action: { label: "View", path: "finance" },
+   197→    });
+   198→  }
+   199→  if (finance?.escalatedCases > 0) {
+   200→    risks.push({
+   201→      severity: "critical",
+   202→      title: `${finance.escalatedCases} escalated case${finance.escalatedCases > 1 ? "s" : ""}`,
+   203→      description: "Collection cases have been escalated.",
+   204→      action: { label: "Review", path: "finance" },
+   205→    });
+   206→  }
+   207→  if (finance?.customersAtRisk > 0) {
+   208→    risks.push({
+   209→      severity: "warning",
+   210→      title: `${finance.customersAtRisk} customer${finance.customersAtRisk > 1 ? "s" : ""} at risk`,
+   211→      description: "High-risk customers with overdue invoices.",
+   212→      action: { label: "View", path: "finance" },
+   213→    });
+   214→  }
+   215→
+   216→  return (
+   217→    <div className="space-y-6">
+   218→      {/* ═══════════════════════════════════════════════════════════════════════
+   219→          SECTION 1: MORNING BRIEF
+   220→          ═══════════════════════════════════════════════════════════════════════ */}
+   221→      <section className="rounded-2xl border border-zinc-800 bg-gradient-to-br from-zinc-900 to-zinc-900/50 p-6">
+   222→        <div className="flex items-start justify-between gap-4">
+   223→          <div className="min-w-0 flex-1">
+   224→            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-emerald-400">
+   225→              <Sun className="h-3.5 w-3.5" />
+   226→              Morning Brief
+   227→            </div>
+   228→            <h1 className="mt-2 text-2xl font-bold tracking-tight text-zinc-50">
+   229→              {greeting()}, {user?.name?.split(" ")[0] || "there"}.
+   230→            </h1>
+   231→            <p className="mt-1 text-sm text-zinc-400">
+   232→              Your AI Workforce {overnightActions > 0 ? "completed" : "is ready"}:
+   233→            </p>
+   234→            <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+   235→              {overnightActions > 0 && (
+   236→                <span className="flex items-center gap-1.5 text-zinc-300">
+   237→                  <Activity className="h-3.5 w-3.5 text-emerald-400" />
+   238→                  <span className="font-semibold text-zinc-100">{overnightActions}</span> actions
+   239→                </span>
+   240→              )}
+   241→              {impact.moneyRecovered > 0 && (
+   242→                <span className="flex items-center gap-1.5 text-zinc-300">
+   243→                  <IndianRupee className="h-3.5 w-3.5 text-emerald-400" />
+   244→                  <span className="font-semibold text-emerald-400">{formatINRfinance(impact.moneyRecovered)}</span> recovered
+   245→                </span>
+   246→              )}
+   247→              {impact.emailsSent > 0 && (
+   248→                <span className="flex items-center gap-1.5 text-zinc-300">
+   249→                  <Mail className="h-3.5 w-3.5 text-sky-400" />
+   250→                  <span className="font-semibold text-zinc-100">{impact.emailsSent}</span> reminders sent
+   251→                </span>
+   252→              )}
+   253→              {overnightEscalations > 0 && (
+   254→                <span className="flex items-center gap-1.5 text-zinc-300">
+   255→                  <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />
+   256→                  <span className="font-semibold text-amber-400">{overnightEscalations}</span> escalated
+   257→                </span>
+   258→              )}
+   259→              {pending.length > 0 && (
+   260→                <span className="flex items-center gap-1.5 text-zinc-300">
+   261→                  <Lock className="h-3.5 w-3.5 text-amber-400" />
+   262→                  <span className="font-semibold text-amber-400">{pending.length}</span> approval{pending.length > 1 ? "s" : ""} waiting
+   263→                </span>
+   264→              )}
+   265→              {overnightActions === 0 && pending.length === 0 && (
+   266→                <span className="text-zinc-500">No overnight activity — your workforce is idle and ready.</span>
+   267→              )}
+   268→            </div>
+   269→          </div>
+   270→          {/* Quick action: primary CTA */}
+   271→          {pending.length > 0 ? (
+   272→            <button
+   273→              onClick={() => navigate("approvals")}
+   274→              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-amber-950 transition-colors hover:bg-amber-400"
+   275→            >
+   276→              <ShieldCheck className="h-4 w-4" />
+   277→              Review {pending.length}
+   278→            </button>
+   279→          ) : (
+   280→            <button
+   281→              onClick={() => navigate("finance")}
+   282→              className="flex shrink-0 items-center gap-1.5 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 transition-colors hover:bg-emerald-400"
+   283→            >
+   284→              <IndianRupee className="h-4 w-4" />
+   285→              View Receivables
+   286→            </button>
+   287→          )}
+   288→        </div>
+   289→      </section>
+   290→
+   291→      {/* ═══════════════════════════════════════════════════════════════════════
+   292→          SECTION 2: TODAY'S BUSINESS SNAPSHOT
+   293→          ═══════════════════════════════════════════════════════════════════════ */}
+   294→      <section>
+   295→        <SectionHeader title="Today's Business Snapshot" />
+   296→        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
+   297→          <SnapCell label="Money Pending" value={formatINRfinance(impact.moneyPending || 0)} sub="outstanding" icon={IndianRupee} accent="emerald" />
+   298→          <SnapCell label="Money Recovered" value={formatINRfinance(impact.moneyRecovered || 0)} sub="all-time" icon={TrendingUp} accent="emerald" />
+   299→          <SnapCell label="Hours Saved" value={`${(impact.hoursSaved || 0).toFixed(1)}h`} sub="manual work" icon={Clock} accent="sky" />
+   300→          <SnapCell label="Tasks Automated" value={String(impact.tasksAutomated || 0)} sub="completed" icon={Zap} accent="violet" />
+   301→          <SnapCell label="Approvals Waiting" value={String(pending.length)} sub={pending.length > 0 ? "needs review" : "all clear"} icon={ShieldCheck} accent={pending.length > 0 ? "amber" : "emerald"} />
+   302→          <SnapCell label="Average Trust" value={(impact.avgTrustScore || 0).toFixed(1)} sub="/ 100" icon={Scale} accent="emerald" />
+   303→          <SnapCell label="Business Risk" value={risks.filter(r => r.severity === "critical").length > 0 ? "High" : risks.filter(r => r.severity === "warning").length > 0 ? "Medium" : "Low"} sub={`${risks.length} risk${risks.length !== 1 ? "s" : ""}`} icon={AlertTriangle} accent={risks.filter(r => r.severity === "critical").length > 0 ? "red" : risks.filter(r => r.severity === "warning").length > 0 ? "amber" : "emerald"} />
+   304→          <SnapCell label="Automation Rate" value={`${((impact.automationRate || 0) * 100).toFixed(0)}%`} sub="success rate" icon={CheckCircle2} accent="emerald" />
+   305→        </div>
+   306→      </section>
+   307→
+   308→      {/* ═══════════════════════════════════════════════════════════════════════
+   309→          SECTION 3: AI WORKFORCE
+   310→          ═══════════════════════════════════════════════════════════════════════ */}
+   311→      <section>
+   312→        <SectionHeader title="AI Workforce" subtitle={`${employees.length} active employee${employees.length !== 1 ? "s" : ""}`} />
+   313→        {employees.length === 0 ? (
+   314→          <EmptyState icon={Bot} title="No active employees" description="Hire your first AI Employee to get started." action={<button onClick={() => navigate("onboarding")} className="rounded-lg bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-emerald-950 hover:bg-emerald-400">Start Onboarding</button>} />
+   315→        ) : (
+   316→          <div className="grid gap-4 lg:grid-cols-2">
+   317→            {employees.map((e: any) => (
+   318→              <WorkforceCard key={e.id} employee={e} navigate={navigate} />
+   319→            ))}
+   320→          </div>
+   321→        )}
+   322→      </section>
+   323→
+   324→      {/* ═══════════════════════════════════════════════════════════════════════
+   325→          SECTION 4: DECISION CENTER PREVIEW (inline approvals)
+   326→          ═══════════════════════════════════════════════════════════════════════ */}
+   327→      <section>
+   328→        <SectionHeader
+   329→          title="Decision Center"
+   330→          subtitle={pending.length > 0 ? `${pending.length} waiting` : "all clear"}
+   331→          action={pending.length > 0 ? { label: "View all", path: "approvals" } : undefined}
+   332→          navigate={navigate}
+   333→        />
+   334→        {pending.length === 0 ? (
+   335→          <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+   336→            <CheckCircle2 className="mx-auto h-8 w-8 text-emerald-500/50" />
+   337→            <p className="mt-2 text-center text-sm font-medium text-zinc-300">No approvals pending</p>
+   338→            <p className="text-center text-xs text-zinc-500">Your AI Employees are working autonomously.</p>
+   339→          </div>
+   340→        ) : (
+   341→          <div className="space-y-3">
+   342→            {pending.slice(0, 3).map((a: any) => (
+   343→              <ApprovalPreviewCard
+   344→                key={a.id}
+   345→                approval={a}
+   346→                onApprove={() => approveMutation.mutate({ id: a.id, reason: "Approved" })}
+   347→                onReject={() => rejectMutation.mutate({ id: a.id, reason: "Rejected" })}
+   348→                onView={() => navigate("approvals")}
+   349→                approving={approveMutation.isPending}
+   350→                rejecting={rejectMutation.isPending}
+   351→              />
+   352→            ))}
+   353→            {pending.length > 3 && (
+   354→              <button onClick={() => navigate("approvals")} className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-zinc-800 py-2.5 text-xs font-medium text-zinc-400 transition-colors hover:border-zinc-700 hover:text-zinc-200">
+   355→                View {pending.length - 3} more approval{pending.length - 3 > 1 ? "s" : ""}
+   356→                <ChevronRight className="h-3.5 w-3.5" />
+   357→              </button>
+   358→            )}
+   359→          </div>
+   360→        )}
+   361→      </section>
+   362→
+   363→      {/* ═══════════════════════════════════════════════════════════════════════
+   364→          SECTION 5: BUSINESS TIMELINE
+   365→          ═══════════════════════════════════════════════════════════════════════ */}
+   366→      <section>
+   367→        <SectionHeader title="Business Timeline" subtitle="last 24 hours" action={{ label: "Full audit trail", path: "audit" }} navigate={navigate} />
+   368→        {feed.length === 0 ? (
+   369→          <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 text-center text-xs text-zinc-500">
+   370→            No activity yet. Your AI Employees will appear here as they work.
+   371→          </div>
+   372→        ) : (
+   373→          <div className="rounded-xl border border-zinc-800 bg-zinc-900/50">
+   374→            <div className="max-h-80 overflow-y-auto">
+   375→              {feed.slice(0, 15).map((entry: any, idx: number) => (
+   376→                <div key={entry.id || idx} className="flex items-start gap-3 border-b border-zinc-800/50 px-4 py-3 last:border-0">
+   377→                  <div className="w-16 shrink-0 text-right">
+   378→                    <div className="font-mono text-[0.65rem] text-zinc-500">{formatTime(entry.createdAt)}</div>
+   379→                  </div>
+   380→                  <SeverityDot severity={entry.severity || "info"} />
+   381→                  <div className="min-w-0 flex-1">
+   382→                    <div className="flex items-center gap-2">
+   383→                      <span className="text-sm font-medium text-zinc-200">{entry.businessEvent || entry.entryType?.replace(/_/g, " ")}</span>
+   384→                      <CategoryBadge category={entry.category || "system"} />
+   385→                    </div>
+   386→                    <div className="mt-0.5 text-xs leading-relaxed text-zinc-400">
+   387→                      {entry.businessDescription || `${entry.actorName} performed an action`}
+   388→                    </div>
+   389→                  </div>
+   390→                </div>
+   391→              ))}
+   392→            </div>
+   393→          </div>
+   394→        )}
+   395→      </section>
+   396→
+   397→      {/* ═══════════════════════════════════════════════════════════════════════
+   398→          SECTION 6: RISKS
+   399→          ═══════════════════════════════════════════════════════════════════════ */}
+   400→      <section>
+   401→        <SectionHeader title="Risks" subtitle={risks.length > 0 ? `${risks.length} identified` : "none identified"} />
+   402→        {risks.length === 0 ? (
+   403→          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-6 text-center">
+   404→            <CheckCircle2 className="mx-auto h-8 w-8 text-emerald-500" />
+   405→            <p className="mt-2 text-sm font-medium text-zinc-300">No risks identified</p>
+   406→            <p className="text-xs text-zinc-500">All systems are operating within normal parameters.</p>
+   407→          </div>
+   408→        ) : (
+   409→          <div className="grid gap-3 sm:grid-cols-2">
+   410→            {risks.map((r, idx) => (
+   411→              <div key={idx} className={cn(
+   412→                "flex items-start gap-3 rounded-xl border p-4",
+   413→                r.severity === "critical" ? "border-red-500/20 bg-red-500/5" :
+   414→                r.severity === "warning" ? "border-amber-500/20 bg-amber-500/5" :
+   415→                "border-zinc-800 bg-zinc-900/50"
+   416→              )}>
+   417→                <div className={cn(
+   418→                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+   419→                  r.severity === "critical" ? "bg-red-500/15 text-red-400" :
+   420→                  r.severity === "warning" ? "bg-amber-500/15 text-amber-400" :
+   421→                  "bg-zinc-800 text-zinc-400"
+   422→                )}>
+   423→                  <AlertTriangle className="h-4 w-4" />
+   424→                </div>
+   425→                <div className="min-w-0 flex-1">
+   426→                  <div className="text-sm font-medium text-zinc-100">{r.title}</div>
+   427→                  <div className="text-xs text-zinc-400">{r.description}</div>
+   428→                </div>
+   429→                {r.action && (
+   430→                  <button
+   431→                    onClick={() => navigate(r.action!.path)}
+   432→                    className="shrink-0 rounded-lg border border-zinc-700 px-2.5 py-1 text-xs font-medium text-zinc-300 transition-colors hover:bg-zinc-800"
+   433→                  >
+   434→                    {r.action.label}
+   435→                  </button>
+   436→                )}
+   437→              </div>
+   438→            ))}
+   439→          </div>
+   440→        )}
+   441→      </section>
+   442→
+   443→      {/* ═══════════════════════════════════════════════════════════════════════
+   444→          SECTION 7: BUSINESS INSIGHTS (from Learning Engine)
+   445→          ═══════════════════════════════════════════════════════════════════════ */}
+   446→      <section>
+   447→        <SectionHeader title="Business Insights" subtitle="learned from outcomes" />
+   448→        {patterns.length === 0 ? (
+   449→          <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 text-center">
+   450→            <Lightbulb className="mx-auto h-8 w-8 text-zinc-700" />
+   451→            <p className="mt-2 text-sm font-medium text-zinc-300">No insights yet</p>
+   452→            <p className="text-xs text-zinc-500">Insights emerge as your AI Employees process more tasks with measurable outcomes.</p>
+   453→          </div>
+   454→        ) : (
+   455→          <div className="grid gap-3 sm:grid-cols-2">
+   456→            {patterns.slice(0, 4).map((p: any) => (
+   457→              <div key={p.id} className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+   458→                <div className="flex items-center gap-2">
+   459→                  <Lightbulb className="h-4 w-4 text-sky-400" />
+   460→                  <span className="rounded-full bg-sky-500/10 px-2 py-0.5 text-[0.6rem] font-medium text-sky-400">
+   461→                    {p.patternType?.replace(/_/g, " ")}
+   462→                  </span>
+   463→                  <span className="ml-auto text-[0.6rem] text-zinc-500">{(p.confidence * 100).toFixed(0)}% confidence</span>
+   464→                </div>
+   465→                <p className="mt-2 text-sm text-zinc-200">{p.description}</p>
+   466→                <div className="mt-2 text-[0.65rem] text-zinc-500">
+   467→                  Observed {p.observationCount}× · {p.entityLabel}
+   468→                </div>
+   469→              </div>
+   470→            ))}
+   471→          </div>
+   472→        )}
+   473→      </section>
+   474→
+   475→      {/* ═══════════════════════════════════════════════════════════════════════
+   476→          SECTION 8: QUICK ACTIONS
+   477→          ═══════════════════════════════════════════════════════════════════════ */}
+   478→      <section>
+   479→        <SectionHeader title="Quick Actions" />
+   480→        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+   481→          <QuickAction icon={IndianRupee} label="Recover Invoices" description="View overdue receivables" onClick={() => navigate("finance")} />
+   482→          <QuickAction icon={ShieldCheck} label="Review Approvals" description={`${pending.length} pending`} onClick={() => navigate("approvals")} disabled={pending.length === 0} />
+   483→          <QuickAction icon={Upload} label="Upload Invoices" description="Import CSV data" onClick={() => navigate("onboarding")} />
+   484→          <QuickAction icon={Bot} label="Hire Employee" description="Expand your workforce" onClick={() => navigate("employees")} />
+   485→          <QuickAction icon={Activity} label="View Tasks" description={`${dash.tasks.inProgress + dash.tasks.waitingApproval} active`} onClick={() => navigate("tasks")} />
+   486→        </div>
+   487→      </section>
+   488→    </div>
+   489→  );
+   490→}
+   491→
+   492→// ─── Sub-components ──────────────────────────────────────────────────────────
+   493→
+   494→function PageHeader({ title, description }: { title: string; description?: string }) {
+   495→  return (
+   496→    <div className="mb-6">
+   497→      <h1 className="text-xl font-bold tracking-tight text-zinc-50">{title}</h1>
+   498→      {description && <p className="mt-1 text-sm text-zinc-400">{description}</p>}
+   499→    </div>
+   500→  );
+   501→}
+   502→
+   503→function SectionHeader({
+   504→  title,
+   505→  subtitle,
+   506→  action,
+   507→  navigate,
+   508→}: {
+   509→  title: string;
+   510→  subtitle?: string;
+   511→  action?: { label: string; path: string };
+   512→  navigate?: (path: string) => void;
+   513→}) {
+   514→  return (
+   515→    <div className="mb-3 flex items-center justify-between">
+   516→      <div className="flex items-baseline gap-2">
+   517→        <h2 className="text-sm font-semibold text-zinc-100">{title}</h2>
+   518→        {subtitle && <span className="text-xs text-zinc-500">{subtitle}</span>}
+   519→      </div>
+   520→      {action && navigate && (
+   521→        <button onClick={() => navigate(action.path)} className="text-xs text-emerald-400 hover:text-emerald-300">
+   522→          {action.label} →
+   523→        </button>
+   524→      )}
+   525→    </div>
+   526→  );
+   527→}
+   528→
+   529→function SnapCell({
+   530→  label,
+   531→  value,
+   532→  sub,
+   533→  icon: Icon,
+   534→  accent,
+   535→}: {
+   536→  label: string;
+   537→  value: string;
+   538→  sub?: string;
+   539→  icon: any;
+   540→  accent: "emerald" | "amber" | "violet" | "sky" | "red";
+   541→}) {
+   542→  const colorMap = {
+   543→    emerald: "text-emerald-400",
+   544→    amber: "text-amber-400",
+   545→    violet: "text-violet-400",
+   546→    sky: "text-sky-400",
+   547→    red: "text-red-400",
+   548→  };
+   549→  return (
+   550→    <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
+   551→      <div className="flex items-center justify-between">
+   552→        <span className="text-[0.6rem] uppercase tracking-wider text-zinc-500">{label}</span>
+   553→        <Icon className={cn("h-3.5 w-3.5", colorMap[accent])} />
+   554→      </div>
+   555→      <div className={cn("mt-1.5 text-lg font-bold", colorMap[accent])}>{value}</div>
+   556→      {sub && <div className="text-[0.6rem] text-zinc-500">{sub}</div>}
+   557→    </div>
+   558→  );
+   559→}
+   560→
+   561→function WorkforceCard({ employee: e, navigate }: { employee: any; navigate: (path: string) => void }) {
+   562→  return (
+   563→    <button
+   564→      onClick={() => navigate(`employees/${e.id}`)}
+   565→      className="group rounded-xl border border-zinc-800 bg-zinc-900/50 p-5 text-left transition-all hover:border-zinc-700 hover:bg-zinc-900"
+   566→    >
+   567→      {/* Header */}
+   568→      <div className="flex items-start gap-3">
+   569→        <Avatar name={e.name} color={e.avatarColor} size="md" />
+   570→        <div className="min-w-0 flex-1">
+   571→          <div className="flex items-center gap-2">
+   572→            <h3 className="truncate text-sm font-semibold text-zinc-100">{e.name}</h3>
+   573→            <EmployeeStatusBadge status={e.status} />
+   574→          </div>
+   575→          <p className="truncate text-xs text-zinc-500">{e.roleName}</p>
+   576→          <div className="mt-1 flex items-center gap-1.5">
+   577→            {e.currentTaskTitle ? (
+   578→              <span className="truncate text-[0.7rem] text-emerald-400">● {e.currentTaskTitle}</span>
+   579→            ) : (
+   580→              <EmployeeStateBadge state={e.state} />
+   581→            )}
+   582→          </div>
+   583→        </div>
+   584→        {e.pendingApprovals > 0 && (
+   585→          <span className="shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-[0.65rem] font-medium text-amber-400">
+   586→            {e.pendingApprovals} pending
+   587→          </span>
+   588→        )}
+   589→      </div>
+   590→
+   591→      {/* Business metrics grid */}
+   592→      <div className="mt-4 grid grid-cols-4 gap-2 border-t border-zinc-800 pt-3">
+   593→        <MetricCell label="Trust" value={e.trustScore?.toFixed(0) || "—"} color={e.trustScore >= 80 ? "text-emerald-400" : e.trustScore >= 60 ? "text-amber-400" : "text-red-400"} />
+   594→        <MetricCell label="Level" value={`Lv${e.level || 1}`} color="text-zinc-200" />
+   595→        <MetricCell label="Automated" value={String(e.tasksAutomated || 0)} color="text-zinc-200" />
+   596→        <MetricCell label="Recovered" value={e.moneyRecovered > 0 ? formatINRfinance(e.moneyRecovered) : "—"} color="text-emerald-400" />
+   597→      </div>
+   598→
+   599→      {/* Today's work summary */}
+   600→      <div className="mt-3 flex items-center justify-between text-[0.65rem] text-zinc-500">
+   601→        <span className="flex items-center gap-1"><Mail className="h-3 w-3" /> {e.emailsSent || 0} emails</span>
+   602→        <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {e.hoursSaved?.toFixed(1) || 0}h saved</span>
+   603→        <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> {((e.approvalRate || 1) * 100).toFixed(0)}% approved</span>
+   604→      </div>
+   605→
+   606→      {/* Latest achievement hint */}
+   607→      <div className="mt-3 flex items-center gap-1.5 border-t border-zinc-800 pt-2 text-[0.65rem] text-zinc-500">
+   608→        <Trophy className="h-3 w-3 text-amber-400/70" />
+   609→        <span>{e.title || "Intern"} · {e.completedTasks || 0} tasks completed</span>
+   610→        <ChevronRight className="ml-auto h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100" />
+   611→      </div>
+   612→    </button>
+   613→  );
+   614→}
+   615→
+   616→function MetricCell({ label, value, color }: { label: string; value: string; color: string }) {
+   617→  return (
+   618→    <div className="text-center">
+   619→      <div className="text-[0.55rem] uppercase tracking-wider text-zinc-500">{label}</div>
+   620→      <div className={cn("mt-0.5 text-sm font-bold", color)}>{value}</div>
+   621→    </div>
+   622→  );
+   623→}
+   624→
+   625→function ApprovalPreviewCard({
+   626→  approval: a,
+   627→  onApprove,
+   628→  onReject,
+   629→  onView,
+   630→  approving,
+   631→  rejecting,
+   632→}: {
+   633→  approval: any;
+   634→  onApprove: () => void;
+   635→  onReject: () => void;
+   636→  onView: () => void;
+   637→  approving: boolean;
+   638→  rejecting: boolean;
+   639→}) {
+   640→  const proposed = a.proposedAction || {};
+   641→  return (
+   642→    <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+   643→      {/* Header */}
+   644→      <div className="flex items-start gap-3">
+   645→        <Avatar name={a.employeeName} color={a.employeeColor} size="sm" />
+   646→        <div className="min-w-0 flex-1">
+   647→          <div className="flex items-center gap-2">
+   648→            <span className="text-sm font-semibold text-zinc-100">{a.employeeName}</span>
+   649→            {a.profile && (
+   650→              <span className="rounded-full bg-zinc-800 px-1.5 py-0.5 text-[0.6rem] text-zinc-400">
+   651→                Lv{a.profile.level} · Trust {a.profile.trustScore?.toFixed(0)}
+   652→              </span>
+   653→            )}
+   654→          </div>
+   655→          <div className="text-xs text-zinc-500">{a.toolDisplayName}</div>
+   656→        </div>
+   657→        <div className="text-right">
+   658→          <div className="text-xs text-zinc-500">{formatRelativeTime(a.createdAt)}</div>
+   659→          {a.confidence && (
+   660→            <div className="text-[0.6rem] text-zinc-600">{(a.confidence * 100).toFixed(0)}% confidence</div>
+   661→          )}
+   662→        </div>
+   663→      </div>
+   664→
+   665→      {/* Proposed action */}
+   666→      <div className="mt-3 rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
+   667→        {proposed.to && <div className="text-xs text-zinc-500">To: <span className="text-zinc-300">{proposed.to}</span></div>}
+   668→        {proposed.subject && <div className="text-xs text-zinc-500">Subject: <span className="text-zinc-300">{proposed.subject}</span></div>}
+   669→        {proposed.body && <p className="mt-1 line-clamp-2 text-xs text-zinc-400">{proposed.body}</p>}
+   670→      </div>
+   671→
+   672→      {/* Business impact */}
+   673→      {a.businessImpact && (
+   674→        <div className="mt-2 text-[0.65rem] text-zinc-500">
+   675→          <span className="text-zinc-400">Impact:</span> {a.businessImpact}
+   676→        </div>
+   677→      )}
+   678→
+   679→      {/* Actions */}
+   680→      <div className="mt-3 flex items-center gap-2">
+   681→        <button
+   682→          onClick={onApprove}
+   683→          disabled={approving || rejecting}
+   684→          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-emerald-950 transition-colors hover:bg-emerald-400 disabled:opacity-50"
+   685→        >
+   686→          {approving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+   687→          Approve
+   688→        </button>
+   689→        <button
+   690→          onClick={onReject}
+   691→          disabled={approving || rejecting}
+   692→          className="flex items-center justify-center gap-1.5 rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:bg-zinc-800 disabled:opacity-50"
+   693→        >
+   694→          {rejecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
+   695→          Reject
+   696→        </button>
+   697→        <button
+   698→          onClick={onView}
+   699→          className="flex items-center justify-center rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:bg-zinc-800"
+   700→        >
+   701→          Details
+   702→        </button>
+   703→      </div>
+   704→    </div>
+   705→  );
+   706→}
+   707→
+   708→function QuickAction({
+   709→  icon: Icon,
+   710→  label,
+   711→  description,
+   712→  onClick,
+   713→  disabled,
+   714→}: {
+   715→  icon: any;
+   716→  label: string;
+   717→  description: string;
+   718→  onClick: () => void;
+   719→  disabled?: boolean;
+   720→}) {
+   721→  return (
+   722→    <button
+   723→      onClick={onClick}
+   724→      disabled={disabled}
+   725→      className="group flex flex-col items-start gap-2 rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 text-left transition-all hover:border-emerald-500/40 hover:bg-zinc-900 disabled:opacity-40 disabled:hover:border-zinc-800 disabled:hover:bg-zinc-900/50"
+   726→    >
+   727→      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400 transition-colors group-hover:bg-emerald-500/20">
+   728→        <Icon className="h-4.5 w-4.5" />
+   729→      </div>
+   730→      <div>
+   731→        <div className="text-sm font-medium text-zinc-100">{label}</div>
+   732→        <div className="text-xs text-zinc-500">{description}</div>
+   733→      </div>
+   734→    </button>
+   735→  );
+   736→}
+   737→

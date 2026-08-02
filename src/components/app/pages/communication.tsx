@@ -184,7 +184,7 @@ export function CommunicationPage() {
 
   // ─── Loading / error ──────────────────────────────────────────────────────
   if (isLoading) return <ListSkeleton rows={6} />;
-  if (isError) return <ErrorState message="Failed to load communications" onRetry={() => refetch()} />;
+  if (isError) return <ErrorState message="Failed to load communications" cause="The server may be unreachable." action="Try refreshing the page." onRetry={() => refetch()} />;
 
   return (
     <div>
@@ -193,11 +193,11 @@ export function CommunicationPage() {
         description="Structured business communication from your AI Employees"
         actions={
           <button
-            onClick={() => navigate("employees")}
+            onClick={() => navigate("approvals")}
             className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-emerald-950 transition-colors hover:bg-emerald-400"
           >
             <Send className="h-4 w-4" />
-            <span className="hidden sm:inline">New Message</span>
+            <span className="hidden sm:inline">Decision Center</span>
           </button>
         }
       />

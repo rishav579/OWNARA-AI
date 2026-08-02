@@ -16,6 +16,7 @@ import {
 } from "@/components/app/ui";
 import { cn } from "@/lib/utils";
 import { Bot, Plus, Search, MoreVertical, Sparkles, Mail, Clock, CheckCircle2 } from "lucide-react";
+import { TOOL_LABELS } from "@/lib/app/data";
 
 function formatINRfinance(paise: number): string {
   const rupees = paise / 100;
@@ -72,7 +73,7 @@ export function EmployeesPage() {
     <div>
       <PageHeader
         title="AI Employees"
-        description={`${employees.filter((e: any) => e.status === "active").length} active · ${employees.length} total`}
+        description={isLoading ? undefined : `${employees.filter((e: any) => e.status === "active").length} active · ${employees.length} total`}
         actions={
           <button
             onClick={() => setShowHire(true)}
@@ -118,7 +119,7 @@ export function EmployeesPage() {
       {isLoading ? (
         <EmployeeGridSkeleton />
       ) : isError ? (
-        <ErrorState message="Failed to load employees" onRetry={() => refetch()} />
+        <ErrorState message="Failed to load employees" cause="The server may be unreachable or your session may have expired." action="Try refreshing the page." onRetry={() => refetch()} />
       ) : employees.length === 0 ? (
         <EmptyState
           icon={Bot}
@@ -279,8 +280,8 @@ export function EmployeesPage() {
                       <p className="mt-0.5 text-xs text-zinc-400">{t.description}</p>
                       <div className="mt-2 flex flex-wrap gap-1">
                         {t.tools.map((tool: string) => (
-                          <span key={tool} className="rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-[0.6rem] text-zinc-400">
-                            {tool}
+                          <span key={tool} className="rounded bg-zinc-800 px-1.5 py-0.5 text-[0.6rem] text-zinc-400">
+                            {TOOL_LABELS[tool] || tool}
                           </span>
                         ))}
                       </div>

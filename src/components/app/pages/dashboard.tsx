@@ -133,7 +133,7 @@ export function DashboardPage() {
 
   // ─── Loading / error states ───────────────────────────────────────────────
   if (isLoading) return <PageSkeleton variant="dashboard" />;
-  if (isError || !dash) return <ErrorState message="Failed to load Operations Center" onRetry={() => refetch()} />;
+  if (isError || !dash) return <ErrorState message="Failed to load Operations Center" cause="The server may be unreachable or your session may have expired." action="Try refreshing the page. If the problem persists, sign in again." onRetry={() => refetch()} />;
 
   // ─── Onboarding CTA ───────────────────────────────────────────────────────
   if (dash.needsOnboarding) {

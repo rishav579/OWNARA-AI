@@ -62,7 +62,7 @@ export function KnowledgePage() {
     <div>
       <PageHeader
         title="Knowledge Base"
-        description={`${docs.filter((d: any) => d.status === "ready").length} documents ready · ${docs.filter((d: any) => d.status === "processing").length} processing`}
+        description={isLoading ? undefined : `${docs.filter((d: any) => d.status === "ready").length} ready · ${docs.filter((d: any) => d.status === "processing").length} processing`}
         actions={
           <button
             onClick={() => setShowUpload(true)}
@@ -121,7 +121,7 @@ export function KnowledgePage() {
               <tr className="border-b border-zinc-800 bg-zinc-900/80">
                 <th className="px-4 py-2.5 text-xs font-semibold text-zinc-400">Document</th>
                 <th className="hidden px-4 py-2.5 text-xs font-semibold text-zinc-400 sm:table-cell">Scoped to</th>
-                <th className="hidden px-4 py-2.5 text-xs font-semibold text-zinc-400 md:table-cell">Chunks</th>
+                <th className="hidden px-4 py-2.5 text-xs font-semibold text-zinc-400 md:table-cell">Sections</th>
                 <th className="px-4 py-2.5 text-xs font-semibold text-zinc-400">Status</th>
                 <th className="hidden px-4 py-2.5 text-xs font-semibold text-zinc-400 lg:table-cell">Uploaded</th>
                 <th className="px-4 py-2.5"></th>
@@ -201,7 +201,7 @@ export function KnowledgePage() {
               <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
                 <div className="flex items-center gap-2 text-xs text-zinc-400">
                   <Database className="h-3.5 w-3.5 text-emerald-400" />
-                  Documents are chunked and embedded for AI Employee retrieval. PII is access-controlled.
+                  Documents are indexed for AI Employee retrieval. Sensitive data is access-controlled.
                 </div>
               </div>
             </div>

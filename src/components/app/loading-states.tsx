@@ -140,9 +140,13 @@ export function EmployeeGridSkeleton() {
 
 export function ErrorState({
   message = "Something went wrong",
+  cause,
+  action,
   onRetry,
 }: {
   message?: string;
+  cause?: string;
+  action?: string;
   onRetry?: () => void;
 }) {
   return (
@@ -153,6 +157,8 @@ export function ErrorState({
         </svg>
       </div>
       <h3 className="mt-3 text-sm font-semibold text-zinc-200">{message}</h3>
+      {cause && <p className="mt-1 text-xs text-zinc-500">{cause}</p>}
+      {action && <p className="mt-1 text-xs text-zinc-400">{action}</p>}
       {onRetry && (
         <button
           onClick={onRetry}

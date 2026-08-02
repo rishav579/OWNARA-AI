@@ -10,6 +10,7 @@ import {
   Avatar,
   CriticalityBadge,
   EmptyState,
+  ErrorState,
   ListSkeleton,
 } from "@/components/app/ui";
 import { cn } from "@/lib/utils";
@@ -64,12 +65,12 @@ export function DecisionCenterPage() {
   const [showModify, setShowModify] = useState(false);
   const queryClient = useQueryClient();
 
-  const { data: pending = [], isLoading: pendingLoading } = useQuery({
+  const { data: pending = [], isLoading: pendingLoading, isError: pendingError, refetch: refetchPending } = useQuery({
     queryKey: ["approvals", "pending"],
     queryFn: () => api.approvals.pending(),
   });
 
-  const { data: history = [], isLoading: historyLoading } = useQuery({
+  const { data: history = [], isLoading: historyLoading, isError: historyError, refetch: refetchHistory } = useQuery({
     queryKey: ["approvals", "history"],
     queryFn: () => api.approvals.list("all"),
   });
@@ -94,6 +95,17 @@ export function DecisionCenterPage() {
   const list = tab === "pending" ? pending : history;
   const selected = list.find((a: any) => a.id === selectedId) || list[0];
   const isLoading = tab === "pending" ? pendingLoading : historyLoading;
+  const isError = tab === "pending" ? pendingError : historyError;
+  const refetch = tab === "pending" ? refetchPending : refetchHistory;
+
+  if (isError) {
+    return (
+      <div>
+        <PageHeader title="Decision Center" description="Review irreversible AI actions before they execute" />
+        <ErrorState message="Failed to load approvals" cause="The server may be unreachable or your session may have expired." action="Try refreshing the page. If the problem persists, sign in again." onRetry={() => refetch()} />
+      </div>
+    );
+  }
 
   return (
     <div>

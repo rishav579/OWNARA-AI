@@ -394,7 +394,7 @@ export function DonutChart({
           {total >= 1000000 ? `${(total / 1000000).toFixed(1)}M` : `${(total / 1000).toFixed(0)}K`}
         </text>
         <text x="50%" y="60%" textAnchor="middle" className="fill-zinc-500 text-[0.6rem]">
-          tokens
+          usage
         </text>
       </svg>
       <div className="space-y-1.5">

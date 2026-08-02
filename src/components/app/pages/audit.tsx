@@ -106,7 +106,7 @@ export function AuditPage() {
       {isLoading ? (
         <ListSkeleton rows={6} />
       ) : isError ? (
-        <ErrorState message="Failed to load audit trail" onRetry={() => refetch()} />
+        <ErrorState message="Failed to load audit trail" cause="The server may be unreachable." action="Try refreshing the page." onRetry={() => refetch()} />
       ) : filtered.length === 0 ? (
         <EmptyState icon={ScrollText} title="No audit entries" description="Audit entries will appear here as AI Employees take actions." />
       ) : (

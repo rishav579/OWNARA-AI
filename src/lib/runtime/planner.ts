@@ -99,7 +99,7 @@ function customerSupportPlan(title: string, tools: string[]): ExecutionPlan {
   steps.push({
     stepType: "reasoning",
     reasoning:
-      "Retrieved 3 relevant policy chunks from returns-policy.pdf and faq-knowledge-base.md. " +
+      "Retrieved relevant policy sections from returns-policy.pdf and faq-knowledge-base.md. " +
       "The customer's query relates to order status and returns. I will draft a response grounded in the returns policy.",
     confidence: 0.91,
   });
@@ -344,7 +344,7 @@ export function executeTool(
     case "search_knowledge":
       return {
         output: {
-          result: `Retrieved 3 relevant chunks from knowledge base for query: "${toolInput.query || ""}"`,
+          result: `Retrieved relevant sections from knowledge base for query: "${toolInput.query || ""}"`,
           chunks: "returns-policy.pdf:chunk3, returns-policy.pdf:chunk7, faq-knowledge-base.md:chunk12",
         },
         tokens: 380,
