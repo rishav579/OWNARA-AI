@@ -14,6 +14,7 @@ import { TasksPage } from "@/components/app/pages/tasks";
 import { ApprovalsPage } from "@/components/app/pages/approvals";
 import { DecisionCenterPage } from "@/components/app/pages/decision-center";
 import { CommunicationPage } from "@/components/app/pages/communication";
+import { TrustCenterPage } from "@/components/app/pages/trust-center";
 import { KnowledgePage } from "@/components/app/pages/knowledge";
 import { AuditPage } from "@/components/app/pages/audit";
 import { SettingsPage } from "@/components/app/pages/settings";
@@ -87,6 +88,9 @@ function AppRouter() {
       break;
     case "communication":
       page = <CommunicationPage />;
+      break;
+    case "trust-center":
+      page = <TrustCenterPage />;
       break;
     case "knowledge":
       page = <KnowledgePage />;

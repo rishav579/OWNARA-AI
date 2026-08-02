@@ -10,6 +10,7 @@ import {
   Bot,
   ListTodo,
   ShieldCheck,
+  Shield,
   BookOpen,
   ScrollText,
   Settings,
@@ -56,6 +57,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   {
     label: "Trust & Audit",
     items: [
+      { path: "trust-center", label: "Trust Center", icon: Shield },
       { path: "audit", label: "Audit Timeline", icon: ScrollText },
       { path: "governance", label: "Governance", icon: Scale },
       { path: "knowledge", label: "Knowledge Base", icon: BookOpen },
