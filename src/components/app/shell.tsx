@@ -61,6 +61,13 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
       { path: "audit", label: "Audit Timeline", icon: ScrollText },
     ],
   },
+  {
+    label: "Settings",
+    items: [
+      { path: "settings", label: "Settings", icon: Settings },
+      { path: "billing", label: "Billing", icon: CreditCard },
+    ],
+  },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {

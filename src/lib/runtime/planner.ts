@@ -88,9 +88,9 @@ function customerSupportPlan(title: string, tools: string[]): ExecutionPlan {
   if (tools.includes("search_knowledge")) {
     steps.push({
       stepType: "tool_call",
-      reasoning: `Searching the knowledge base for relevant policies and FAQs to ground responses for: "${title}".`,
+      reasoning: `Searching company documents for relevant policies and FAQs related to: "${title}".`,
       tool: "search_knowledge",
-      toolInput: { query: "returns policy customer support FAQ" },
+      toolInput: { query: title },
       confidence: 0.94,
     });
   }
@@ -99,7 +99,7 @@ function customerSupportPlan(title: string, tools: string[]): ExecutionPlan {
   steps.push({
     stepType: "reasoning",
     reasoning:
-      "Retrieved relevant policy sections from returns-policy.pdf and faq-knowledge-base.md. " +
+      "Found relevant policy information in the company documents. " +
       "The customer's query relates to order status and returns. I will draft a response grounded in the returns policy.",
     confidence: 0.91,
   });

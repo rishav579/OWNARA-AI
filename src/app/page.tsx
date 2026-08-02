@@ -14,13 +14,9 @@ import { TasksPage } from "@/components/app/pages/tasks";
 import { DecisionCenterPage } from "@/components/app/pages/decision-center";
 import { CommunicationPage } from "@/components/app/pages/communication";
 import { TrustCenterPage } from "@/components/app/pages/trust-center";
-import { KnowledgePage } from "@/components/app/pages/knowledge";
 import { AuditPage } from "@/components/app/pages/audit";
 import { SettingsPage } from "@/components/app/pages/settings";
 import { BillingPage } from "@/components/app/pages/billing";
-import { GovernancePage } from "@/components/app/pages/governance";
-import { IntegrationsPage } from "@/components/app/pages/integrations";
-import { WorkspaceAdminPage } from "@/components/app/pages/workspace-admin";
 import { FinancePage } from "@/components/app/pages/finance";
 import { LoadingScreen } from "@/components/app/loading-states";
 
@@ -91,20 +87,8 @@ function AppRouter() {
     case "trust-center":
       page = <TrustCenterPage />;
       break;
-    case "knowledge":
-      page = <KnowledgePage />;
-      break;
     case "audit":
       page = <AuditPage />;
-      break;
-    case "governance":
-      page = <GovernancePage />;
-      break;
-    case "integrations":
-      page = <IntegrationsPage />;
-      break;
-    case "workspace-admin":
-      page = <WorkspaceAdminPage />;
       break;
     case "finance":
       page = <FinancePage />;
