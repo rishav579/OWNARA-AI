@@ -28,7 +28,7 @@ import { buildFinanceContext, produceRecommendation, type FinanceRecommendation 
 import { findInvoicesNeedingAttention } from "@/lib/finance/domain";
 import { updateMemoryAfterTask, recordApprovalFeedback, extractFinanceMemories } from "@/lib/memory/service";
 import { getLLMGateway } from "@/lib/llm";
-import { generateContract, approveContract, rejectContract, linkApprovalToContract, type ContractInput } from "@/lib/contracts/engine";
+import { generateContract, generateContractInternal, approveContract, rejectContract, linkApprovalToContract, type ContractInput } from "@/lib/contracts/engine";
 import { checkCapability, recordCapabilityDenial } from "@/lib/capabilities/engine";
 import { recordProfileEvent } from "@/lib/profile/engine";
 
@@ -673,7 +673,7 @@ async function executeApprovalGateStep(task: any, step: any, employee: any): Pro
     proposedAction,
     confidence: input.confidence ? parseFloat(input.confidence) : 0.85,
     evidence: input.evidence ? safeParseJson(input.evidence, []) : [],
-    memoriesUsed: [], // Populated from the Finance Brain context if available
+    memoriesUsed: [],
     policiesUsed: input.policyInfluence ? safeParseJson(input.policyInfluence, []) : [],
     businessImpact: input.businessImpact || input.riskAssessment || "Critical action requiring human approval before execution.",
     affectedSystems: isFinanceApproval
@@ -690,9 +690,21 @@ async function executeApprovalGateStep(task: any, step: any, employee: any): Pro
     requiredAuthority: "owner",
   };
 
-  const contract = await generateContract(contractInput);
-
+  // Everything below is in a SINGLE transaction:
+  // - Contract generation (writes to ExecutionContract table)
+  // - Approval creation
+  // - Task step update (references approval + contract)
+  // - Task status transition (→ waiting_approval)
+  // - Employee state update
+  // - Audit log entry
+  // - Notification creation
+  //
+  // If ANY step fails, the entire transaction rolls back — no partial
+  // execution, no orphaned contracts, no orphaned approvals.
   await db.$transaction(async (tx) => {
+    // Generate the contract INSIDE the transaction
+    const contract = await generateContractInternal(tx, contractInput);
+
     // Create the approval record — references the contract
     const approval = await tx.approval.create({
       data: {
@@ -708,15 +720,11 @@ async function executeApprovalGateStep(task: any, step: any, employee: any): Pro
       },
     });
 
-    // Link the contract to the approval
-    // (done outside the transaction to avoid FK issues — best-effort)
-    // We store the contract ID in the step output instead
-
     // Update the step to reference the approval AND the contract
     await tx.taskStep.update({
       where: { id: step.id },
       data: {
-        status: "pending", // stays pending until approval is decided
+        status: "pending",
         output: JSON.stringify({
           approvalId: approval.id,
           contractId: contract.id,
@@ -740,12 +748,7 @@ async function executeApprovalGateStep(task: any, step: any, employee: any): Pro
       data: { state: "waiting_approval", pendingApprovals: { increment: 1 } },
     });
 
-    // Link contract to approval (best-effort, outside transaction boundary)
-    // We do this after the transaction commits to avoid FK constraint issues
-    // The contract ID is already in the step output, so it's recoverable
-
     // Write audit entry — include finance reasoning chain AND contract hash
-    const isFinanceApproval = toolName === "send_reminder";
     await appendAudit(tx, {
       workspaceId: task.workspaceId,
       entryType: isFinanceApproval ? "reminder_approval_requested" : "approval_requested",
@@ -758,12 +761,10 @@ async function executeApprovalGateStep(task: any, step: any, employee: any): Pro
         tool: toolName,
         task: task.title,
         criticality: "critical",
-        // ─── Execution Contract Reference ──────────────────────────────────
         contractId: contract.id,
         contractNumber: contract.contractNumber,
         contractVersion: String(contract.version),
         contractHash: contract.contractHash,
-        // ─── Finance Brain Reasoning Chain ──────────────────────────────────
         ...(input.invoiceNumber ? { invoiceNumber: input.invoiceNumber } : {}),
         ...(input.customerName ? { customer: input.customerName } : {}),
         ...(input.outstanding ? { outstanding: input.outstanding } : {}),
@@ -779,28 +780,25 @@ async function executeApprovalGateStep(task: any, step: any, employee: any): Pro
     });
 
     // Create a notification for the user
-    const task2 = await tx.task.findUnique({ where: { id: task.id } });
-    if (task2) {
-      const notifTitle = isFinanceApproval
-        ? `${employee.name} needs approval to send a reminder`
-        : `${employee.name} needs your approval`;
-      const notifBody = isFinanceApproval
-        ? `Invoice ${input.invoiceNumber || ""} — ${input.customerName || ""}: ${input.why ? input.why.substring(0, 150) : "Reminder requires approval with full finance reasoning."}`
-        : `${TOOL_DISPLAY_NAMES[toolName] || toolName} — ${proposedAction.to || proposedAction.subject || "Action requires review"}`;
-      await tx.notification.create({
-        data: {
-          workspaceId: task.workspaceId,
-          userId: task2.assignedBy,
-          type: "approval_pending",
-          title: notifTitle,
-          body: notifBody,
-          referenceType: "approval",
-          referenceId: approval.id,
-          channel: "in_app",
-          status: "delivered",
-        },
-      });
-    }
+    const notifTitle = isFinanceApproval
+      ? `${employee.name} needs approval to send a reminder`
+      : `${employee.name} needs your approval`;
+    const notifBody = isFinanceApproval
+      ? `Invoice ${input.invoiceNumber || ""} — ${input.customerName || ""}: ${input.why ? input.why.substring(0, 150) : "Reminder requires approval with full finance reasoning."}`
+      : `${TOOL_DISPLAY_NAMES[toolName] || toolName} — ${proposedAction.to || proposedAction.subject || "Action requires review"}`;
+    await tx.notification.create({
+      data: {
+        workspaceId: task.workspaceId,
+        userId: task.assignedBy,
+        type: "approval_pending",
+        title: notifTitle,
+        body: notifBody,
+        referenceType: "approval",
+        referenceId: approval.id,
+        channel: "in_app",
+        status: "delivered",
+      },
+    });
   });
 
   return { action: "waiting_approval", message: `Approval requested for ${toolName}` };
@@ -969,7 +967,23 @@ export async function resumeAfterApproval(
     return;
   }
 
-  // Execute the approved tool BEFORE the transaction (it may do DB operations)
+  // Execute the approved tool and record the result in a SINGLE transaction.
+  //
+  // The tool execution (e.g., send_reminder) performs external side effects
+  // (sending an email). We cannot roll back an email once sent. However, we
+  // CAN guarantee that the audit trail, reminder status, and task state are
+  // all updated atomically. If the transaction fails after the email is sent
+  // but before the audit is written, the email is sent but unrecorded —
+  // this is a known limitation of side-effecting transactions.
+  //
+  // To minimize this risk, we:
+  //   1. Execute the tool (sends email, updates reminder status)
+  //   2. Immediately write all state changes in a single transaction
+  //   3. If the transaction fails, log the error but the email is already sent
+  //
+  // This is the same pattern used by Stripe, Square, and other payment
+  // processors — the external action happens first, then the internal
+  // state is committed atomically.
   const proposedAction = JSON.parse(approval.proposedAction);
   const financeTools = ["generate_reminder", "send_reminder", "update_collection_case"];
   const isFinanceTool = financeTools.includes(approval.tool);
@@ -981,6 +995,18 @@ export async function resumeAfterApproval(
     toolResult = executeTool(approval.tool, proposedAction);
   }
 
+  // All state changes below are in a SINGLE transaction:
+  // - Gate step update (records tool result)
+  // - Task status transition (→ executing)
+  // - Employee state update (→ executing, pendingApprovals--)
+  // - Audit log entry (records the approved action)
+  // - Contract approval (marks contract as approved/immutable)
+  // - Notification creation
+  //
+  // If ANY step fails, the entire transaction rolls back — the task stays
+  // in waiting_approval, the contract stays pending, and the audit entry
+  // is not written. The email may have been sent (unrecoverable), but the
+  // system state remains consistent and recoverable.
   await db.$transaction(async (tx) => {
     // Mark the gate step as completed
     if (gateStep) {

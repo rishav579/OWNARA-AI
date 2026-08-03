@@ -163,6 +163,84 @@ export async function generateContract(input: ContractInput): Promise<ContractRe
 }
 
 /**
+ * Transactional version of generateContract.
+ * Accepts a Prisma transaction client so the contract creation is atomic
+ * with the rest of the executor's state changes.
+ *
+ * This prevents orphaned contracts if the approval creation or audit
+ * log write fails after the contract is generated.
+ */
+export async function generateContractInternal(
+  tx: Parameters<Parameters<typeof db["$transaction"]>[0]>[0],
+  input: ContractInput
+): Promise<ContractRecord> {
+  const lastContract = await tx.executionContract.findFirst({
+    where: { workspaceId: input.workspaceId },
+    orderBy: { generatedAt: "desc" },
+  });
+
+  let contractNumber: string;
+  if (lastContract) {
+    const match = lastContract.contractNumber.match(/EC-(\d+)/);
+    const nextNum = match ? parseInt(match[1]) + 1 : 1;
+    contractNumber = `EC-${String(nextNum).padStart(4, "0")}`;
+  } else {
+    contractNumber = "EC-0001";
+  }
+
+  const canonicalContent = buildCanonicalContent({
+    workspaceId: input.workspaceId,
+    taskId: input.taskId,
+    employeeId: input.employeeId,
+    contractNumber,
+    version: 1,
+    goal: input.goal,
+    proposedAction: input.proposedAction,
+    confidence: input.confidence,
+    evidence: input.evidence,
+    memoriesUsed: input.memoriesUsed,
+    policiesUsed: input.policiesUsed,
+    businessImpact: input.businessImpact,
+    affectedSystems: input.affectedSystems,
+    rollbackPlan: input.rollbackPlan,
+    estimatedBusinessOutcome: input.estimatedBusinessOutcome,
+    estimatedTokenCost: input.estimatedTokenCost,
+    estimatedExecutionTime: input.estimatedExecutionTime,
+    requiredAuthority: input.requiredAuthority,
+    generatedAt: new Date().toISOString(),
+  });
+
+  const contractHash = hashContent(canonicalContent);
+
+  const contract = await tx.executionContract.create({
+    data: {
+      workspaceId: input.workspaceId,
+      taskId: input.taskId,
+      employeeId: input.employeeId,
+      contractNumber,
+      version: 1,
+      status: "pending_approval",
+      goal: input.goal,
+      proposedAction: JSON.stringify(input.proposedAction),
+      confidence: input.confidence,
+      evidence: JSON.stringify(input.evidence),
+      memoriesUsed: JSON.stringify(input.memoriesUsed),
+      policiesUsed: JSON.stringify(input.policiesUsed),
+      businessImpact: input.businessImpact,
+      affectedSystems: JSON.stringify(input.affectedSystems),
+      rollbackPlan: input.rollbackPlan,
+      estimatedBusinessOutcome: input.estimatedBusinessOutcome,
+      estimatedTokenCost: input.estimatedTokenCost,
+      estimatedExecutionTime: input.estimatedExecutionTime,
+      requiredAuthority: input.requiredAuthority,
+      contractHash,
+    },
+  });
+
+  return serializeContract(contract);
+}
+
+/**
  * Creates a new version of an existing contract (V2, V3, etc.).
  * The old version is marked as "superseded". The new version starts
  * as "pending_approval".
