@@ -3,10 +3,19 @@ import jwt from "jsonwebtoken";
 import { db } from "@/lib/db";
 import { cookies } from "next/headers";
 
-// Hard-fail if JWT_SECRET is not set in production. Never silently fall back.
-const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === "production"
-  ? (() => { throw new Error("JWT_SECRET environment variable is required in production."); })()
+// JWT secret: hard-fail at runtime in production, allow placeholder during build.
+// Next.js builds with NODE_ENV=production, so we check for the build phase
+// via the presence of __NEXT_BUILD_PHASE or by using a lazy getter.
+const _jwtSecret = process.env.JWT_SECRET || (process.env.NODE_ENV === "production"
+  ? "build-time-placeholder" // Will be overridden by runtime env. If not, token verification fails safely.
   : "dev-secret-not-for-production");
+
+function getJWTSecret(): string {
+  if (process.env.NODE_ENV === "production" && (!process.env.JWT_SECRET || process.env.JWT_SECRET === "build-time-placeholder")) {
+    throw new Error("JWT_SECRET environment variable is required in production.");
+  }
+  return _jwtSecret;
+}
 const ACCESS_TOKEN_TTL = 60 * 15; // 15 minutes
 const REFRESH_TOKEN_TTL = 60 * 60 * 24 * 7; // 7 days
 
@@ -40,20 +49,20 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 }
 
 export function signAccessToken(payload: Omit<JwtPayload, "type" | "iat" | "exp">): string {
-  return jwt.sign({ ...payload, type: "access" }, JWT_SECRET, {
+  return jwt.sign({ ...payload, type: "access" }, getJWTSecret(), {
     expiresIn: ACCESS_TOKEN_TTL,
   });
 }
 
 export function signRefreshToken(payload: Omit<JwtPayload, "type" | "iat" | "exp">): string {
-  return jwt.sign({ ...payload, type: "refresh" }, JWT_SECRET, {
+  return jwt.sign({ ...payload, type: "refresh" }, getJWTSecret(), {
     expiresIn: REFRESH_TOKEN_TTL,
   });
 }
 
 export function verifyToken(token: string): JwtPayload | null {
   try {
-    return jwt.verify(token, JWT_SECRET) as JwtPayload;
+    return jwt.verify(token, getJWTSecret()) as JwtPayload;
   } catch {
     return null;
   }
