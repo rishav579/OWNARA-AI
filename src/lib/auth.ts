@@ -143,6 +143,59 @@ export async function requireWorkspace(request?: Request): Promise<{ user: AuthU
   return { user, workspaceId: user.workspaceId };
 }
 
+// ─── RBAC ────────────────────────────────────────────────────────────────────
+
+export type WorkspaceRole = "owner" | "manager" | "finance" | "viewer";
+
+const ROLE_PERMISSIONS: Record<WorkspaceRole, Set<string>> = {
+  owner: new Set([
+    "workspace.manage", "employees.manage", "employees.read", "tasks.create", "tasks.read",
+    "approvals.decide", "approvals.read", "finance.read", "finance.manage",
+    "audit.read", "communications.read", "communications.manage",
+    "billing.read", "settings.manage", "workspace.delete",
+  ]),
+  manager: new Set([
+    "employees.read", "tasks.create", "tasks.read", "approvals.decide", "approvals.read",
+    "finance.read", "audit.read", "communications.read", "communications.manage",
+    "billing.read",
+  ]),
+  finance: new Set([
+    "employees.read", "tasks.read", "approvals.decide", "approvals.read",
+    "finance.read", "finance.manage", "audit.read", "communications.read",
+  ]),
+  viewer: new Set([
+    "employees.read", "tasks.read", "approvals.read", "finance.read",
+    "audit.read", "communications.read",
+  ]),
+};
+
+/**
+ * Checks if the user's role has the required permission.
+ * Returns true if the user is an owner (always allowed).
+ */
+export function hasPermission(role: string | undefined, permission: string): boolean {
+  if (!role) return false;
+  if (role === "owner") return true; // Owner has all permissions
+  const perms = ROLE_PERMISSIONS[role as WorkspaceRole];
+  if (!perms) return false;
+  return perms.has(permission);
+}
+
+/**
+ * Requires the user to have a specific permission.
+ * Throws AuthError (403) if the user's role doesn't have the permission.
+ */
+export async function requirePermission(
+  request: Request,
+  permission: string
+): Promise<{ user: AuthUser; workspaceId: string }> {
+  const { user, workspaceId } = await requireWorkspace(request);
+  if (!hasPermission(user.role, permission)) {
+    throw new AuthError("FORBIDDEN", `Your role (${user.role || "unknown"}) does not have permission: ${permission}`, 403);
+  }
+  return { user, workspaceId };
+}
+
 export class AuthError extends Error {
   code: string;
   status: number;

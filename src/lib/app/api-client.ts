@@ -78,16 +78,37 @@ export async function apiFetch<T = any>(
   return json.data as T;
 }
 
+// Refresh token storage (stored in memory, set at login)
+let refreshToken: string | null = null;
+
+export function setRefreshToken(token: string | null) {
+  refreshToken = token;
+}
+
 let refreshPromise: Promise<boolean> | null = null;
 
 async function tryRefresh(): Promise<boolean> {
   if (refreshPromise) return refreshPromise;
+  if (!refreshToken) return false;
 
   refreshPromise = (async () => {
     try {
-      // For demo: re-login isn't available, so we just fail.
-      // In production, this would call /api/auth/refresh with the refresh token cookie.
-      // For now, the app keeps the token in memory for the session.
+      const res = await fetch("/api/auth/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken }),
+      });
+
+      if (!res.ok) return false;
+
+      const json = await res.json();
+      if (!json.success || !json.data.accessToken) return false;
+
+      accessToken = json.data.accessToken;
+      refreshToken = json.data.refreshToken;
+      window.sessionStorage.setItem("bihari_token", accessToken);
+      return true;
+    } catch {
       return false;
     } finally {
       refreshPromise = null;

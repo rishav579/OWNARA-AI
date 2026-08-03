@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
-import { api, setAccessToken, setCurrentUser, setAuthFailureHandler } from "./api-client";
+import { api, setAccessToken, setCurrentUser, setAuthFailureHandler, setRefreshToken } from "./api-client";
 
 // ─── Router ──────────────────────────────────────────────────────────────────
 
@@ -102,6 +102,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   const login = useCallback(async (email: string, password: string) => {
     const res = await api.auth.login(email, password);
     setAccessToken(res.accessToken);
+    setRefreshToken(res.refreshToken || null);
     window.sessionStorage.setItem("bihari_token", res.accessToken);
     const ws = res.workspaces[0];
     const fullUser = {
@@ -118,6 +119,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   const signup = useCallback(async (data: { email: string; password: string; name: string; workspaceName: string }) => {
     const res = await api.auth.signup(data);
     setAccessToken(res.accessToken);
+    setRefreshToken(res.refreshToken || null);
     window.sessionStorage.setItem("bihari_token", res.accessToken);
     const fullUser = {
       ...res.user,
@@ -137,6 +139,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       // ignore
     }
     setAccessToken(null);
+    setRefreshToken(null);
     setCurrentUser(null);
     setUser(null);
     window.sessionStorage.removeItem("bihari_token");

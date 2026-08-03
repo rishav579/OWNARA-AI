@@ -335,17 +335,44 @@ export async function executeFinanceTool(
         };
       }
 
+      // Send the actual email via SMTP
+      const customer = await db.customer.findUnique({
+        where: { id: reminder.customerId },
+        select: { email: true, name: true },
+      });
+
+      let emailSent = false;
+      let emailError: string | undefined;
+
+      if (customer?.email) {
+        const { sendReminderEmail } = await import("@/lib/email/service");
+        const result = await sendReminderEmail({
+          to: customer.email,
+          customerName: customer.name,
+          subject: reminder.subject,
+          body: reminder.body,
+        });
+        emailSent = result.sent;
+        emailError = result.error;
+      }
+
+      // Update reminder status regardless — the approval was given,
+      // the email was attempted. If it failed, the error is recorded.
       await db.reminder.update({
         where: { id: reminder.id },
-        data: { status: "sent", sentAt: new Date() },
+        data: {
+          status: emailSent ? "sent" : "failed",
+          sentAt: emailSent ? new Date() : null,
+        },
       });
 
       return {
         output: {
           reminderId: reminder.id,
-          status: "sent",
-          sentTo: toolInput.customerEmail || "",
+          status: emailSent ? "sent" : "failed",
+          sentTo: customer?.email || "",
           subject: reminder.subject,
+          emailError: emailError || undefined,
         },
         tokens: 200,
         durationMs: Date.now() - start + 800,

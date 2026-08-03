@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { hashPassword, verifyPassword, signAccessToken, signRefreshToken, hashToken } from "@/lib/auth";
 import { success, error, handleApiError, parseBody } from "@/lib/api-response";
+import { checkAuthRateLimit } from "@/lib/rate-limiter";
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -11,6 +12,12 @@ const loginSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
+    // Rate limit: 10 auth attempts per minute per IP
+    const rateLimit = checkAuthRateLimit(request);
+    if (!rateLimit.allowed) {
+      return error("RATE_LIMITED", "Too many login attempts. Please try again in a minute.", 429);
+    }
+
     const body = await parseBody<z.infer<typeof loginSchema>>(request);
     const { email, password } = loginSchema.parse(body);
 
