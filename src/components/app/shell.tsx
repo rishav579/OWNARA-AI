@@ -45,7 +45,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
       { path: "dashboard", label: "Dashboard", icon: LayoutDashboard },
       { path: "delegate", label: "Delegate Work", icon: Send },
       { path: "employees", label: "Employees", icon: Bot },
-      { path: "approvals", label: "Decision Center", icon: ShieldCheck, badge: 2 },
+      { path: "approvals", label: "Decision Center", icon: ShieldCheck },
       { path: "communication", label: "Communication", icon: MessageSquare },
       { path: "tasks", label: "Tasks", icon: ListTodo },
     ],
@@ -84,6 +84,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     queryFn: () => api.notifications.list(),
     refetchInterval: 30000,
   });
+
+  // Dynamic pending approvals count for the Decision Center badge
+  const { data: pendingApprovals = [] } = useQuery({
+    queryKey: ["approvals", "pending"],
+    queryFn: () => api.approvals.pending(),
+    refetchInterval: 15000,
+  });
+  const pendingCount = pendingApprovals.length;
 
   const currentPath = route.segments[0] ?? "dashboard";
   const unreadCount = notifications.filter((n) => !n.read).length;
@@ -133,9 +141,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       )}
                     />
                     <span className="flex-1 text-left font-medium">{item.label}</span>
-                    {item.badge && (
+                    {item.path === "approvals" && pendingCount > 0 && (
                       <span className="flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-amber-500 px-1.5 text-[0.65rem] font-bold text-amber-950">
-                        {item.badge}
+                        {pendingCount}
                       </span>
                     )}
                   </button>

@@ -44,6 +44,7 @@ import {
   Lightbulb,
   XCircle,
   Loader2,
+  Send,
 } from "lucide-react";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -472,10 +473,10 @@ export function DashboardPage() {
       <section>
         <SectionHeader title="Quick Actions" />
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          <QuickAction icon={IndianRupee} label="Recover Invoices" description="View overdue receivables" onClick={() => navigate("finance")} />
-          <QuickAction icon={ShieldCheck} label="Review Approvals" description={`${pending.length} pending`} onClick={() => navigate("approvals")} disabled={pending.length === 0} />
+          <QuickAction icon={Send} label="Delegate Work" description="Assign work to Kavya" onClick={() => navigate("delegate")} primary />
+          <QuickAction icon={ShieldCheck} label="Review Decisions" description={`${pending.length} pending`} onClick={() => navigate("approvals")} disabled={pending.length === 0} />
+          <QuickAction icon={IndianRupee} label="View Receivables" description="AR aging & invoices" onClick={() => navigate("finance")} />
           <QuickAction icon={Upload} label="Upload Invoices" description="Import CSV data" onClick={() => navigate("onboarding")} />
-          <QuickAction icon={Bot} label="Hire Employee" description="Expand your workforce" onClick={() => navigate("employees")} />
           <QuickAction icon={Activity} label="View Tasks" description={`${dash.tasks.inProgress + dash.tasks.waitingApproval} active`} onClick={() => navigate("tasks")} />
         </div>
       </section>
@@ -705,20 +706,32 @@ function QuickAction({
   description,
   onClick,
   disabled,
+  primary,
 }: {
   icon: any;
   label: string;
   description: string;
   onClick: () => void;
   disabled?: boolean;
+  primary?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      className="group flex flex-col items-start gap-2 rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 text-left transition-all hover:border-emerald-500/40 hover:bg-zinc-900 disabled:opacity-40 disabled:hover:border-zinc-800 disabled:hover:bg-zinc-900/50"
+      className={cn(
+        "group flex flex-col items-start gap-2 rounded-xl border p-4 text-left transition-all disabled:opacity-40 disabled:hover:border-zinc-800 disabled:hover:bg-zinc-900/50",
+        primary
+          ? "border-emerald-500/40 bg-emerald-500/5 hover:border-emerald-500/60 hover:bg-emerald-500/10"
+          : "border-zinc-800 bg-zinc-900/50 hover:border-emerald-500/40 hover:bg-zinc-900"
+      )}
     >
-      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400 transition-colors group-hover:bg-emerald-500/20">
+      <div className={cn(
+        "flex h-9 w-9 items-center justify-center rounded-lg transition-colors",
+        primary
+          ? "bg-emerald-500/20 text-emerald-400 group-hover:bg-emerald-500/30"
+          : "bg-emerald-500/10 text-emerald-400 group-hover:bg-emerald-500/20"
+      )}>
         <Icon className="h-4.5 w-4.5" />
       </div>
       <div>

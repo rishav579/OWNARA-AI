@@ -834,3 +834,41 @@ Stage Summary:
 - 2 files created (delegate-work.tsx 301 lines + progress-timeline.tsx 160 lines), both under 200 lines after accounting for the main page being a composition root.
 - Uses existing POST /api/tasks and GET /api/tasks/[id] APIs — no backend changes, no mock data.
 - Founder identity fixed (Rishav Raj). PostgreSQL re-provisioned. Worker running.
+
+---
+Task ID: FINANCE-EXPERIENCE-AUDIT
+Agent: Z.ai Code (Founding Product Engineer + Staff Software Architect)
+Task: Audit the ENTIRE Finance Employee experience from login to completed task. Identify every place where the experience feels unfinished, confusing, untrustworthy, or not enterprise-grade. Implement ONLY Critical and High improvements. No new employees, no placeholders, no "Coming Soon".
+
+Work Log:
+- Browser-tested full workflow: login → dashboard → delegate work → decision center → finance → employees → audit → settings.
+- Found 7 Critical/High issues. Implemented all fixes:
+
+  CRITICAL 1 — Seed created 4 employees (Saanvi/Arjun/Meera/Kavya), only Kavya should exist:
+    Fix: Rewrote seed.ts to remove CSA/SDR/RA templates, remove Saanvi/Arjun/Meera employee creation, fix tool permissions loop to only [kavya], remove non-finance knowledge docs, fix departments to only "Finance", fix profile init to only Kavya. Now seeds exactly 1 employee (Kavya) + 1 template + 1 department.
+
+  CRITICAL 2 — Decision Center badge hardcoded to "2" (always shows even with 0 pending):
+    Fix: Removed hardcoded `badge: 2` from shell.tsx NAV_GROUPS. Added useQuery for pending approvals (refetch 15s). Badge now renders dynamically: shows count only when pendingCount > 0, shows nothing when 0.
+
+  CRITICAL 3 — Employee state shows "Idle" (implies broken/inactive):
+    Fix: Updated EmployeeStateBadge in ui.tsx: "Idle" → "Available", "Planning" → "Working", "Executing" → "Working".
+
+  HIGH 4 — Employee title "Lv1 Intern" is not enterprise language:
+    Fix: Updated LEVELS in profile/engine.ts: "Intern" → "Associate", "Junior Employee" → "Junior Analyst", "Employee" → "Analyst", "Senior Employee" → "Senior Analyst", "Lead Employee" → "Lead Analyst", "Principal Employee" → "Principal Analyst", "Expert Employee" → "Expert Analyst".
+
+  HIGH 5 — Finance page disconnected from the employee managing receivables:
+    Fix: Added Kavya banner to finance.tsx — shows avatar, name, "Available" state, "managing receivables & collections", trust score. Clickable → navigates to Kavya's profile. Description changed from "powered by the AI Finance Employee" to "managed by Kavya".
+
+  HIGH 6 — No "Delegate Work" CTA on the dashboard:
+    Fix: Added "Delegate Work" as the first Quick Action on the dashboard (with `primary` prop for emerald highlight). Reordered: Delegate Work (primary) → Review Decisions → View Receivables → Upload Invoices → View Tasks. Removed "Hire Employee" quick action (not a finance workflow action). Added `primary` prop to QuickAction component with conditional emerald border/background styling.
+
+  HIGH 7 — Audit page empty after fresh seed (trust trail not visible):
+    Fix: Added 4 initial audit entries to seed.ts using appendAudit in a $transaction: workspace_created, employee_hired, customers_imported, invoices_imported. All hash-chained. Audit Timeline now shows 4 entries on first login.
+
+- Re-provisioned PostgreSQL 17 (was lost across sessions). Re-seeded with only Kavya.
+- Verification: lint 0 errors. Browser-verified: dashboard shows "Available" + "Associate" (not "Idle" + "Intern"), Delegate Work CTA is primary first action, Decision Center badge is dynamic (gone when 0 pending), Employees page shows only Kavya, Finance page shows Kavya banner, Audit page shows 4 hash-chained entries. Zero errors.
+
+Stage Summary:
+- 7 Critical/High issues fixed: seed cleaned to 1 employee, dynamic badge, "Available" status, enterprise titles, finance-employee connection, Delegate Work CTA, audit trail seeded.
+- Files modified: scripts/seed.ts, src/components/app/ui.tsx, src/lib/profile/engine.ts, src/components/app/shell.tsx, src/components/app/pages/dashboard.tsx, src/components/app/pages/finance.tsx.
+- The Finance Employee experience now feels enterprise-grade: one focused employee (Kavya), correct status language, connected finance data, prominent delegation CTA, visible trust trail.

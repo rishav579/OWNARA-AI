@@ -82,13 +82,13 @@ const XP_REWARDS: Record<string, number> = {
 };
 
 const LEVELS = [
-  { level: 1, title: "Intern", minXp: 0 },
-  { level: 2, title: "Junior Employee", minXp: 50 },
-  { level: 3, title: "Employee", minXp: 150 },
-  { level: 4, title: "Senior Employee", minXp: 350 },
-  { level: 5, title: "Lead Employee", minXp: 700 },
-  { level: 6, title: "Principal Employee", minXp: 1200 },
-  { level: 7, title: "Expert Employee", minXp: 2000 },
+  { level: 1, title: "Associate", minXp: 0 },
+  { level: 2, title: "Junior Analyst", minXp: 50 },
+  { level: 3, title: "Analyst", minXp: 150 },
+  { level: 4, title: "Senior Analyst", minXp: 350 },
+  { level: 5, title: "Lead Analyst", minXp: 700 },
+  { level: 6, title: "Principal Analyst", minXp: 1200 },
+  { level: 7, title: "Expert Analyst", minXp: 2000 },
 ];
 
 function getLevelForXp(xp: number): { level: number; title: string } {

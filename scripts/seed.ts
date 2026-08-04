@@ -89,59 +89,8 @@ async function main() {
   console.log("  ✓ Created workspace: Acme Trading");
 
   // ─── Templates ────────────────────────────────────────────────────────────
-  const csaTemplate = await db.employeeTemplate.create({
-    data: {
-      name: "Customer Support Agent",
-      role: "customer_support_agent",
-      description: "Drafts and routes customer replies under human approval.",
-      defaultJobDescription:
-        "Draft replies to customer queries about orders, returns, and product information. Route complex billing issues to the finance team. Always ground responses in the returns policy and FAQ documents.",
-      defaultApprovalRules: JSON.stringify({
-        send_email: "critical",
-        draft_response: "non_critical",
-        search_knowledge: "non_critical",
-        summarize: "non_critical",
-      }),
-      defaultToolNames: JSON.stringify(["draft_response", "send_email", "search_knowledge", "summarize"]),
-      version: 1,
-      isActive: true,
-    },
-  });
-  const sdrTemplate = await db.employeeTemplate.create({
-    data: {
-      name: "Sales Development Rep",
-      role: "sales_development_representative",
-      description: "Researches prospects and drafts personalized outreach emails.",
-      defaultJobDescription:
-        "Research prospects from LinkedIn and company websites. Draft personalized outreach emails. Follow up on replies and schedule demos. Maintain CRM hygiene.",
-      defaultApprovalRules: JSON.stringify({
-        send_email: "critical",
-        draft_response: "non_critical",
-        search_knowledge: "non_critical",
-        summarize: "non_critical",
-      }),
-      defaultToolNames: JSON.stringify(["draft_response", "send_email", "search_knowledge", "summarize"]),
-      version: 1,
-      isActive: true,
-    },
-  });
-  const raTemplate = await db.employeeTemplate.create({
-    data: {
-      name: "Research Analyst",
-      role: "research_analyst",
-      description: "Researches market trends and produces briefings for leadership.",
-      defaultJobDescription:
-        "Research market trends, competitor moves, and industry reports. Summarize findings into briefings for the leadership team. Maintain a research knowledge base.",
-      defaultApprovalRules: JSON.stringify({
-        draft_response: "non_critical",
-        search_knowledge: "non_critical",
-        summarize: "non_critical",
-      }),
-      defaultToolNames: JSON.stringify(["search_knowledge", "summarize", "draft_response"]),
-      version: 1,
-      isActive: true,
-    },
-  });
+  // V1 ships only the Finance Employee template. Future employee templates
+  // (Support, Sales, Research) will be added in later versions.
   const feTemplate = await db.employeeTemplate.create({
     data: {
       name: "Finance Employee",
@@ -160,7 +109,7 @@ async function main() {
       isActive: true,
     },
   });
-  console.log("  ✓ Created 4 employee templates");
+  console.log("  ✓ Created Finance Employee template");
 
   // ─── Tools ────────────────────────────────────────────────────────────────
   const tools = await Promise.all(
@@ -178,91 +127,7 @@ async function main() {
   console.log("  ✓ Created 7 tools (4 generic + 3 finance)");
 
   // ─── Employees ────────────────────────────────────────────────────────────
-  const saanvi = await db.employee.create({
-    data: {
-      workspaceId: workspace.id,
-      name: "Saanvi",
-      role: "customer_support_agent",
-      templateId: csaTemplate.id,
-      status: "active",
-      state: "idle",
-      jobDescription:
-        "Draft replies to customer queries about orders, returns, and product information. Route complex billing issues to the finance team. Always ground responses in the returns policy and FAQ documents.",
-      boundaries: JSON.stringify([
-        "Never process refunds directly — route to finance",
-        "Maximum 50 emails per day",
-        "Never share internal pricing with customers",
-        "Always cite the source document for policy answers",
-      ]),
-      approvalRules: JSON.stringify({
-        send_email: "critical",
-        draft_response: "non_critical",
-        search_knowledge: "non_critical",
-        summarize: "non_critical",
-      }),
-      tools: JSON.stringify(["draft_response", "send_email", "search_knowledge", "summarize"]),
-      tokenCap: 5000000,
-      createdBy: rohit.id,
-      activatedAt: new Date(),
-    },
-  });
-
-  const arjun = await db.employee.create({
-    data: {
-      workspaceId: workspace.id,
-      name: "Arjun",
-      role: "sales_development_representative",
-      templateId: sdrTemplate.id,
-      status: "active",
-      state: "idle",
-      jobDescription:
-        "Research prospects from LinkedIn and company websites. Draft personalized outreach emails. Follow up on replies and schedule demos. Maintain CRM hygiene.",
-      boundaries: JSON.stringify([
-        "Never make pricing commitments",
-        "Maximum 30 outreach emails per day",
-        "Always verify prospect title before outreach",
-        "Never contact competitors' employees",
-      ]),
-      approvalRules: JSON.stringify({
-        send_email: "critical",
-        draft_response: "non_critical",
-        search_knowledge: "non_critical",
-        summarize: "non_critical",
-      }),
-      tools: JSON.stringify(["draft_response", "send_email", "search_knowledge", "summarize"]),
-      tokenCap: 5000000,
-      createdBy: rohit.id,
-      activatedAt: new Date(),
-    },
-  });
-
-  const meera = await db.employee.create({
-    data: {
-      workspaceId: workspace.id,
-      name: "Meera",
-      role: "research_analyst",
-      templateId: raTemplate.id,
-      status: "active",
-      state: "idle",
-      jobDescription:
-        "Research market trends, competitor moves, and industry reports. Summarize findings into briefings for the leadership team. Maintain a research knowledge base.",
-      boundaries: JSON.stringify([
-        "Only use publicly available sources",
-        "Never access paid databases without approval",
-        "Cite all sources",
-        "Maximum 5 research briefings per week",
-      ]),
-      approvalRules: JSON.stringify({
-        draft_response: "non_critical",
-        search_knowledge: "non_critical",
-        summarize: "non_critical",
-      }),
-      tools: JSON.stringify(["search_knowledge", "summarize", "draft_response"]),
-      tokenCap: 3000000,
-      createdBy: rohit.id,
-      activatedAt: new Date(),
-    },
-  });
+  // V1 ships only Kavya — the Finance Employee.
 
   // Finance Employee — processes overdue invoices and collections
   const kavya = await db.employee.create({
@@ -294,10 +159,10 @@ async function main() {
       activatedAt: new Date(),
     },
   });
-  console.log("  ✓ Created 4 active employees (3 generic + 1 finance)");
+  console.log("  ✓ Created Kavya (Finance Employee)");
 
   // ─── Tool permissions ────────────────────────────────────────────────────
-  for (const emp of [saanvi, arjun, meera, kavya]) {
+  for (const emp of [kavya]) {
     const toolNames: string[] = JSON.parse(emp.tools);
     for (const toolName of toolNames) {
       const tool = tools.find((t) => t.name === toolName);
@@ -448,11 +313,8 @@ async function main() {
 
   // ─── Knowledge documents ──────────────────────────────────────────────────
   const docs = [
-    { filename: "returns-policy.pdf", contentType: "application/pdf", sizeBytes: 184320, status: "ready", chunkCount: 24, employeeId: saanvi.id },
-    { filename: "product-catalog-2025.pdf", contentType: "application/pdf", sizeBytes: 2456789, status: "ready", chunkCount: 156, employeeId: saanvi.id },
-    { filename: "faq-knowledge-base.md", contentType: "text/markdown", sizeBytes: 45200, status: "ready", chunkCount: 18, employeeId: saanvi.id },
-    { filename: "competitor-analysis-q4.docx", contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", sizeBytes: 892400, status: "ready", chunkCount: 67, employeeId: meera.id },
-    { filename: "sales-playbook-2025.pdf", contentType: "application/pdf", sizeBytes: 1204500, status: "ready", chunkCount: 89, employeeId: arjun.id },
+    { filename: "credit-policy-2025.pdf", contentType: "application/pdf", sizeBytes: 184320, status: "ready", chunkCount: 24, employeeId: kavya.id },
+    { filename: "collection-playbook.pdf", contentType: "application/pdf", sizeBytes: 245678, status: "ready", chunkCount: 31, employeeId: kavya.id },
   ];
   for (const d of docs) {
     await db.knowledgeDocument.create({
@@ -472,19 +334,19 @@ async function main() {
   console.log(`  ✓ Created ${docs.length} knowledge documents`);
 
   // ─── Departments ──────────────────────────────────────────────────────────
-  for (const name of ["Customer Support", "Sales", "Research", "Finance"]) {
+  for (const name of ["Finance"]) {
     const existing = await db.department.findFirst({ where: { workspaceId: workspace.id, name } });
     if (!existing) {
       await db.department.create({
         data: {
           workspaceId: workspace.id,
           name,
-          description: name === "Customer Support" ? "Tier 1 & 2 customer query resolution" : name === "Sales" ? "Outbound prospecting and account management" : name === "Research" ? "Market intelligence and competitive analysis" : "Billing, refunds, and financial operations",
+          description: "Billing, refunds, and financial operations",
         },
       });
     }
   }
-  console.log("  ✓ Created 4 departments");
+  console.log("  ✓ Created Finance department");
 
   // ─── Capabilities ────────────────────────────────────────────────────────
   const { seedCapabilities, grantFinanceCapabilities, FINANCE_CAPABILITIES } = await import("../src/lib/capabilities/engine");
@@ -497,17 +359,61 @@ async function main() {
 
   // ─── Initialize Employee Profiles ────────────────────────────────────────
   const { initProfile } = await import("../src/lib/profile/engine");
-  await initProfile(saanvi.id, workspace.id, "customer_support_agent", "Customer Support");
-  await initProfile(arjun.id, workspace.id, "sales_development_representative", "Sales");
-  await initProfile(meera.id, workspace.id, "research_analyst", "Research");
   await initProfile(kavya.id, workspace.id, "finance_employee", "Finance");
-  console.log("  ✓ Initialized employee profiles for all 4 employees");
+  console.log("  ✓ Initialized Kavya's profile");
+
+  // ─── Initial Audit Trail ──────────────────────────────────────────────────
+  // Seed audit entries so the trust trail is visible from first login.
+  const { appendAudit } = await import("../src/lib/runtime/audit");
+  await db.$transaction(async (tx) => {
+    await appendAudit(tx, {
+      workspaceId: workspace.id,
+      entryType: "workspace_created",
+      actorType: "user",
+      actorId: rohit.id,
+      actorName: rohit.name,
+      targetType: "workspace",
+      targetId: workspace.id,
+      payload: { name: workspace.name, slug: workspace.slug },
+    });
+    await appendAudit(tx, {
+      workspaceId: workspace.id,
+      entryType: "employee_hired",
+      actorType: "user",
+      actorId: rohit.id,
+      actorName: rohit.name,
+      targetType: "employee",
+      targetId: kavya.id,
+      payload: { name: kavya.name, role: "finance_employee" },
+    });
+    await appendAudit(tx, {
+      workspaceId: workspace.id,
+      entryType: "customers_imported",
+      actorType: "user",
+      actorId: rohit.id,
+      actorName: rohit.name,
+      targetType: "workspace",
+      targetId: workspace.id,
+      payload: { count: String(customerRecords.length) },
+    });
+    await appendAudit(tx, {
+      workspaceId: workspace.id,
+      entryType: "invoices_imported",
+      actorType: "user",
+      actorId: rohit.id,
+      actorName: rohit.name,
+      targetType: "workspace",
+      targetId: workspace.id,
+      payload: { count: String(invoiceRecords.length) },
+    });
+  });
+  console.log("  ✓ Seeded initial audit trail (4 entries)");
 
   console.log("\n✅ Clean V1 seed complete!");
   console.log("   Login: rishav@acmetrading.in / demo-password");
   console.log("   Workspace: acme-trading");
-  console.log("   No tasks, steps, approvals, or audit logs seeded.");
-  console.log("   Create a task in the UI and the worker will execute it live.");
+  console.log("   1 Finance Employee (Kavya), 5 customers, 8 invoices, audit trail seeded.");
+  console.log("   Delegate work from the UI and the worker will execute it live.");
 }
 
 main()

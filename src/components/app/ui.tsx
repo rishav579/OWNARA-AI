@@ -38,10 +38,10 @@ export function EmployeeStatusBadge({ status }: { status: EmployeeStatus }) {
 
 export function EmployeeStateBadge({ state }: { state: EmployeeState }) {
   const config: Record<EmployeeState, { label: string; cls: string }> = {
-    idle: { label: "Idle", cls: "text-zinc-400" },
+    idle: { label: "Available", cls: "text-zinc-400" },
     assigned: { label: "Assigned", cls: "text-sky-400" },
-    planning: { label: "Planning", cls: "text-violet-400" },
-    executing: { label: "Executing", cls: "text-emerald-400" },
+    planning: { label: "Working", cls: "text-violet-400" },
+    executing: { label: "Working", cls: "text-emerald-400" },
     waiting_approval: { label: "Waiting Approval", cls: "text-amber-400" },
     completed: { label: "Completed", cls: "text-emerald-400" },
     failed: { label: "Failed", cls: "text-red-400" },

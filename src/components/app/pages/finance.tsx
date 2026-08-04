@@ -7,6 +7,8 @@ import { useQuery } from "@tanstack/react-query";
 import {
   PageHeader,
   StatCard,
+  Avatar,
+  EmployeeStateBadge,
   ErrorState,
   ListSkeleton,
   TableSkeleton,
@@ -42,13 +44,48 @@ function formatINR(paise: number): string {
 
 export function FinancePage() {
   const [tab, setTab] = useState<(typeof TABS)[number]["id"]>("overview");
+  const { navigate } = useRouter();
+
+  // Fetch the Finance Employee to connect receivables to the employee managing them
+  const { data: employees = [] } = useQuery({
+    queryKey: ["employees", "finance"],
+    queryFn: () => api.employees.list({ status: "active" }),
+  });
+  const kavya = employees.find((e: any) => e.role === "finance_employee") || employees[0];
 
   return (
     <div>
       <PageHeader
         title="Finance"
-        description="Accounts Receivable & Collections — powered by the AI Finance Employee"
+        description="Accounts Receivable & Collections — managed by Kavya"
       />
+
+      {/* Employee banner — connects finance data to the AI Employee managing it */}
+      {kavya && (
+        <button
+          onClick={() => navigate(`employees/${kavya.id}`)}
+          className="mb-5 flex w-full items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 text-left transition-colors hover:border-zinc-700 hover:bg-zinc-900"
+        >
+          <Avatar name={kavya.name} color={kavya.avatarColor} size="md" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-zinc-100">{kavya.name}</span>
+              <EmployeeStateBadge state={kavya.state} />
+            </div>
+            <p className="text-xs text-zinc-500">{kavya.roleName} · managing receivables & collections</p>
+          </div>
+          <div className="text-right">
+            <div className={cn(
+              "text-sm font-bold",
+              kavya.trustScore >= 80 ? "text-emerald-400" :
+              kavya.trustScore >= 60 ? "text-amber-400" : "text-red-400"
+            )}>
+              {kavya.trustScore?.toFixed(0) || "—"}
+            </div>
+            <div className="text-[0.55rem] text-zinc-600">trust</div>
+          </div>
+        </button>
+      )}
 
       {/* Tabs */}
       <div className="mb-5 flex gap-1 overflow-x-auto rounded-lg border border-zinc-800 bg-zinc-900/50 p-1 sm:w-fit">
