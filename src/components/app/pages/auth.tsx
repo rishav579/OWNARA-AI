@@ -9,9 +9,9 @@ export function AuthPage() {
   const { navigate } = useRouter();
   const { login, signup } = useAuth();
   const [mode, setMode] = useState<"login" | "signup">("login");
-  const [email, setEmail] = useState("rohit@acmetrading.in");
+  const [email, setEmail] = useState("rishav@acmetrading.in");
   const [password, setPassword] = useState("demo-password");
-  const [name, setName] = useState("Rohit Sharma");
+  const [name, setName] = useState("Rishav Raj");
   const [workspaceName, setWorkspaceName] = useState("Acme Trading Pvt Ltd");
   const [loading, setLoading] = useState(false);
   const [demoLoading, setDemoLoading] = useState(false);

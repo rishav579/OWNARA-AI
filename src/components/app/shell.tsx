@@ -28,6 +28,7 @@ import {
   Building2,
   IndianRupee,
   MessageSquare,
+  Send,
 } from "lucide-react";
 
 interface NavItem {
@@ -42,6 +43,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     label: "Workspace",
     items: [
       { path: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { path: "delegate", label: "Delegate Work", icon: Send },
       { path: "employees", label: "Employees", icon: Bot },
       { path: "approvals", label: "Decision Center", icon: ShieldCheck, badge: 2 },
       { path: "communication", label: "Communication", icon: MessageSquare },

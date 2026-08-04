@@ -57,15 +57,15 @@ async function main() {
   const passwordHash = await bcrypt.hash("demo-password", 10);
   const rohit = await db.user.create({
     data: {
-      email: "rohit@acmetrading.in",
+      email: "rishav@acmetrading.in",
       passwordHash,
-      name: "Rohit Sharma",
+      name: "Rishav Raj",
       emailVerifiedAt: new Date(),
       status: "active",
       avatarColor: "#10b981",
     },
   });
-  console.log("  ✓ Created user: Rohit Sharma");
+  console.log("  ✓ Created user: Rishav Raj");
 
   // ─── Workspace ────────────────────────────────────────────────────────────
   const workspace = await db.workspace.create({
@@ -504,7 +504,7 @@ async function main() {
   console.log("  ✓ Initialized employee profiles for all 4 employees");
 
   console.log("\n✅ Clean V1 seed complete!");
-  console.log("   Login: rohit@acmetrading.in / demo-password");
+  console.log("   Login: rishav@acmetrading.in / demo-password");
   console.log("   Workspace: acme-trading");
   console.log("   No tasks, steps, approvals, or audit logs seeded.");
   console.log("   Create a task in the UI and the worker will execute it live.");

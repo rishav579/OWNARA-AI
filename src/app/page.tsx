@@ -18,6 +18,7 @@ import { AuditPage } from "@/components/app/pages/audit";
 import { SettingsPage } from "@/components/app/pages/settings";
 import { BillingPage } from "@/components/app/pages/billing";
 import { FinancePage } from "@/components/app/pages/finance";
+import { DelegateWorkPage } from "@/components/app/pages/delegate-work";
 import { LoadingScreen } from "@/components/app/loading-states";
 
 function AppRouter() {
@@ -67,6 +68,9 @@ function AppRouter() {
   switch (path) {
     case "dashboard":
       page = <DashboardPage />;
+      break;
+    case "delegate":
+      page = <DelegateWorkPage />;
       break;
     case "employees":
       if (route.segments[1]) {
