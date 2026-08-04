@@ -284,21 +284,16 @@ export function DashboardPage() {
       </section>
 
       {/* ═══════════════════════════════════════════════════════════════════════
-          SECTION 2: TODAY'S BUSINESS SNAPSHOT
+          SECTION 2: KAVYA TODAY — what your Finance Employee is doing
           ═══════════════════════════════════════════════════════════════════════ */}
-      <section>
-        <SectionHeader title="Today's Business Snapshot" />
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
-          <SnapCell label="Money Pending" value={formatINRfinance(impact.moneyPending || 0)} sub="outstanding" icon={IndianRupee} accent="emerald" />
-          <SnapCell label="Money Recovered" value={formatINRfinance(impact.moneyRecovered || 0)} sub="all-time" icon={TrendingUp} accent="emerald" />
-          <SnapCell label="Hours Saved" value={`${(impact.hoursSaved || 0).toFixed(1)}h`} sub="manual work" icon={Clock} accent="sky" />
-          <SnapCell label="Tasks Automated" value={String(impact.tasksAutomated || 0)} sub="completed" icon={Zap} accent="violet" />
-          <SnapCell label="Approvals Waiting" value={String(pending.length)} sub={pending.length > 0 ? "needs review" : "all clear"} icon={ShieldCheck} accent={pending.length > 0 ? "amber" : "emerald"} />
-          <SnapCell label="Average Trust" value={(impact.avgTrustScore || 0).toFixed(1)} sub="/ 100" icon={Scale} accent="emerald" />
-          <SnapCell label="Business Risk" value={risks.filter(r => r.severity === "critical").length > 0 ? "High" : risks.filter(r => r.severity === "warning").length > 0 ? "Medium" : "Low"} sub={`${risks.length} risk${risks.length !== 1 ? "s" : ""}`} icon={AlertTriangle} accent={risks.filter(r => r.severity === "critical").length > 0 ? "red" : risks.filter(r => r.severity === "warning").length > 0 ? "amber" : "emerald"} />
-          <SnapCell label="Automation Rate" value={`${((impact.automationRate || 0) * 100).toFixed(0)}%`} sub="success rate" icon={CheckCircle2} accent="emerald" />
-        </div>
-      </section>
+      <KavyaToday
+        employees={employees}
+        pending={pending}
+        impact={impact}
+        finance={finance}
+        feed={feed}
+        navigate={navigate}
+      />
 
       {/* ═══════════════════════════════════════════════════════════════════════
           SECTION 3: AI WORKFORCE
@@ -495,6 +490,145 @@ function PageHeader({ title, description }: { title: string; description?: strin
   );
 }
 
+// ─── Kavya Today ─────────────────────────────────────────────────────────────
+
+function KavyaToday({
+  employees,
+  pending,
+  impact,
+  finance,
+  feed,
+  navigate,
+}: {
+  employees: any[];
+  pending: any[];
+  impact: any;
+  finance: any;
+  feed: any[];
+  navigate: (path: string) => void;
+}) {
+  const kavya = employees.find((e: any) => e.role === "finance_employee") || employees[0];
+  if (!kavya) return null;
+
+  const todayFeed = feed.filter((e: any) => {
+    const d = new Date(e.createdAt);
+    const now = new Date();
+    return d.getDate() === now.getDate() && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  });
+
+  const completedToday = todayFeed.filter((e: any) =>
+    e.entryType?.includes("completed") || e.entryType?.includes("sent") || e.entryType?.includes("approved")
+  );
+
+  const isWorking = kavya.state === "executing" || kavya.state === "planning";
+  const isWaiting = pending.length > 0;
+
+  return (
+    <section className="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-5">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Avatar name={kavya.name} color={kavya.avatarColor} size="md" />
+          <div>
+            <h2 className="text-sm font-semibold text-zinc-100">{kavya.name} Today</h2>
+            <p className="text-[0.65rem] text-zinc-500">Finance Employee · {kavya.title}</p>
+          </div>
+        </div>
+        <button
+          onClick={() => navigate(`employees/${kavya.id}`)}
+          className="text-xs text-emerald-400 hover:text-emerald-300"
+        >
+          View profile →
+        </button>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Working on */}
+        <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
+          <div className="flex items-center gap-1.5 text-[0.6rem] font-semibold uppercase tracking-wider text-zinc-500">
+            {isWorking ? (
+              <><span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-60" /><span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" /></span> Working on</>
+            ) : (
+              <><Activity className="h-3 w-3" /> Current status</>
+            )}
+          </div>
+          <div className="mt-1.5 text-sm font-medium text-zinc-200">
+            {kavya.currentTaskTitle || "Available for new work"}
+          </div>
+          {kavya.currentTaskTitle && (
+            <div className="mt-0.5 text-[0.65rem] text-emerald-400">In progress</div>
+          )}
+        </div>
+
+        {/* Completed Today */}
+        <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
+          <div className="flex items-center gap-1.5 text-[0.6rem] font-semibold uppercase tracking-wider text-zinc-500">
+            <CheckCircle2 className="h-3 w-3" /> Completed Today
+          </div>
+          <div className="mt-1.5 text-sm font-medium text-zinc-200">
+            {completedToday.length > 0
+              ? `${completedToday.length} action${completedToday.length > 1 ? "s" : ""}`
+              : "No finance tasks completed today"}
+          </div>
+          <div className="mt-0.5 text-[0.65rem] text-zinc-500">
+            {impact.emailsSent > 0 ? `${impact.emailsSent} reminders sent` : "Ready to start"}
+          </div>
+        </div>
+
+        {/* Waiting for Your Approval */}
+        <div
+          className={cn(
+            "cursor-pointer rounded-lg border p-3 transition-colors",
+            isWaiting ? "border-amber-500/30 bg-amber-500/5 hover:bg-amber-500/10" : "border-zinc-800 bg-zinc-900/50"
+          )}
+          onClick={() => isWaiting && navigate("approvals")}
+        >
+          <div className="flex items-center gap-1.5 text-[0.6rem] font-semibold uppercase tracking-wider text-zinc-500">
+            <Lock className="h-3 w-3" /> Waiting for Approval
+          </div>
+          <div className="mt-1.5 text-sm font-medium text-zinc-200">
+            {isWaiting ? `${pending.length} decision${pending.length > 1 ? "s" : ""} pending` : "Nothing waiting"}
+          </div>
+          <div className="mt-0.5 text-[0.65rem] text-zinc-500">
+            {isWaiting ? "Click to review" : "All clear"}
+          </div>
+        </div>
+
+        {/* Estimated Recovery */}
+        <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
+          <div className="flex items-center gap-1.5 text-[0.6rem] font-semibold uppercase tracking-wider text-zinc-500">
+            <IndianRupee className="h-3 w-3" /> Estimated Recovery
+          </div>
+          <div className="mt-1.5 text-sm font-bold text-emerald-400">
+            {finance?.totalOverdue ? formatINRfinance(finance.totalOverdue) : "—"}
+          </div>
+          <div className="mt-0.5 text-[0.65rem] text-zinc-500">
+            {finance?.overdueCount ? `${finance.overdueCount} overdue invoices` : "No overdue invoices"}
+          </div>
+        </div>
+      </div>
+
+      {/* Recent Decisions / Activity strip */}
+      {todayFeed.length > 0 && (
+        <div className="mt-3 border-t border-zinc-800 pt-3">
+          <div className="mb-2 text-[0.6rem] font-semibold uppercase tracking-wider text-zinc-500">Recent Activity</div>
+          <div className="flex flex-wrap gap-2">
+            {todayFeed.slice(0, 4).map((entry: any, idx: number) => (
+              <span key={entry.id || idx} className="inline-flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900/50 px-2.5 py-1 text-[0.65rem] text-zinc-400">
+                <SeverityDot severity={entry.severity || "info"} />
+                <span className="truncate max-w-[180px]">
+                  {entry.businessEvent || entry.entryType?.replace(/_/g, " ")}
+                </span>
+                <span className="text-zinc-600">·</span>
+                <span className="text-zinc-600">{formatRelativeTime(entry.createdAt)}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function SectionHeader({
   title,
   subtitle,
@@ -633,43 +767,74 @@ function ApprovalPreviewCard({
   rejecting: boolean;
 }) {
   const proposed = a.proposedAction || {};
+  const confidencePct = a.confidence ? Math.round(a.confidence * 100) : null;
+  const confidenceColor = confidencePct && confidencePct >= 85 ? "text-emerald-400" : confidencePct && confidencePct >= 70 ? "text-amber-400" : "text-red-400";
+  const trustScore = a.profile?.trustScore;
+  const trustLabel = trustScore >= 80 ? "Trusted by your organization" : trustScore >= 60 ? "Building trust" : "New employee";
+
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
-      {/* Header */}
+      {/* Header — Employee + Trust */}
       <div className="flex items-start gap-3">
-        <Avatar name={a.employeeName} color={a.employeeColor} size="sm" />
+        <Avatar name={a.employeeName} color={a.employeeColor} size="md" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold text-zinc-100">{a.employeeName}</span>
-            {a.profile && (
-              <span className="rounded-full bg-zinc-800 px-1.5 py-0.5 text-[0.6rem] text-zinc-400">
-                Lv{a.profile.level} · Trust {a.profile.trustScore?.toFixed(0)}
-              </span>
-            )}
+            <span className="text-[0.6rem] text-zinc-500">recommends</span>
           </div>
           <div className="text-xs text-zinc-500">{a.toolDisplayName}</div>
+          {trustScore && (
+            <div className="mt-0.5 text-[0.6rem] text-emerald-400/70">{trustLabel}</div>
+          )}
         </div>
         <div className="text-right">
           <div className="text-xs text-zinc-500">{formatRelativeTime(a.createdAt)}</div>
-          {a.confidence && (
-            <div className="text-[0.6rem] text-zinc-600">{(a.confidence * 100).toFixed(0)}% confidence</div>
-          )}
         </div>
       </div>
 
-      {/* Proposed action */}
+      {/* Why this recommendation */}
       <div className="mt-3 rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
-        {proposed.to && <div className="text-xs text-zinc-500">To: <span className="text-zinc-300">{proposed.to}</span></div>}
-        {proposed.subject && <div className="text-xs text-zinc-500">Subject: <span className="text-zinc-300">{proposed.subject}</span></div>}
-        {proposed.body && <p className="mt-1 line-clamp-2 text-xs text-zinc-400">{proposed.body}</p>}
+        <div className="mb-1.5 text-[0.6rem] font-semibold uppercase tracking-wider text-zinc-500">
+          Why this recommendation?
+        </div>
+        {(proposed.subject || proposed.body) && (
+          <div className="space-y-1">
+            {proposed.to && <div className="text-xs text-zinc-500">To: <span className="text-zinc-300">{proposed.to}</span></div>}
+            {proposed.subject && <div className="text-xs text-zinc-500">Subject: <span className="text-zinc-300">{proposed.subject}</span></div>}
+            {proposed.body && <p className="mt-1 line-clamp-2 text-xs text-zinc-400">{proposed.body}</p>}
+          </div>
+        )}
       </div>
 
-      {/* Business impact */}
-      {a.businessImpact && (
-        <div className="mt-2 text-[0.65rem] text-zinc-500">
-          <span className="text-zinc-400">Impact:</span> {a.businessImpact}
-        </div>
-      )}
+      {/* Decision grid: Business Impact | Confidence | Risk | Data Used */}
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        {a.businessImpact && (
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-2">
+            <div className="text-[0.55rem] font-semibold uppercase tracking-wider text-zinc-500">Business Impact</div>
+            <div className="mt-0.5 text-[0.7rem] text-zinc-300">{a.businessImpact}</div>
+          </div>
+        )}
+        {confidencePct !== null && (
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-2">
+            <div className="text-[0.55rem] font-semibold uppercase tracking-wider text-zinc-500">Confidence</div>
+            <div className={cn("mt-0.5 text-[0.7rem] font-bold", confidenceColor)}>{confidencePct}%</div>
+          </div>
+        )}
+        {a.riskScore !== undefined && (
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-2">
+            <div className="text-[0.55rem] font-semibold uppercase tracking-wider text-zinc-500">Risk</div>
+            <div className={cn("mt-0.5 text-[0.7rem] font-bold", a.riskScore >= 70 ? "text-red-400" : a.riskScore >= 40 ? "text-amber-400" : "text-emerald-400")}>
+              {a.riskScore >= 70 ? "High" : a.riskScore >= 40 ? "Medium" : "Low"}
+            </div>
+          </div>
+        )}
+        {a.policyTrigger && (
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-2">
+            <div className="text-[0.55rem] font-semibold uppercase tracking-wider text-zinc-500">Policy</div>
+            <div className="mt-0.5 text-[0.7rem] text-zinc-300">{a.policyTrigger}</div>
+          </div>
+        )}
+      </div>
 
       {/* Actions */}
       <div className="mt-3 flex items-center gap-2">

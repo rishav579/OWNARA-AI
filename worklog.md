@@ -872,3 +872,66 @@ Stage Summary:
 - 7 Critical/High issues fixed: seed cleaned to 1 employee, dynamic badge, "Available" status, enterprise titles, finance-employee connection, Delegate Work CTA, audit trail seeded.
 - Files modified: scripts/seed.ts, src/components/app/ui.tsx, src/lib/profile/engine.ts, src/components/app/shell.tsx, src/components/app/pages/dashboard.tsx, src/components/app/pages/finance.tsx.
 - The Finance Employee experience now feels enterprise-grade: one focused employee (Kavya), correct status language, connected finance data, prominent delegation CTA, visible trust trail.
+
+---
+Task ID: KAVYA-LIVING-EMPLOYEE
+Agent: Z.ai Code (Chief Product Officer + Staff Product Designer)
+Task: Transform Kavya from a data dashboard into a living AI Employee. Every screen should answer "What is Kavya doing for me?" not "What data do I have?" Replace metric jargon with human language. Add "Kavya Today" section. Enrich approval cards with Why/Impact/Confidence/Risk. Transform employee profile into HR-style profile.
+
+Work Log:
+- Audited all finance workflow pages (employee card, dashboard, delegate, task detail, decision center, audit, finance, profile) from a CFO/Finance Manager perspective.
+- Found core problem: every screen answers "What data do I have?" instead of "What is Kavya doing for me?"
+
+Implemented 4 Critical transformations:
+
+1. EMPLOYEE CARD (employees.tsx) — human language:
+   - "Idle" → "Available for new work"
+   - "Trust 85" → "Trusted" (or "Building" / "New" based on score)
+   - "0 emails" → "No reminders sent today"
+   - "0 tasks completed" → "No tasks" / "X done"
+   - "0.0h saved" → "Ready to work"
+   - "100% approved" → "All approved"
+   - "Lv1 Associate" → "Associate" (removed level prefix)
+
+2. DASHBOARD — "Kavya Today" section (dashboard.tsx):
+   - Replaced "Today's Business Snapshot" (8 metric cells) with a Kavya-focused section
+   - 4 cards: Working on / Completed Today / Waiting for Your Approval / Estimated Recovery
+   - Working on: shows current task or "Available for new work" with live pulse animation when working
+   - Completed Today: "No finance tasks completed today" or "X actions"
+   - Waiting for Approval: clickable card, "Nothing waiting" or "X decisions pending"
+   - Estimated Recovery: shows total overdue amount + invoice count
+   - Recent Activity strip: today's audit entries as chips with relative timestamps
+   - "View profile →" link to Kavya's HR profile
+
+3. APPROVAL CARDS — enriched decision context (dashboard.tsx ApprovalPreviewCard):
+   - Header: "Kavya recommends" + trust label ("Trusted by your organization" / "Building trust" / "New employee")
+   - "Why this recommendation?" section with proposed action details
+   - Decision grid (2x2): Business Impact | Confidence | Risk | Policy
+   - Confidence shown as percentage with color coding (green ≥85%, amber ≥70%, red <70%)
+   - Risk shown as High/Medium/Low based on riskScore
+   - Approve / Reject / Details buttons
+
+4. EMPLOYEE PROFILE — HR-style (employee-detail.tsx):
+   - Header transformed into HR profile card with:
+     * Biography: "Kavya is an AI Finance Employee at your organization. [job description]"
+     * HR metadata: "Available for new work" / "Working on a task" · Hired date · tasks completed
+   - Responsibilities section: tool chips showing what Kavya can do
+   - Operating Boundaries section: bulleted list of rules Kavya follows
+   - Quick stats changed from developer metrics to business language:
+     * "Tasks" → "Current Workload" (X tasks / No active tasks)
+     * "Pending" → "Needs Approval" (X pending / Nothing waiting)
+     * "Usage" (token count) → "Completed" (X tasks / No tasks yet)
+     * "Documents" kept with better empty state
+   - Fixed pre-existing typecheck error: crit as "critical" | "non_critical" cast
+
+- Verification: lint 0 errors, typecheck 0 errors on modified files. Browser-verified:
+  * Dashboard: "Kavya Today" section with "Available for new work", "No finance tasks completed today", "8 overdue invoices", "Estimated Recovery"
+  * Employees: Kavya card shows "Available for new work", "Trusted", "No tasks", "No reminders sent today", "Ready to work", "All approved", "Associate"
+  * Profile: "Biography" text, "Responsibilities" chips, "Operating Boundaries" list, "Current Workload" / "Needs Approval" / "Completed" stats
+  * Delegated task → approval card shows "Approve / Reject / Details" with enriched context
+  * Zero errors across all pages
+
+Stage Summary:
+- 4 Critical transformations implemented: employee card human language, Kavya Today dashboard section, enriched approval cards, HR-style employee profile.
+- Files modified: employees.tsx, dashboard.tsx, employee-detail.tsx.
+- Kavya now feels like a living AI Employee, not a data dashboard. Every screen answers "What is Kavya doing for me?"

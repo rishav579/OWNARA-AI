@@ -119,23 +119,34 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
         All employees
       </button>
 
-      {/* Header */}
-      <div className="flex flex-col gap-4 rounded-xl border border-zinc-800 bg-zinc-900/50 p-5 sm:flex-row sm:items-center">
-        <Avatar name={employee.name} color={employee.avatarColor} size="lg" />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold tracking-tight text-zinc-50">{employee.name}</h1>
-            <EmployeeStatusBadge status={employee.status} />
+      {/* Header — HR-style employee profile */}
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+          <Avatar name={employee.name} color={employee.avatarColor} size="lg" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold tracking-tight text-zinc-50">{employee.name}</h1>
+              <EmployeeStatusBadge status={employee.status} />
+            </div>
+            <p className="mt-0.5 text-sm text-zinc-400">{employee.roleName}</p>
+
+            {/* Biography */}
+            <p className="mt-3 text-sm leading-relaxed text-zinc-400">
+              {employee.name} is an AI {employee.roleName} at your organization. {employee.jobDescription}
+            </p>
+
+            {/* HR metadata */}
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">
+              <span className="flex items-center gap-1">
+                <Activity className="h-3.5 w-3.5" />
+                {employee.currentTaskTitle ? "Working on a task" : "Available for new work"}
+              </span>
+              <span>·</span>
+              <span>Hired {formatDate(employee.createdAt)}</span>
+              <span>·</span>
+              <span>{employee.completedTasks} tasks completed</span>
+            </div>
           </div>
-          <p className="mt-0.5 text-sm text-zinc-400">{employee.roleName}</p>
-          <div className="mt-2 flex items-center gap-3 text-xs text-zinc-500">
-            <span className="flex items-center gap-1"><Activity className="h-3.5 w-3.5" /> <EmployeeStateBadge state={employee.state} /></span>
-            <span>·</span>
-            <span>{employee.completedTasks} tasks completed</span>
-            <span>·</span>
-            <span>Hired {formatDate(employee.createdAt)}</span>
-          </div>
-        </div>
         <div className="flex shrink-0 gap-2">
           {employee.status === "active" ? (
             <button
@@ -155,21 +166,55 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
             </button>
           ) : null}
         </div>
+        </div>
+
+        {/* Responsibilities */}
+        <div className="mt-4 border-t border-zinc-800 pt-4">
+          <h3 className="mb-2 text-[0.65rem] font-semibold uppercase tracking-wider text-zinc-500">Responsibilities</h3>
+          <div className="flex flex-wrap gap-1.5">
+            {(employee.tools as string[]).map((tool) => (
+              <span key={tool} className="rounded-md border border-zinc-800 bg-zinc-900 px-2 py-0.5 text-[0.65rem] text-zinc-400">
+                {TOOL_LABELS[tool] || tool}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* Operating Boundaries */}
+        {employee.boundaries && employee.boundaries.length > 0 && (
+          <div className="mt-4 border-t border-zinc-800 pt-4">
+            <h3 className="mb-2 text-[0.65rem] font-semibold uppercase tracking-wider text-zinc-500">Operating Boundaries</h3>
+            <ul className="space-y-1">
+              {employee.boundaries.map((b: string, i: number) => (
+                <li key={i} className="flex items-start gap-2 text-xs text-zinc-400">
+                  <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-zinc-600" />
+                  {b}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
 
-      {/* Quick stats */}
+      {/* Quick stats — business-focused */}
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
-          <div className="flex items-center gap-1.5 text-xs text-zinc-500"><ListTodo className="h-3.5 w-3.5" /> Tasks</div>
-          <div className="mt-1 text-lg font-bold text-zinc-50">{employee.taskCount}</div>
+          <div className="flex items-center gap-1.5 text-xs text-zinc-500"><ListTodo className="h-3.5 w-3.5" /> Current Workload</div>
+          <div className="mt-1 text-lg font-bold text-zinc-50">
+            {employee.taskCount > 0 ? `${employee.taskCount} task${employee.taskCount > 1 ? "s" : ""}` : "No active tasks"}
+          </div>
         </div>
         <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
-          <div className="flex items-center gap-1.5 text-xs text-zinc-500"><Lock className="h-3.5 w-3.5" /> Pending</div>
-          <div className="mt-1 text-lg font-bold text-amber-400">{employee.pendingApprovals}</div>
+          <div className="flex items-center gap-1.5 text-xs text-zinc-500"><Lock className="h-3.5 w-3.5" /> Needs Approval</div>
+          <div className="mt-1 text-lg font-bold text-amber-400">
+            {employee.pendingApprovals > 0 ? `${employee.pendingApprovals} pending` : "Nothing waiting"}
+          </div>
         </div>
         <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
-          <div className="flex items-center gap-1.5 text-xs text-zinc-500"><Zap className="h-3.5 w-3.5" /> Usage</div>
-          <div className="mt-1 text-lg font-bold text-zinc-50">{formatNumber(employee.tokenUsage)}</div>
+          <div className="flex items-center gap-1.5 text-xs text-zinc-500"><CheckCircle className="h-3.5 w-3.5" /> Completed</div>
+          <div className="mt-1 text-lg font-bold text-zinc-50">
+            {employee.completedTasks > 0 ? `${employee.completedTasks} tasks` : "No tasks yet"}
+          </div>
         </div>
         <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
           <div className="flex items-center gap-1.5 text-xs text-zinc-500"><BookOpen className="h-3.5 w-3.5" /> Documents</div>
@@ -288,7 +333,7 @@ export function EmployeeDetailPage({ employeeId }: { employeeId: string }) {
                 {Object.entries(employee.approvalRules).map(([tool, crit]) => (
                   <div key={tool} className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2">
                     <span className="font-mono text-xs text-zinc-300">{TOOL_LABELS[tool] || tool}</span>
-                    <CriticalityBadge criticality={crit} />
+                    <CriticalityBadge criticality={crit as "critical" | "non_critical"} />
                   </div>
                 ))}
               </div>

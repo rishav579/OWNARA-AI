@@ -147,13 +147,13 @@ export function EmployeesPage() {
                     <EmployeeStatusBadge status={e.status} />
                   </div>
                   <p className="truncate text-xs text-zinc-500">{e.roleName}</p>
-                  <div className="mt-1.5 flex items-center gap-2">
+                  <div className="mt-1.5">
                     {e.currentTaskTitle ? (
                       <span className="truncate text-[0.7rem] text-emerald-400">
                         ● {e.currentTaskTitle}
                       </span>
                     ) : (
-                      <EmployeeStateBadge state={e.state} />
+                      <span className="text-[0.7rem] text-zinc-400">Available for new work</span>
                     )}
                   </div>
                 </div>
@@ -164,17 +164,19 @@ export function EmployeesPage() {
                 )}
               </div>
 
-              {/* ─── Business Metrics (FIRST, not XP/token) ─── */}
+              {/* ─── Trust + Business Value (human language) ─── */}
               <div className="mt-4 grid grid-cols-3 gap-2 border-t border-zinc-800 pt-3">
                 <div className="text-center">
                   <div className="text-[0.6rem] uppercase tracking-wider text-zinc-500">Trust</div>
                   <div className={`mt-0.5 text-base font-bold ${e.trustScore >= 80 ? "text-emerald-400" : e.trustScore >= 60 ? "text-amber-400" : "text-red-400"}`}>
-                    {e.trustScore.toFixed(0)}
+                    {e.trustScore >= 80 ? "Trusted" : e.trustScore >= 60 ? "Building" : "New"}
                   </div>
                 </div>
                 <div className="text-center">
-                  <div className="text-[0.6rem] uppercase tracking-wider text-zinc-500">Automated</div>
-                  <div className="mt-0.5 text-base font-bold text-zinc-100">{e.tasksAutomated}</div>
+                  <div className="text-[0.6rem] uppercase tracking-wider text-zinc-500">Today</div>
+                  <div className="mt-0.5 text-base font-bold text-zinc-100">
+                    {e.tasksAutomated > 0 ? `${e.tasksAutomated} done` : "No tasks"}
+                  </div>
                 </div>
                 <div className="text-center">
                   <div className="text-[0.6rem] uppercase tracking-wider text-zinc-500">Recovered</div>
@@ -184,25 +186,22 @@ export function EmployeesPage() {
                 </div>
               </div>
 
-              {/* Secondary metrics */}
+              {/* Activity summary (human language) */}
               <div className="mt-3 flex items-center justify-between text-[0.65rem] text-zinc-500">
-                <span className="flex items-center gap-1">
-                  <Mail className="h-3 w-3" />
-                  {e.emailsSent} emails
+                <span>
+                  {e.emailsSent > 0 ? `${e.emailsSent} reminders sent` : "No reminders sent today"}
                 </span>
-                <span className="flex items-center gap-1">
-                  <Clock className="h-3 w-3" />
-                  {e.hoursSaved.toFixed(1)}h saved
+                <span>
+                  {e.hoursSaved > 0 ? `${e.hoursSaved.toFixed(1)}h saved` : "Ready to work"}
                 </span>
-                <span className="flex items-center gap-1">
-                  <CheckCircle2 className="h-3 w-3" />
-                  {(e.approvalRate * 100).toFixed(0)}% approved
+                <span>
+                  {e.approvalRate >= 1 ? "All approved" : `${(e.approvalRate * 100).toFixed(0)}% approved`}
                 </span>
               </div>
 
               {/* Footer */}
               <div className="mt-3 flex items-center justify-between border-t border-zinc-800 pt-3 text-xs text-zinc-500">
-                <span>Lv{e.level} {e.title}</span>
+                <span>{e.title}</span>
                 <span>Hired {formatDate(e.createdAt)}</span>
               </div>
             </div>
