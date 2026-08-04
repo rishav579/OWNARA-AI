@@ -27,7 +27,6 @@ import { isFinanceTask, generateFinancePlan, generateBatchFinancePlan, executeFi
 import { buildFinanceContext, produceRecommendation, type FinanceRecommendation } from "@/lib/finance/brain";
 import { findInvoicesNeedingAttention } from "@/lib/finance/domain";
 import { updateMemoryAfterTask, recordApprovalFeedback, extractFinanceMemories } from "@/lib/memory/service";
-import { getLLMGateway } from "@/lib/llm";
 import { generateContract, generateContractInternal, approveContract, rejectContract, linkApprovalToContract, type ContractInput } from "@/lib/contracts/engine";
 import { checkCapability, recordCapabilityDenial } from "@/lib/capabilities/engine";
 import { recordProfileEvent } from "@/lib/profile/engine";
@@ -179,7 +178,7 @@ async function planTask(
         const financeCtx = await buildFinanceContext(invoiceId, employee.id);
         if (financeCtx) {
           // Step 2: The Finance Brain reasons over the context (including memory) to produce a recommendation
-          const recommendation = produceRecommendation(financeCtx);
+          const recommendation = await produceRecommendation(financeCtx);
           // Step 3: Generate the execution plan from the recommendation
           plan = generateFinancePlan(recommendation, employeeTools);
         } else {
@@ -197,7 +196,7 @@ async function planTask(
         for (const ic of invoiceContexts) {
           const financeCtx = await buildFinanceContext(ic.invoiceId, employee.id);
           if (financeCtx) {
-            const rec = produceRecommendation(financeCtx);
+            const rec = await produceRecommendation(financeCtx);
             recommendations.push(rec);
           }
         }
@@ -211,72 +210,10 @@ async function planTask(
       }
     }
   } else {
-    // Generic planning
-    // Check if the LLM Gateway has a real provider available (not mock)
-    const gateway = getLLMGateway();
-    const router = (await import("@/lib/llm")).getModelRouter();
-    const { provider, route } = router.route("planning");
-
-    if (provider.name !== "mock") {
-      // ─── LLM-Gateway-Aware Planning ──────────────────────────────────────
-      // When a real LLM provider is configured, use the gateway to generate
-      // the execution plan. This replaces the deterministic mock planner
-      // with real AI planning.
-      try {
-        const response = await gateway.complete({
-          taskType: "planning",
-          promptId: "planning",
-          variables: {
-            title: task.title,
-            description: task.description,
-            role: employee.role,
-            tools: employeeTools.join(", "),
-          },
-          jsonMode: true,
-          jsonSchema: {
-            type: "object",
-            required: ["reasoning", "steps"],
-            properties: {
-              reasoning: { type: "string" },
-              steps: {
-                type: "array",
-                items: {
-                  type: "object",
-                  required: ["stepType", "reasoning", "confidence"],
-                  properties: {
-                    stepType: { type: "string" },
-                    reasoning: { type: "string" },
-                    tool: { type: "string" },
-                    confidence: { type: "number" },
-                  },
-                },
-              },
-            },
-          },
-          workspaceId: task.workspaceId,
-          employeeId: employee.id,
-          taskId: task.id,
-        });
-
-        // Parse the LLM-generated plan
-        const llmPlan = response.data as { reasoning: string; steps: PlannedStep[] } | null;
-        if (llmPlan && llmPlan.steps && Array.isArray(llmPlan.steps)) {
-          plan = { steps: llmPlan.steps };
-        } else {
-          // Fallback to deterministic planner if LLM response is invalid
-          plan = generatePlan(task.title, task.description, employee.role, employeeTools);
-        }
-      } catch (err) {
-        // On any gateway error, fall back to the deterministic planner
-        console.error("[Executor] LLM Gateway planning failed, falling back to deterministic planner:", err);
-        plan = generatePlan(task.title, task.description, employee.role, employeeTools);
-      }
-    } else {
-      // ─── Deterministic Planning (existing behavior) ─────────────────────
-      // No real LLM provider configured — use the existing mock planner.
-      // This maintains backward compatibility.
-      plan = generatePlan(task.title, task.description, employee.role, employeeTools);
-    }
+    // Generic planning — generatePlan now handles LLM Gateway integration
+    // internally and falls back to the deterministic planner when no real
+    // provider is configured.
+    plan = await generatePlan(task.title, task.description, employee.role, employeeTools);
   }
 
   if (plan.steps.length === 0) {

@@ -935,3 +935,60 @@ Stage Summary:
 - 4 Critical transformations implemented: employee card human language, Kavya Today dashboard section, enriched approval cards, HR-style employee profile.
 - Files modified: employees.tsx, dashboard.tsx, employee-detail.tsx.
 - Kavya now feels like a living AI Employee, not a data dashboard. Every screen answers "What is Kavya doing for me?"
+
+---
+Task ID: LLM-GATEWAY-PLANNER
+Agent: Z.ai Code (CTO)
+Task: Replace the mock planner with the real LLM Gateway. Integrate the existing LLM Gateway into the planning pipeline. Return structured JSON plans. Preserve all existing approval logic. Do NOT modify the UI.
+
+Work Log:
+- Read the entire planning pipeline: planner.ts (generatePlan + executeTool), finance-planner.ts (generateFinancePlan + generateBatchFinancePlan + executeFinanceTool), executor.ts (planTask function), finance/brain.ts (produceRecommendation), LLM gateway.ts, prompts/registry.ts.
+- Identified mock planning components:
+  1. planner.ts generatePlan() — deterministic keyword-matching, returns hardcoded step sequences
+  2. finance/brain.ts produceRecommendation() — deterministic rules-based engine (aging/reminders/risk → action)
+  3. executor.ts generic path — already had LLM Gateway integration but was duplicating the gateway call
+- The finance path (the only employee we ship) NEVER called the LLM. This was the critical gap.
+
+- Integrated LLM Gateway into planner.ts:
+  * generatePlan() is now async
+  * Checks getModelRouter().route("planning") — if provider is not "mock", calls gateway.complete() with the "planning" prompt + JSON schema
+  * Validates and sanitizes LLM-generated steps (filters invalid stepTypes, ensures tools are in the employee's tool list)
+  * Falls back to generateDeterministicPlan() (renamed from the old generatePlan body) on any error or when mock provider is active
+  * Zero breaking change to the interface — callers just await the result
+
+- Integrated LLM Gateway into finance/brain.ts:
+  * produceRecommendation() is now async
+  * Checks getModelRouter().route("finance_reasoning") — if provider is not "mock", calls gateway.complete() with the "finance_reasoning" prompt + JSON schema
+  * LLM receives: invoice number, customer name, risk level, outstanding amount, days overdue, aging bucket, previous reminders, customer response status
+  * LLM returns: { action, confidence, reasoning }
+  * Merges LLM result with deterministic evidence/policy/rejected-alternatives (LLM decides action + confidence; deterministic engine provides the structured evidence grid the approval card needs)
+  * Falls back to produceDeterministicRecommendation() (renamed from the old body) on any error or when mock provider is active
+
+- Simplified executor.ts generic planning path:
+  * Removed the duplicate LLM Gateway call (lines 213-279) — generatePlan now handles it internally
+  * Removed unused getLLMGateway import
+  * Single line: plan = await generatePlan(task.title, task.description, employee.role, employeeTools)
+
+- Updated all call sites to await the now-async functions:
+  * executor.ts: produceRecommendation → await (2 call sites)
+  * executor.ts: generatePlan → await (1 call site)
+
+- Preserved ALL existing approval logic:
+  * The executor still checks approvalRules and creates approval_gate steps for critical tools
+  * The finance-planner.ts generateFinancePlan() is unchanged — it structures the recommendation into execution steps
+  * The approval card still shows the full reasoning chain (why, evidence, policy influence, rejected alternatives)
+  * The audit log still captures the complete reasoning chain
+
+- Verification:
+  * Lint: 0 errors
+  * Typecheck: 0 errors in modified files (planner.ts, brain.ts, executor.ts — 5 pre-existing errors in other files unchanged)
+  * Production build: succeeds
+  * Browser test: delegated "Recover overdue invoices from BlueDart Logistics" → worker picked it up → task status: executing → approval gate created (send_reminder pending) → dashboard shows "Kavya Today" with working status → zero errors
+  * The deterministic fallback works correctly when no GEMINI_API_KEY is set (mock provider active)
+
+Stage Summary:
+- 2 mock planning components replaced with LLM Gateway integration: generatePlan (generic planner) and produceRecommendation (finance brain).
+- Both functions are now async, call the LLM Gateway when a real provider is configured, and fall back to the deterministic engine when only mock is available.
+- All existing approval logic preserved — the trust loop (delegate → reason → approve → execute → audit) is unchanged.
+- Zero UI changes. Zero backend contract changes. Zero new dependencies.
+- When GEMINI_API_KEY is set, Kavya will use real AI reasoning for both planning and finance recommendations. Without it, the deterministic engine provides the same structured output.

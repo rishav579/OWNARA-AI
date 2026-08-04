@@ -30,6 +30,14 @@ import {
   formatDate,
 } from "@/lib/finance/domain";
 
+// ─── LLM Gateway Integration ─────────────────────────────────────────────────
+// The Finance Brain uses the LLM Gateway when a real provider is configured.
+// When only the mock provider is available (no API key), it falls back to the
+// deterministic rules-based recommendation engine. This preserves backward
+// compatibility while enabling real AI reasoning in production.
+
+import { getLLMGateway, getModelRouter } from "@/lib/llm";
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 /** The complete context the Finance Brain reasons over. One structured object. */
@@ -479,18 +487,84 @@ export async function buildFinanceContext(
 /**
  * Reasons over a FinanceContext to produce a structured recommendation.
  *
- * This is the brain of the Finance Employee. It:
- * 1. Determines the recommended action based on ALL available evidence
- * 2. Explains WHY that action was chosen
- * 3. Lists the evidence used (with source and weight)
- * 4. Identifies which policies influenced the decision
- * 5. Explains which customer history influenced the decision
- * 6. Explains why alternative actions were rejected
+ * This is the brain of the Finance Employee. When a real LLM provider is
+ * configured (Gemini/OpenAI/Anthropic), it calls the LLM Gateway with the
+ * finance_reasoning prompt and the full evidence/context. When only the mock
+ * provider is available, it falls back to the deterministic rules-based engine.
  *
  * The output is stored in the approval's proposed action and in the audit log,
  * so a finance manager can see the complete reasoning chain.
+ *
+ * IMPORTANT: This function is async. All callers must await it.
  */
-export function produceRecommendation(ctx: FinanceContext): FinanceRecommendation {
+export async function produceRecommendation(ctx: FinanceContext): Promise<FinanceRecommendation> {
+  // Check if a real LLM provider is available (not mock)
+  try {
+    const router = getModelRouter();
+    const { provider } = router.route("finance_reasoning");
+
+    if (provider.name !== "mock") {
+      // ─── LLM-Gateway-Aware Recommendation ──────────────────────────────
+      const gateway = getLLMGateway();
+      const response = await gateway.complete({
+        taskType: "finance_reasoning",
+        promptId: "finance_reasoning",
+        variables: {
+          invoiceNumber: ctx.invoice.invoiceNumber,
+          customerName: ctx.customer.name,
+          riskLevel: ctx.customerRiskLevel,
+          outstanding: formatRupees(ctx.invoice.outstanding),
+          daysOverdue: String(ctx.daysOverdue),
+          agingBucket: agingBucketLabel(ctx.agingBucket),
+          previousReminders: String(ctx.reminderHistory.length),
+          customerResponse: ctx.reminderHistory.some((r) => r.status === "responded") ? "responded" : "no response",
+        },
+        jsonMode: true,
+        jsonSchema: {
+          type: "object",
+          required: ["action", "confidence", "reasoning"],
+          properties: {
+            action: { type: "string" },
+            confidence: { type: "number" },
+            reasoning: { type: "string" },
+          },
+        },
+      });
+
+      const llmResult = response.data as { action: string; confidence: number; reasoning: string } | null;
+      if (llmResult && llmResult.action) {
+        // Merge the LLM's reasoning with the deterministic evidence/policy/rejected-alternatives.
+        // The LLM decides the action and confidence; the deterministic engine provides the
+        // structured evidence, policy influence, and rejected alternatives that the approval
+        // card needs for the "Why this recommendation?" grid.
+        const deterministic = produceDeterministicRecommendation(ctx);
+        return {
+          ...deterministic,
+          action: llmResult.action,
+          confidence: llmResult.confidence,
+          why: llmResult.reasoning || deterministic.why,
+          humanReadableSummary: llmResult.reasoning || deterministic.humanReadableSummary,
+        };
+      }
+    }
+  } catch (err) {
+    // On any LLM error, fall back to deterministic recommendation
+    console.error("[Finance Brain] LLM Gateway recommendation failed, falling back to deterministic engine:", err);
+  }
+
+  // ─── Deterministic Recommendation (fallback) ──────────────────────────────
+  return produceDeterministicRecommendation(ctx);
+}
+
+/**
+ * Deterministic rules-based recommendation engine.
+ *
+ * This is the fallback when no real LLM provider is configured. It uses
+ * rule-based logic (aging buckets, reminder counts, customer risk) to
+ * determine the recommended action. The reasoning is grounded in real data
+ * from the database — every recommendation is traceable to specific evidence.
+ */
+function produceDeterministicRecommendation(ctx: FinanceContext): FinanceRecommendation {
   const evidence: EvidenceItem[] = [];
   const policyInfluence: PolicyInfluence[] = [];
   const rejectedAlternatives: RejectedAlternative[] = [];

@@ -1,24 +1,20 @@
 /**
- * BIHARI AI — Mock LLM Planner
+ * BIHARI AI — LLM Planner
  *
  * Generates execution plans (lists of steps) for tasks based on the task
  * description and the employee's role and configured tools.
  *
- * This is a DETERMINISTIC mock — it does not call an external LLM. It uses
- * keyword matching on the task title/description to produce realistic step
- * sequences that exercise the full trust loop including approval gates.
- *
- * Per BED-001 §2: "The mock LLM server returns canned plans and responses.
- * This keeps local development free of LLM cost and latency, and makes AI
- * Engine behavior reproducible."
+ * When a real LLM provider is configured (Gemini/OpenAI/Anthropic), this
+ * module calls the LLM Gateway to produce AI-generated plans. When only the
+ * mock provider is available, it falls back to a deterministic keyword-based
+ * planner that produces realistic step sequences exercising the full trust
+ * loop including approval gates.
  *
  * Per BED-001 §13: "LLM_PROVIDER=mock routes the LLM Gateway to the mock
  * adapter."
- *
- * When a real LLM provider is configured, this module is replaced by an
- * adapter that calls the provider API. The interface (generatePlan) stays
- * the same.
  */
+
+import { getLLMGateway, getModelRouter } from "@/lib/llm";
 
 export interface PlannedStep {
   stepType: "reasoning" | "tool_call";
@@ -34,6 +30,11 @@ export interface ExecutionPlan {
 
 /**
  * Generates an execution plan for a task.
+ *
+ * When a real LLM provider is configured, this calls the LLM Gateway with
+ * the "planning" prompt to produce an AI-generated plan. When only the mock
+ * provider is available, it falls back to the deterministic keyword-based
+ * planner.
  *
  * The plan is a list of steps that the executor will process sequentially.
  * Each step is either:
@@ -51,7 +52,82 @@ export interface ExecutionPlan {
  * @param employeeRole - The employee's role key
  * @param employeeTools - The tools granted to the employee
  */
-export function generatePlan(
+export async function generatePlan(
+  taskTitle: string,
+  taskDescription: string,
+  employeeRole: string,
+  employeeTools: string[]
+): Promise<ExecutionPlan> {
+  // Check if a real LLM provider is available (not mock)
+  try {
+    const router = getModelRouter();
+    const { provider } = router.route("planning");
+
+    if (provider.name !== "mock") {
+      // ─── LLM-Gateway-Aware Planning ──────────────────────────────────────
+      const gateway = getLLMGateway();
+      const response = await gateway.complete({
+        taskType: "planning",
+        promptId: "planning",
+        variables: {
+          title: taskTitle,
+          description: taskDescription,
+          role: employeeRole,
+          tools: employeeTools.join(", "),
+        },
+        jsonMode: true,
+        jsonSchema: {
+          type: "object",
+          required: ["reasoning", "steps"],
+          properties: {
+            reasoning: { type: "string" },
+            steps: {
+              type: "array",
+              items: {
+                type: "object",
+                required: ["stepType", "reasoning", "confidence"],
+                properties: {
+                  stepType: { type: "string" },
+                  reasoning: { type: "string" },
+                  tool: { type: "string" },
+                  confidence: { type: "number" },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      const llmPlan = response.data as { reasoning: string; steps: PlannedStep[] } | null;
+      if (llmPlan && llmPlan.steps && Array.isArray(llmPlan.steps) && llmPlan.steps.length > 0) {
+        // Validate and sanitize the LLM-generated steps
+        const validSteps = llmPlan.steps
+          .filter((s) => s.stepType && s.reasoning)
+          .map((s) => ({
+            stepType: s.stepType === "tool_call" ? "tool_call" as const : "reasoning" as const,
+            reasoning: s.reasoning,
+            tool: s.tool && employeeTools.includes(s.tool) ? s.tool : undefined,
+            toolInput: s.tool ? {} : undefined,
+            confidence: typeof s.confidence === "number" ? s.confidence : 0.85,
+          }));
+        if (validSteps.length > 0) {
+          return { steps: validSteps };
+        }
+      }
+    }
+  } catch (err) {
+    // On any gateway error, fall back to the deterministic planner
+    console.error("[Planner] LLM Gateway planning failed, falling back to deterministic planner:", err);
+  }
+
+  // ─── Deterministic Planning (fallback) ──────────────────────────────────
+  return generateDeterministicPlan(taskTitle, taskDescription, employeeRole, employeeTools);
+}
+
+/**
+ * Deterministic keyword-based planner (fallback when no real LLM is configured).
+ */
+function generateDeterministicPlan(
   taskTitle: string,
   taskDescription: string,
   employeeRole: string,
