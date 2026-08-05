@@ -53,8 +53,8 @@ cd "$BUILD_DIR" || exit 1
 
 ls -lah
 
-DEFAULT_PACKAGED_DB_PATH="/app/db/custom.db"
-DEFAULT_PACKAGED_DATABASE_URL="file:$DEFAULT_PACKAGED_DB_PATH"
+# PostgreSQL is required — DATABASE_URL must be set to a postgresql:// URL.
+# There is no packaged SQLite database file to fall back to.
 
 # Python 依赖在构建阶段安装进部署产物，不复用 Sandbox 的 /home/z/.venv。
 # Next.js 及其启动的子进程都会继承这组路径。
@@ -75,19 +75,22 @@ if [ -f "./next-service-dist/server.js" ]; then
     export NODE_ENV=production
     export PORT="${PORT:-3000}"
     export HOSTNAME="${HOSTNAME:-0.0.0.0}"
-    export DATABASE_URL="${DATABASE_URL:-$DEFAULT_PACKAGED_DATABASE_URL}"
-
-    if [ "$DATABASE_URL" = "$DEFAULT_PACKAGED_DATABASE_URL" ]; then
-        if [ ! -f "$DEFAULT_PACKAGED_DB_PATH" ]; then
-            echo "❌ 未找到打包后的数据库文件 $DEFAULT_PACKAGED_DB_PATH"
-            echo "   为避免生产环境启动到空数据库，启动已终止"
-            exit 1
-        fi
-
-        echo "🗄️  当前使用打包数据库: $DEFAULT_PACKAGED_DB_PATH"
-    else
-        echo "🗄️  当前使用外部指定数据库: $DATABASE_URL"
+    # DATABASE_URL must be set to a PostgreSQL URL — no SQLite fallback.
+    if [ -z "${DATABASE_URL:-}" ]; then
+        echo "❌ DATABASE_URL is not set. Set it to a PostgreSQL connection string."
+        echo "   Example: DATABASE_URL=postgresql://user@localhost:5432/bihari?schema=public"
+        exit 1
     fi
+
+    case "$DATABASE_URL" in
+        postgresql://*|postgres://*)
+            echo "🗄️  Using PostgreSQL: $DATABASE_URL"
+            ;;
+        *)
+            echo "❌ DATABASE_URL must be a PostgreSQL URL (postgresql://...), got: $DATABASE_URL"
+            exit 1
+            ;;
+    esac
     
     # 后台启动 Next.js
     bun server.js &
