@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { requireWorkspace } from "@/lib/auth";
 import { success, error, handleApiError } from "@/lib/api-response";
 import { appendAudit } from "@/lib/runtime/audit";
+import { AVATAR_COLORS } from "@/lib/shared-helpers";
 
 export async function GET(request: NextRequest) {
   try {

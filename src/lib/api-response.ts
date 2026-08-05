@@ -18,7 +18,7 @@ export function handleApiError(err: unknown) {
       "VALIDATION_ERROR",
       "The request body failed validation.",
       400,
-      err.errors.map((e) => ({ field: e.path.join("."), message: e.message }))
+      err.issues.map((e) => ({ field: e.path.join("."), message: e.message }))
     );
   }
   if (err && typeof err === "object" && "code" in err && "status" in err) {
