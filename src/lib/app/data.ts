@@ -111,7 +111,7 @@ export interface AuditEntry {
   actorName: string;
   targetType: string;
   targetId: string;
-  payload: Record<string, string>;
+  payload: Record<string, string | number>;
   previousHash: string;
   entryHash: string;
   createdAt: string;

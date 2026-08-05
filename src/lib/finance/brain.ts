@@ -890,8 +890,8 @@ function produceDeterministicRecommendation(ctx: FinanceContext): FinanceRecomme
     historyParts.push(`Customer is classified as LOW risk, indicating a history of reliable payments. A softer approach in the first reminder is appropriate.`);
   }
 
-  if (ctx.outstandingExposure > ctx.creditLimit && ctx.creditLimit > 0) {
-    historyParts.push(`Total outstanding exposure (${totalExposure}) exceeds the customer's credit limit (${formatRupees(ctx.creditLimit)}), indicating potential credit risk that warrants immediate attention.`);
+  if (ctx.outstandingExposure > ctx.customer.creditLimit && ctx.customer.creditLimit > 0) {
+    historyParts.push(`Total outstanding exposure (${totalExposure}) exceeds the customer's credit limit (${formatRupees(ctx.customer.creditLimit)}), indicating potential credit risk that warrants immediate attention.`);
   }
 
   if (paymentCount > 0) {

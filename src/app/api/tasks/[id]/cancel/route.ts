@@ -8,7 +8,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   try {
     const { user, workspaceId } = await requireWorkspace(request);
     const { id } = await params;
-    const body = await parseBody<{ reason?: string }>(request).catch(() => ({}));
+    const body = await parseBody<{ reason?: string }>(request).catch(() => ({}) as { reason?: string });
 
     const task = await db.task.findFirst({
       where: { id, workspaceId },

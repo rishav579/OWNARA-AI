@@ -125,7 +125,7 @@ export async function processTask(taskId: string): Promise<ExecutionResult> {
 // ─── Planning Phase ──────────────────────────────────────────────────────────
 
 async function planTask(
-  task: NonNullable<Awaited<ReturnType<typeof db.task.findUnique>>> & {}
+  task: any
 ): Promise<ExecutionResult> {
   const employee = task.employee;
   const employeeTools: string[] = JSON.parse(employee.tools);

@@ -29,6 +29,9 @@ import { readFileSync, readdirSync, existsSync } from "fs";
 import { join } from "path";
 import type { PromptTemplate, PromptInvocation, TaskType } from "../types";
 
+// Re-export so callers can import PromptInvocation from this module.
+export type { PromptInvocation };
+
 // ─── Registry ────────────────────────────────────────────────────────────────
 
 export class PromptRegistry {

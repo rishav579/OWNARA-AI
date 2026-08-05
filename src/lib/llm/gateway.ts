@@ -218,7 +218,7 @@ export class LLMGateway {
     }
 
     // ─── Step 5+6: Route to provider and execute ────────────────────────────
-    let response: LLMResponse;
+    let response: LLMResponse | undefined;
     let retryCount = 0;
     const maxRetries = 2;
 
@@ -250,11 +250,15 @@ export class LLMGateway {
       }
     }
 
+    // response is guaranteed assigned here — the loop only exits via break
+    // (after assignment) or throw. The non-null assertion documents this.
+    const llmResponse = response!;
+
     // ─── Step 7: Output guardrails ──────────────────────────────────────────
-    const outputCheck = checkOutputGuardrails(response!.content);
+    const outputCheck = checkOutputGuardrails(llmResponse.content);
     if (!outputCheck.passed) {
       guardrailViolations = outputCheck.violations;
-      await logLLMCall(llmRequest, response, "Output guardrail violation", guardrailViolations, promptId, promptVersion);
+      await logLLMCall(llmRequest, llmResponse, "Output guardrail violation", guardrailViolations, promptId, promptVersion);
       throw new LLMGuardrailError("output_guardrail", outputCheck.violations.join("; "));
     }
 
@@ -262,10 +266,10 @@ export class LLMGateway {
     let data: unknown | null = null;
     let repaired = false;
     if (request.jsonMode) {
-      const validation = validateJsonResponse(response!.content, request.jsonSchema);
+      const validation = validateJsonResponse(llmResponse.content, request.jsonSchema);
       if (!validation.valid) {
         // Log the validation failure
-        await logLLMCall(llmRequest, response, `JSON validation failed: ${validation.error}`, guardrailViolations.length > 0 ? guardrailViolations : null, promptId, promptVersion);
+        await logLLMCall(llmRequest, llmResponse, `JSON validation failed: ${validation.error}`, guardrailViolations.length > 0 ? guardrailViolations : null, promptId, promptVersion);
         // Return the raw content — the caller can decide how to handle it
         data = null;
       } else {
@@ -275,25 +279,25 @@ export class LLMGateway {
     }
 
     // ─── Step 9: Log ────────────────────────────────────────────────────────
-    await logLLMCall(llmRequest, response, null, null, promptId, promptVersion);
+    await logLLMCall(llmRequest, llmResponse, null, null, promptId, promptVersion);
 
     // ─── Step 10: Cache ─────────────────────────────────────────────────────
     if (useCache) {
-      cache.set(cacheKey, response!);
+      cache.set(cacheKey, llmResponse);
     }
 
     // ─── Step 11: Return ────────────────────────────────────────────────────
     return {
-      content: response!.content,
+      content: llmResponse.content,
       data,
-      model: response!.model,
-      provider: response!.provider,
-      promptTokens: response!.promptTokens,
-      completionTokens: response!.completionTokens,
-      totalTokens: response!.totalTokens,
-      latencyMs: response!.latencyMs,
-      estimatedCostCents: response!.estimatedCostCents,
-      executionId: response!.executionId,
+      model: llmResponse.model,
+      provider: llmResponse.provider,
+      promptTokens: llmResponse.promptTokens,
+      completionTokens: llmResponse.completionTokens,
+      totalTokens: llmResponse.totalTokens,
+      latencyMs: llmResponse.latencyMs,
+      estimatedCostCents: llmResponse.estimatedCostCents,
+      executionId: llmResponse.executionId,
       cached: false,
       repaired,
       promptId,

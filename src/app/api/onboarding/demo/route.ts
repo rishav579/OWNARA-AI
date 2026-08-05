@@ -32,7 +32,7 @@ import { initProfile } from "@/lib/profile/engine";
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await parseBody<{ email?: string; password?: string; workspaceName?: string }>(request).catch(() => ({}));
+    const body = await parseBody<{ email?: string; password?: string; workspaceName?: string }>(request).catch(() => ({}) as { email?: string; password?: string; workspaceName?: string });
 
     // Generate unique demo credentials (or use provided ones)
     const timestamp = Date.now().toString().slice(-6);
@@ -204,7 +204,7 @@ export async function POST(request: NextRequest) {
       { name: "Acme Pharma Ltd", email: "accounts@acme-pharma.in", phone: "+91 91234 98765", gstin: "24AABCA7890L1Z6", billingAddress: "56 Satellite Road, Ahmedabad 380015", paymentTerms: 60, creditLimit: 800000, riskLevel: "low", notes: "Large customer, reliable payer" },
     ];
 
-    const customerRecords = [];
+    const customerRecords: Awaited<ReturnType<typeof db.customer.create>>[] = [];
     for (const c of customers) {
       const customer = await db.customer.create({
         data: { ...c, workspaceId: workspace.id, status: "active" },

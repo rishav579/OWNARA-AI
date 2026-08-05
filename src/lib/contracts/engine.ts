@@ -51,6 +51,9 @@ export interface ContractInput {
 
 export interface ContractRecord {
   id: string;
+  workspaceId: string;
+  taskId: string;
+  employeeId: string;
   contractNumber: string;
   version: number;
   status: string;
@@ -588,6 +591,9 @@ function hashContent(canonical: string): string {
 function serializeContract(c: any): ContractRecord {
   return {
     id: c.id,
+    workspaceId: c.workspaceId,
+    taskId: c.taskId,
+    employeeId: c.employeeId,
     contractNumber: c.contractNumber,
     version: c.version,
     status: c.status,

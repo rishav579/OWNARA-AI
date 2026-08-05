@@ -37,7 +37,7 @@ export function EmployeeStatusBadge({ status }: { status: EmployeeStatus }) {
 // ─── Employee State Badge ────────────────────────────────────────────────────
 
 export function EmployeeStateBadge({ state }: { state: EmployeeState }) {
-  const config: Record<EmployeeState, { label: string; cls: string }> = {
+  const STATE_CONFIG: Record<EmployeeState, { label: string; cls: string }> = {
     idle: { label: "Available", cls: "text-zinc-400" },
     assigned: { label: "Assigned", cls: "text-sky-400" },
     planning: { label: "Working", cls: "text-violet-400" },
@@ -47,7 +47,8 @@ export function EmployeeStateBadge({ state }: { state: EmployeeState }) {
     failed: { label: "Failed", cls: "text-red-400" },
     paused: { label: "Paused", cls: "text-amber-400" },
     stopped: { label: "Stopped", cls: "text-zinc-400" },
-  }[state];
+  };
+  const config = STATE_CONFIG[state];
   return (
     <span className={cn("inline-flex items-center gap-1.5 text-xs font-medium", config.cls)}>
       {(state === "executing" || state === "planning") && (

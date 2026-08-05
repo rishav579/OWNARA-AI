@@ -91,12 +91,12 @@ const LEVELS = [
   { level: 7, title: "Expert Analyst", minXp: 2000 },
 ];
 
-function getLevelForXp(xp: number): { level: number; title: string } {
+function getLevelForXp(xp: number): { level: number; title: string; minXp: number } {
   let result = LEVELS[0];
   for (const l of LEVELS) {
     if (xp >= l.minXp) result = l;
   }
-  return { level: result.level, title: result.title };
+  return { level: result.level, title: result.title, minXp: result.minXp };
 }
 
 // ─── Skill Definitions (Generic — extensible per role) ───────────────────────

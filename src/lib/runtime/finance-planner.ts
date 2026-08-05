@@ -372,7 +372,7 @@ export async function executeFinanceTool(
           status: emailSent ? "sent" : "failed",
           sentTo: customer?.email || "",
           subject: reminder.subject,
-          emailError: emailError || undefined,
+          emailError: emailError || "",
         },
         tokens: 200,
         durationMs: Date.now() - start + 800,

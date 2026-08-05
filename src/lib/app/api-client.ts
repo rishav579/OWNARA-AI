@@ -106,7 +106,9 @@ async function tryRefresh(): Promise<boolean> {
 
       accessToken = json.data.accessToken;
       refreshToken = json.data.refreshToken;
-      window.sessionStorage.setItem("bihari_token", accessToken);
+      if (typeof window !== "undefined" && accessToken) {
+        window.sessionStorage.setItem("bihari_token", accessToken);
+      }
       return true;
     } catch {
       return false;

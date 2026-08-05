@@ -6,7 +6,30 @@ import { AVATAR_COLORS, ROLE_LABELS } from "@/lib/shared-helpers";
 
 
 
-function serialize(e: typeof db.employee extends { findUnique: infer F } ? never : any) {
+// Structural type matching the Employee fields used by serialize.
+// Works for both findFirst (with includes) and update results.
+type EmployeeRow = {
+  id: string;
+  name: string;
+  role: string;
+  templateId: string | null;
+  status: string;
+  state: string;
+  createdAt: Date;
+  activatedAt: Date | null;
+  retiredAt: Date | null;
+  taskCount: number;
+  completedTasks: number;
+  tokenUsage: number;
+  tokenCap: number;
+  tools: string;
+  pendingApprovals: number;
+  jobDescription: string;
+  boundaries: string;
+  approvalRules: string;
+};
+
+function serialize(e: EmployeeRow) {
   return {
     id: e.id,
     name: e.name,

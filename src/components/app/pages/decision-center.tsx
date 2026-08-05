@@ -728,7 +728,7 @@ function TimelineItem({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className={cn("text-xs font-medium", done ? "text-zinc-200" : "text-zinc-500")}>{label}</span>
-          {time && <span className="text-[0.65rem] text-zinc-500">{formatDateTime(time)}</span>}
+          {time && <span className="text-[0.65rem] text-zinc-500">{formatDateTime(String(time))}</span>}
         </div>
         {detail && <p className="text-[0.65rem] text-zinc-500">{detail}</p>}
       </div>

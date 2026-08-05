@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    let matchedSession = null;
+    let matchedSession: typeof sessions[number] | null = null;
     for (const session of sessions) {
       if (compareToken(refreshToken, session.tokenHash)) {
         matchedSession = session;
