@@ -32,6 +32,8 @@ const COST_TABLES: Record<string, Record<string, { input: number; output: number
     "claude-3-haiku-20240307": { input: 25, output: 125 },
   },
   gemini: {
+    "gemini-2.0-flash": { input: 10, output: 40 },
+    "gemini-2.5-flash": { input: 15, output: 60 },
     "gemini-1.5-pro": { input: 125, output: 500 },
     "gemini-1.5-flash": { input: 7.5, output: 30 },
   },
@@ -167,7 +169,14 @@ export class OpenAIProvider implements LLMProvider {
     this.available = !!this.apiKey;
   }
 
+  /** Re-checks env at call time — allows runtime key rotation */
+  private refreshAvailability(): void {
+    this.apiKey = process.env.OPENAI_API_KEY || "";
+    this.available = !!this.apiKey;
+  }
+
   async complete(request: LLMRequest): Promise<LLMResponse> {
+    this.refreshAvailability();
     if (!this.available) {
       throw new LLMProviderErrorImpl("openai", "OpenAI API key not configured", 401, false);
     }
@@ -198,7 +207,7 @@ export class OpenAIProvider implements LLMProvider {
           "openai",
           `OpenAI API error: ${response.status} ${errorBody.substring(0, 200)}`,
           response.status,
-          response.status >= 500
+          response.status === 429 || response.status >= 500
         );
       }
 
@@ -240,7 +249,14 @@ export class AnthropicProvider implements LLMProvider {
     this.available = !!this.apiKey;
   }
 
+  /** Re-checks env at call time */
+  private refreshAvailability(): void {
+    this.apiKey = process.env.ANTHROPIC_API_KEY || "";
+    this.available = !!this.apiKey;
+  }
+
   async complete(request: LLMRequest): Promise<LLMResponse> {
+    this.refreshAvailability();
     if (!this.available) {
       throw new LLMProviderErrorImpl("anthropic", "Anthropic API key not configured", 401, false);
     }
@@ -279,7 +295,7 @@ export class AnthropicProvider implements LLMProvider {
           "anthropic",
           `Anthropic API error: ${response.status} ${errorBody.substring(0, 200)}`,
           response.status,
-          response.status >= 500
+          response.status === 429 || response.status >= 500
         );
       }
 
@@ -320,14 +336,21 @@ export class GeminiProvider implements LLMProvider {
     this.available = !!this.apiKey;
   }
 
+  /** Re-checks env at call time */
+  private refreshAvailability(): void {
+    this.apiKey = process.env.GEMINI_API_KEY || "";
+    this.available = !!this.apiKey;
+  }
+
   async complete(request: LLMRequest): Promise<LLMResponse> {
+    this.refreshAvailability();
     if (!this.available) {
       throw new LLMProviderErrorImpl("gemini", "Gemini API key not configured", 401, false);
     }
 
     const start = Date.now();
     const executionId = request.executionId || generateExecutionId();
-    const model = request.model || "gemini-1.5-flash";
+    const model = request.model || "gemini-2.0-flash";
 
     // Gemini uses a different API format
     const systemMessage = request.messages.find((m) => m.role === "system");
@@ -359,7 +382,7 @@ export class GeminiProvider implements LLMProvider {
           "gemini",
           `Gemini API error: ${response.status} ${errorBody.substring(0, 200)}`,
           response.status,
-          response.status >= 500
+          response.status === 429 || response.status >= 500
         );
       }
 
@@ -400,7 +423,14 @@ export class OllamaProvider implements LLMProvider {
     this.available = process.env.LLM_PROVIDER === "ollama";
   }
 
+  /** Re-checks env at call time */
+  private refreshAvailability(): void {
+    this.baseUrl = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
+    this.available = process.env.LLM_PROVIDER === "ollama";
+  }
+
   async complete(request: LLMRequest): Promise<LLMResponse> {
+    this.refreshAvailability();
     if (!this.available) {
       throw new LLMProviderErrorImpl("ollama", "Ollama not configured (set LLM_PROVIDER=ollama)", 401, false);
     }
@@ -431,7 +461,7 @@ export class OllamaProvider implements LLMProvider {
           "ollama",
           `Ollama API error: ${response.status} ${errorBody.substring(0, 200)}`,
           response.status,
-          response.status >= 500
+          response.status === 429 || response.status >= 500
         );
       }
 

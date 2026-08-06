@@ -169,7 +169,7 @@ export class LLMGateway {
     const maxTokens = request.maxTokens ?? primaryRoute?.maxTokens ?? 2000;
 
     const cache = getResponseCache();
-    const cacheKey = cache.key(messages, model, temperature);
+    const cacheKey = cache.key(messages, model, temperature, promptId, promptVersion);
 
     if (useCache) {
       const cached = cache.get(cacheKey);
@@ -226,12 +226,26 @@ export class LLMGateway {
       while (retryCount <= maxRetries) {
         try {
           const startMs = Date.now();
-          llmResponse = await entry.provider.complete({
-            ...llmRequest,
-            model: providerModel,
-            temperature,
-            maxTokens,
-          });
+          // Timeout: 30 seconds per provider call
+          const timeoutMs = 30000;
+          const timeoutController = new AbortController();
+          const timeoutId = setTimeout(() => timeoutController.abort(), timeoutMs);
+
+          try {
+            llmResponse = await Promise.race([
+              entry.provider.complete({
+                ...llmRequest,
+                model: providerModel,
+                temperature,
+                maxTokens,
+              }),
+              new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error(`Provider ${providerName} timed out after ${timeoutMs}ms`)), timeoutMs)
+              ),
+            ]);
+          } finally {
+            clearTimeout(timeoutId);
+          }
           const elapsedMs = Date.now() - startMs;
 
           // Structured logging for successful call
@@ -249,8 +263,10 @@ export class LLMGateway {
         } catch (err) {
           const isProviderError = err instanceof ProviderError || (err as any)?.name === "LLMProviderError";
           const retryable = isProviderError ? (err as any)?.retryable : false;
+          // Network errors (TypeError: fetch failed) are also retryable
+          const isNetworkError = !isProviderError && (err instanceof TypeError || (err instanceof Error && err.message.includes("fetch")));
 
-          if (retryable && retryCount < maxRetries) {
+          if ((retryable || isNetworkError) && retryCount < maxRetries) {
             retryCount++;
             const backoff = Math.pow(2, retryCount) * 1000;
             console.log(

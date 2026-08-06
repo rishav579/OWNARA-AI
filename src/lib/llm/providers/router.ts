@@ -52,49 +52,49 @@ const DEFAULT_ROUTES: Record<TaskType, ModelRoute> = {
   planning: {
     taskType: "planning",
     provider: "gemini",
-    model: "gemini-1.5-flash",
+    model: "gemini-2.0-flash",
     temperature: 0.3,
     maxTokens: 2000,
   },
   reasoning: {
     taskType: "reasoning",
     provider: "gemini",
-    model: "gemini-1.5-flash",
+    model: "gemini-2.0-flash",
     temperature: 0.5,
     maxTokens: 1500,
   },
   tool_execution: {
     taskType: "tool_execution",
     provider: "gemini",
-    model: "gemini-1.5-flash",
+    model: "gemini-2.0-flash",
     temperature: 0.2,
     maxTokens: 1000,
   },
   finance_reasoning: {
     taskType: "finance_reasoning",
     provider: "gemini",
-    model: "gemini-1.5-pro",
+    model: "gemini-2.5-flash",
     temperature: 0.3,
     maxTokens: 2000,
   },
   summarization: {
     taskType: "summarization",
     provider: "gemini",
-    model: "gemini-1.5-flash",
+    model: "gemini-2.0-flash",
     temperature: 0.3,
     maxTokens: 1000,
   },
   drafting: {
     taskType: "drafting",
     provider: "gemini",
-    model: "gemini-1.5-pro",
+    model: "gemini-2.5-flash",
     temperature: 0.7,
     maxTokens: 2000,
   },
   general: {
     taskType: "general",
     provider: "gemini",
-    model: "gemini-1.5-flash",
+    model: "gemini-2.0-flash",
     temperature: 0.5,
     maxTokens: 1500,
   },
@@ -145,13 +145,13 @@ const FALLBACK_MODELS: Record<string, Record<TaskType, string>> = {
     general: "mock-1.0",
   },
   gemini: {
-    planning: "gemini-1.5-flash",
-    reasoning: "gemini-1.5-flash",
-    tool_execution: "gemini-1.5-flash",
-    finance_reasoning: "gemini-1.5-pro",
-    summarization: "gemini-1.5-flash",
-    drafting: "gemini-1.5-pro",
-    general: "gemini-1.5-flash",
+    planning: "gemini-2.0-flash",
+    reasoning: "gemini-2.0-flash",
+    tool_execution: "gemini-2.0-flash",
+    finance_reasoning: "gemini-2.5-flash",
+    summarization: "gemini-2.0-flash",
+    drafting: "gemini-2.5-flash",
+    general: "gemini-2.0-flash",
   },
 };
 
@@ -223,13 +223,27 @@ export class ModelRouter {
   }
 
   /**
+   * Re-checks provider availability at call time by reading process.env.
+   * This allows runtime key rotation without restarting the process.
+   */
+  private isProviderAvailable(name: string): boolean {
+    switch (name) {
+      case "gemini": return !!process.env.GEMINI_API_KEY;
+      case "openai": return !!process.env.OPENAI_API_KEY;
+      case "anthropic": return !!process.env.ANTHROPIC_API_KEY;
+      case "ollama": return process.env.LLM_PROVIDER === "ollama";
+      case "mock": return true; // Always available
+      default: return false;
+    }
+  }
+
+  /**
    * Returns the ordered list of (provider, route) pairs to try for a given
    * task type. The gateway iterates this list, trying each provider in turn
    * until one succeeds.
    *
-   * The first entry is the preferred provider from the routing table.
-   * Subsequent entries follow the failover chain, skipping the preferred
-   * provider (it's already first) and any unavailable providers.
+   * Availability is checked at CALL TIME (not init time) so runtime key
+   * changes are respected.
    *
    * Mock is always included as the last entry.
    */
@@ -239,32 +253,35 @@ export class ModelRouter {
 
     // Check if the preferred provider from the routing table is available
     const preferredName = route.provider;
-    const preferred = this.providers[preferredName];
+    const preferredAvailable = this.isProviderAvailable(preferredName);
 
-    if (preferred && preferred.available) {
-      result.push({
-        provider: preferred,
-        route: { ...route, provider: preferredName },
-      });
+    if (preferredAvailable) {
+      const provider = this.providers[preferredName];
+      if (provider) {
+        result.push({
+          provider,
+          route: { ...route, provider: preferredName },
+        });
+      }
     }
 
     // Walk the failover chain, adding available providers not already included
     for (const name of FAILOVER_CHAIN) {
-      if (name === preferredName) continue; // already added (or attempted)
+      if (name === preferredName) continue;
+      if (!this.isProviderAvailable(name)) continue;
       const candidate = this.providers[name];
-      if (candidate && candidate.available) {
-        // Skip if already in the result
-        if (result.some((r) => r.provider.name === candidate.name)) continue;
-        result.push({
-          provider: candidate,
-          route: {
-            ...route,
-            provider: name,
-            model: this.getModelForProvider(name, taskType),
-          },
-          failoverReason: `${preferredName} unavailable`,
-        });
-      }
+      if (!candidate) continue;
+      if (result.some((r) => r.provider.name === candidate.name)) continue;
+
+      result.push({
+        provider: candidate,
+        route: {
+          ...route,
+          provider: name,
+          model: this.getModelForProvider(name, taskType),
+        },
+        failoverReason: preferredAvailable ? `${preferredName} failed` : `${preferredName} unavailable`,
+      });
     }
 
     // Ensure mock is always last (it's always available)
@@ -289,7 +306,7 @@ export class ModelRouter {
       return models[taskType];
     }
     // Fall back to the forced model or a generic default
-    return this.forcedModel || "gpt-4o-mini";
+    return this.forcedModel || "gemini-2.0-flash";
   }
 
   /**
