@@ -55,6 +55,10 @@ import {
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
 const MODULES = [
+  { id: "identity-cards", label: "Identity Cards", icon: Users },
+  { id: "explainability", label: "Explainability", icon: Eye },
+  { id: "trust-timeline", label: "Trust Timeline", icon: Clock },
+  { id: "resume", label: "Employee Resume", icon: Award },
   { id: "ceo-report", label: "CEO Report", icon: Building2 },
   { id: "customer-report", label: "Customer Report", icon: ShieldCheck },
   { id: "risk", label: "Risk Center", icon: AlertOctagon },
@@ -102,6 +106,10 @@ export function TrustCenterPage() {
       </div>
 
       {/* Module content */}
+      {module === "identity-cards" && <IdentityCardsModule />}
+      {module === "explainability" && <ExplainabilityModule />}
+      {module === "trust-timeline" && <TrustTimelineModule />}
+      {module === "resume" && <ResumeModule />}
       {module === "risk" && <RiskCenterModule />}
       {module === "ceo-report" && <CEOReportModule />}
       {module === "customer-report" && <CustomerTrustReportModule />}
