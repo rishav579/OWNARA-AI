@@ -5,13 +5,15 @@ import {
   ShieldCheck,
   Bot,
   ScrollText,
-  Zap,
   Lock,
   Eye,
   CheckCircle2,
   ArrowRight,
-  Terminal,
   Workflow,
+  IndianRupee,
+  Briefcase,
+  Users,
+  Clock,
 } from "lucide-react";
 
 export function LandingPage() {
@@ -29,9 +31,9 @@ export function LandingPage() {
             <span className="text-sm font-bold tracking-tight">BIHARI AI</span>
           </div>
           <div className="hidden items-center gap-8 md:flex">
-            <a href="#features" className="text-sm text-zinc-400 transition-colors hover:text-zinc-100">Features</a>
+            <a href="#how-it-works" className="text-sm text-zinc-400 transition-colors hover:text-zinc-100">How it works</a>
+            <a href="#employees" className="text-sm text-zinc-400 transition-colors hover:text-zinc-100">AI Employees</a>
             <a href="#trust" className="text-sm text-zinc-400 transition-colors hover:text-zinc-100">Trust</a>
-            <a href="#trust" className="text-sm text-zinc-400 transition-colors hover:text-zinc-100">How it works</a>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -58,33 +60,32 @@ export function LandingPage() {
         <div className="relative mx-auto max-w-4xl px-4 py-24 text-center sm:px-6 sm:py-32">
           <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/50 px-3 py-1 text-xs text-zinc-400">
             <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            India's Trusted AI Employee Company
+            The AI Employee Platform
           </div>
           <h1 className="text-4xl font-bold tracking-tight text-zinc-50 sm:text-6xl">
-            Hire AI Employees you can
+            Hire AI Employees
             <br />
             <span className="bg-gradient-to-r from-emerald-400 to-teal-300 bg-clip-text text-transparent">
-              actually trust
+              you can trust
             </span>
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-zinc-400">
-            Delegate real operational work to role-based AI Employees that are reliable,
-            transparent, auditable, and always under your control. Every critical action
-            requires your approval.
+            BIHARI AI is the platform for hiring AI Employees that do real business work.
+            Your first employee — a Finance Employee — chases overdue invoices,
+            drafts collection reminders, and recovers payments. All under your approval.
           </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <button
-              onClick={() => navigate("login")}
+              onClick={() => navigate("login?signup=1")}
               className="group flex items-center gap-2 rounded-lg bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-emerald-950 transition-all hover:bg-emerald-400"
             >
-              Hire your first AI Employee
+              Hire your Finance Employee
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
             </button>
             <button
               onClick={() => navigate("login")}
               className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/50 px-5 py-2.5 text-sm font-semibold text-zinc-200 transition-colors hover:border-zinc-700"
             >
-              <Terminal className="h-4 w-4" />
               View live demo
             </button>
           </div>
@@ -96,57 +97,99 @@ export function LandingPage() {
             <span className="flex items-center gap-1.5"><Eye className="h-4 w-4 text-emerald-500" /> Explainable decisions</span>
           </div>
         </div>
+      </section>
 
-        {/* Product preview mockup */}
-        <div className="relative mx-auto max-w-5xl px-4 pb-20 sm:px-6">
-          <div className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900 shadow-2xl">
-            <div className="flex items-center gap-1.5 border-b border-zinc-800 bg-zinc-950 px-4 py-2.5">
-              <span className="h-2.5 w-2.5 rounded-full bg-red-500/60" />
-              <span className="h-2.5 w-2.5 rounded-full bg-amber-500/60" />
-              <span className="h-2.5 w-2.5 rounded-full bg-emerald-500/60" />
-              <span className="ml-3 text-xs text-zinc-500">app.bihari-ai.in/dashboard</span>
+      {/* Available Today + Coming Soon */}
+      <section id="employees" className="border-t border-zinc-900 py-20">
+        <div className="mx-auto max-w-5xl px-4 sm:px-6">
+          <div className="mb-12 text-center">
+            <h2 className="text-3xl font-bold tracking-tight text-zinc-50 sm:text-4xl">
+              One platform. Many employees.
+            </h2>
+            <p className="mx-auto mt-3 max-w-xl text-zinc-400">
+              Start with Finance. Expand as we ship more AI Employees.
+            </p>
+          </div>
+
+          {/* Available Now */}
+          <div className="mb-4 flex items-center gap-2">
+            <span className="flex h-2 w-2 rounded-full bg-emerald-500" />
+            <span className="text-xs font-semibold uppercase tracking-wider text-emerald-400">Available Today</span>
+          </div>
+          <div className="mb-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-5">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-400">
+                <IndianRupee className="h-5 w-5" />
+              </div>
+              <h3 className="mt-3 text-sm font-semibold text-zinc-100">Finance Employee</h3>
+              <p className="mt-1 text-xs leading-relaxed text-zinc-400">
+                Chases overdue invoices, drafts collection reminders, manages accounts receivable — all under your approval.
+              </p>
+              <div className="mt-3 inline-flex items-center gap-1 text-[0.65rem] font-medium text-emerald-400">
+                <CheckCircle2 className="h-3 w-3" /> Production ready
+              </div>
             </div>
-            <div className="grid grid-cols-3 gap-3 p-4">
-              {/* mini stat cards */}
-              <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
-                <div className="text-[0.65rem] text-zinc-500">Active Employees</div>
-                <div className="mt-1 text-lg font-bold text-zinc-50">3</div>
-              </div>
-              <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
-                <div className="text-[0.65rem] text-zinc-500">Pending Approvals</div>
-                <div className="mt-1 text-lg font-bold text-amber-400">2</div>
-              </div>
-              <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
-                <div className="text-[0.65rem] text-zinc-500">Tasks This Month</div>
-                <div className="mt-1 text-lg font-bold text-zinc-50">190</div>
-              </div>
-              {/* mini chart */}
-              <div className="col-span-2 rounded-lg border border-zinc-800 bg-zinc-900 p-3">
-                <div className="mb-2 text-[0.65rem] text-zinc-500">Task Activity</div>
-                <div className="flex h-12 items-end gap-1">
-                  {[4, 6, 3, 7, 2, 1, 5, 8, 6, 4, 3, 2, 9, 5].map((v, i) => (
-                    <div key={i} className="flex-1 rounded-t bg-emerald-500/60" style={{ height: `${(v / 9) * 100}%` }} />
-                  ))}
+          </div>
+
+          {/* Coming Soon */}
+          <div className="mb-4 flex items-center gap-2">
+            <Clock className="h-3.5 w-3.5 text-zinc-500" />
+            <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Coming Soon</span>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {[
+              { icon: Briefcase, title: "Sales Employee", desc: "Researches prospects, drafts outreach, follows up on leads." },
+              { icon: Users, title: "HR Employee", desc: "Onboards new hires, manages leave requests, answers policy questions." },
+              { icon: Bot, title: "Operations Employee", desc: "Monitors workflows, flags bottlenecks, automates routine operations." },
+            ].map((emp) => (
+              <div key={emp.title} className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-5 opacity-70">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-800 text-zinc-500">
+                  <emp.icon className="h-5 w-5" />
                 </div>
+                <h3 className="mt-3 text-sm font-semibold text-zinc-300">{emp.title}</h3>
+                <p className="mt-1 text-xs leading-relaxed text-zinc-500">{emp.desc}</p>
               </div>
-              {/* approval card */}
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
-                <div className="flex items-center gap-1 text-[0.65rem] font-semibold text-amber-400">
-                  <Lock className="h-3 w-3" /> Approval needed
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* How It Works */}
+      <section id="how-it-works" className="border-t border-zinc-900 py-20">
+        <div className="mx-auto max-w-4xl px-4 sm:px-6">
+          <div className="rounded-2xl border border-zinc-800 bg-gradient-to-br from-emerald-500/5 to-transparent p-8 sm:p-12">
+            <div className="flex items-center gap-2 text-emerald-400">
+              <ShieldCheck className="h-5 w-5" />
+              <span className="text-xs font-semibold uppercase tracking-wider">The Trust Loop</span>
+            </div>
+            <h2 className="mt-3 text-3xl font-bold tracking-tight text-zinc-50">
+              Delegate → Review → Approve → Audit
+            </h2>
+            <p className="mt-3 text-zinc-400">
+              Every action your Finance Employee takes follows the same loop. You delegate a task,
+              the employee analyzes and plans, critical actions wait for your approval, and
+              everything is recorded in an immutable audit trail.
+            </p>
+            <div className="mt-8 grid gap-3 sm:grid-cols-4">
+              {[
+                { step: "01", label: "Delegate", desc: "Assign work to your Finance Employee" },
+                { step: "02", label: "Review", desc: "Employee analyzes, plans, and drafts actions" },
+                { step: "03", label: "Approve", desc: "You approve, reject, or modify" },
+                { step: "04", label: "Audit", desc: "Every action is hash-chained and verifiable" },
+              ].map((s) => (
+                <div key={s.step} className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
+                  <div className="font-mono text-xs text-emerald-400">{s.step}</div>
+                  <div className="mt-1 text-sm font-semibold text-zinc-100">{s.label}</div>
+                  <div className="mt-0.5 text-[0.7rem] text-zinc-500">{s.desc}</div>
                 </div>
-                <div className="mt-1.5 text-xs text-zinc-300">Saanvi wants to send an email</div>
-                <div className="mt-2 flex gap-1">
-                  <span className="flex-1 rounded bg-emerald-500 py-1 text-center text-[0.6rem] font-bold text-emerald-950">Approve</span>
-                  <span className="flex-1 rounded bg-zinc-700 py-1 text-center text-[0.6rem] font-bold text-zinc-300">Reject</span>
-                </div>
-              </div>
+              ))}
             </div>
           </div>
         </div>
       </section>
 
       {/* Features */}
-      <section id="features" className="border-t border-zinc-900 py-20">
+      <section className="border-t border-zinc-900 py-20">
         <div className="mx-auto max-w-5xl px-4 sm:px-6">
           <div className="mb-12 text-center">
             <h2 className="text-3xl font-bold tracking-tight text-zinc-50 sm:text-4xl">
@@ -159,12 +202,12 @@ export function LandingPage() {
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {[
-              { icon: Bot, title: "Role-based Employees", desc: "Hire from curated templates — Customer Support, Sales Dev, Research Analyst. Each has a job description and boundaries." },
-              { icon: ShieldCheck, title: "Human Approval Gate", desc: "Critical actions never execute without your approval. Approve, reject, or modify — you decide." },
-              { icon: ScrollText, title: "Immutable Audit Trail", desc: "Every action, decision, and intervention is hash-chained and tamper-evident. Trust is verifiable." },
-              { icon: Eye, title: "Explainability", desc: "See why an employee took each action, grounded in its reasoning and the knowledge it used." },
-              { icon: Lock, title: "Tool Restrictions", desc: "Strict whitelist. An employee can only use the tools you grant. No shell, no code execution." },
-              { icon: Workflow, title: "Always in Control", desc: "Pause, resume, or stop any employee instantly. Retire when done. The human is always in charge." },
+              { icon: ShieldCheck, title: "Human Approval Gate", desc: "Critical actions — like sending a customer email — never execute without your approval. Approve, reject, or modify. You decide." },
+              { icon: ScrollText, title: "Immutable Audit Trail", desc: "Every action, decision, and intervention is hash-chained and tamper-evident. Trust is verifiable, not assumed." },
+              { icon: Eye, title: "Explainability", desc: "See why your employee took each action, grounded in evidence, policies, and customer history." },
+              { icon: Lock, title: "Tool Restrictions", desc: "Strict whitelist. Your employee can only use the tools you grant. No shell, no code execution." },
+              { icon: Workflow, title: "Always in Control", desc: "Pause, resume, or stop your employee instantly. Retire when done. The human is always in charge." },
+              { icon: Bot, title: "Built for Trust", desc: "Every employee has a job description, operating boundaries, and a trust score that evolves with performance." },
             ].map((f) => (
               <div key={f.title} className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5 transition-colors hover:border-zinc-700">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400">
@@ -178,53 +221,18 @@ export function LandingPage() {
         </div>
       </section>
 
-      {/* Trust section */}
-      <section id="trust" className="border-t border-zinc-900 py-20">
-        <div className="mx-auto max-w-4xl px-4 sm:px-6">
-          <div className="rounded-2xl border border-zinc-800 bg-gradient-to-br from-emerald-500/5 to-transparent p-8 sm:p-12">
-            <div className="flex items-center gap-2 text-emerald-400">
-              <ShieldCheck className="h-5 w-5" />
-              <span className="text-xs font-semibold uppercase tracking-wider">The Trust Loop</span>
-            </div>
-            <h2 className="mt-3 text-3xl font-bold tracking-tight text-zinc-50">
-              Delegate → Review → Approve → Audit
-            </h2>
-            <p className="mt-3 text-zinc-400">
-              Every action an AI Employee takes follows the same loop. You delegate a task,
-              the employee plans and executes in logged steps, critical actions wait for your
-              approval, and everything is recorded in an immutable audit trail.
-            </p>
-            <div className="mt-8 grid gap-3 sm:grid-cols-4">
-              {[
-                { step: "01", label: "Delegate", desc: "Assign a task to an employee" },
-                { step: "02", label: "Review", desc: "Employee plans and executes in steps" },
-                { step: "03", label: "Approve", desc: "You approve, reject, or modify" },
-                { step: "04", label: "Audit", desc: "Every action is hash-chained" },
-              ].map((s) => (
-                <div key={s.step} className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
-                  <div className="font-mono text-xs text-emerald-400">{s.step}</div>
-                  <div className="mt-1 text-sm font-semibold text-zinc-100">{s.label}</div>
-                  <div className="mt-0.5 text-[0.7rem] text-zinc-500">{s.desc}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
       {/* CTA */}
       <section className="border-t border-zinc-900 py-20">
         <div className="mx-auto max-w-2xl px-4 text-center sm:px-6">
-          <Zap className="mx-auto h-8 w-8 text-emerald-400" />
-          <h2 className="mt-4 text-3xl font-bold tracking-tight text-zinc-50">
-            Start delegating in minutes
+          <h2 className="text-3xl font-bold tracking-tight text-zinc-50">
+            Hire your Finance Employee today
           </h2>
           <p className="mt-3 text-zinc-400">
-            Hire your first AI Employee from a template, upload your knowledge documents,
-            and assign your first task. No code required.
+            Sign up, upload your invoices, and watch your AI Employee start
+            recovering overdue payments — all under your approval.
           </p>
           <button
-            onClick={() => navigate("login")}
+            onClick={() => navigate("login?signup=1")}
             className="mt-6 inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-emerald-950 transition-colors hover:bg-emerald-400"
           >
             Get started free
@@ -240,7 +248,7 @@ export function LandingPage() {
             <div className="flex h-6 w-6 items-center justify-center rounded-md bg-gradient-to-br from-emerald-500 to-teal-600 text-xs font-bold text-white">
               B
             </div>
-            BIHARI AI — Every action is auditable. Every critical action is human-approved.
+            BIHARI AI — The AI Employee Platform
           </div>
           <div className="flex items-center gap-4 text-xs text-zinc-600">
             <span>Privacy</span>

@@ -9,10 +9,10 @@ export function AuthPage() {
   const { navigate } = useRouter();
   const { login, signup } = useAuth();
   const [mode, setMode] = useState<"login" | "signup">("login");
-  const [email, setEmail] = useState("rishav@acmetrading.in");
-  const [password, setPassword] = useState("demo-password");
-  const [name, setName] = useState("Rishav Raj");
-  const [workspaceName, setWorkspaceName] = useState("Acme Trading Pvt Ltd");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [workspaceName, setWorkspaceName] = useState("");
   const [loading, setLoading] = useState(false);
   const [demoLoading, setDemoLoading] = useState(false);
   const [error, setError] = useState("");
