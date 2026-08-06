@@ -1,16 +1,17 @@
 /**
- * BIHARI AI — LLM Gateway
+ * BIHARI AI — LLM Gateway (Provider-Agnostic with Automatic Failover)
  *
  * The single entry point for all LLM calls in the system. Combines:
  * - Model routing (selects provider + model based on task type)
+ * - Automatic failover (Gemini → OpenAI → Anthropic → Ollama → Mock)
  * - Prompt registry (loads, versions, and renders prompt templates)
  * - Input guardrails (injection, unsafe tools, missing fields, policy)
  * - Output guardrails (forbidden content, approval bypass)
- * - JSON validation + auto-repair
+ * - JSON validation + auto-repair with one retry
  * - Response caching
- * - Request/response logging
+ * - Structured logging (provider, model, latency, retries, failover, cache)
  *
- * Usage:
+ * Usage (unchanged from previous version):
  *   const gateway = getLLMGateway();
  *   const response = await gateway.complete({
  *     taskType: "planning",
@@ -21,16 +22,12 @@
  *     taskId: "...",
  *   });
  *
- * The gateway is backward-compatible: if no promptId is provided, it accepts
- * raw messages (like the original provider interface).
- *
  * The existing runtime (executor, planner, finance-planner, brain) does NOT
- * need to change its logic — it calls the gateway instead of calling the
- * mock planner directly. The gateway handles everything else.
+ * need to change — the gateway interface is identical.
  */
 
 import crypto from "crypto";
-import type { LLMRequest, LLMResponse, TaskType, LLMProviderError } from "./types";
+import type { LLMRequest, LLMResponse, TaskType } from "./types";
 import { LLMProviderError as ProviderError, LLMGuardrailError } from "./types";
 import { getModelRouter } from "./providers/router";
 import { getPromptRegistry, type PromptInvocation } from "./prompts/registry";
@@ -39,41 +36,26 @@ import { logLLMCall } from "./logger";
 import { checkInputGuardrails, checkOutputGuardrails } from "./guardrails";
 import { validateJsonResponse } from "./validator";
 
-// ─── Gateway Request (extends LLMRequest with prompt registry support) ────────
+// ─── Gateway Request (unchanged interface) ───────────────────────────────────
 
 export interface GatewayRequest {
-  /** Task type for routing */
   taskType?: TaskType;
-  /** Prompt template ID (from the registry). If provided, the gateway loads
-   * the template and renders it with the provided variables. */
   promptId?: string;
-  /** Variables to interpolate into the prompt template */
   variables?: Record<string, string>;
-  /** Or, provide raw messages directly (bypasses the prompt registry) */
   messages?: { role: "system" | "user" | "assistant"; content: string }[];
-  /** Model override (if not using the router's default for this task type) */
   model?: string;
-  /** Temperature override */
   temperature?: number;
-  /** Max tokens override */
   maxTokens?: number;
-  /** Whether to validate the response as JSON */
   jsonMode?: boolean;
-  /** JSON schema for validation (optional) */
   jsonSchema?: Record<string, unknown>;
-  /** Workspace for logging and cost attribution */
   workspaceId?: string;
-  /** Employee for logging */
   employeeId?: string;
-  /** Task for logging */
   taskId?: string;
-  /** Whether to use the response cache (default: true) */
   useCache?: boolean;
 }
 
 export interface GatewayResponse {
   content: string;
-  /** Parsed JSON data (if jsonMode was true and parsing succeeded) */
   data: unknown | null;
   model: string;
   provider: string;
@@ -84,28 +66,33 @@ export interface GatewayResponse {
   estimatedCostCents: number;
   executionId: string;
   cached: boolean;
-  /** Whether the JSON was auto-repaired */
   repaired: boolean;
-  /** Prompt template that was used */
   promptId?: string;
   promptVersion?: number;
+  /** Number of failover attempts before success (0 = primary succeeded) */
+  failoverCount?: number;
+  /** Which provider was tried first */
+  primaryProvider?: string;
+  /** Which provider actually served the request */
+  servedBy?: string;
 }
 
 // ─── Gateway ─────────────────────────────────────────────────────────────────
 
 export class LLMGateway {
   /**
-   * Executes an LLM call through the full gateway pipeline:
+   * Executes an LLM call through the full gateway pipeline with failover.
    *
+   * Pipeline:
    * 1. Load prompt template (if promptId is provided)
    * 2. Render prompt with variables
    * 3. Check input guardrails
    * 4. Check cache
-   * 5. Route to provider
-   * 6. Execute LLM call (with retry on transient failure)
+   * 5. Route to provider with failover chain
+   * 6. Execute LLM call (try each provider in the failover chain)
    * 7. Check output guardrails
-   * 8. Validate JSON (if jsonMode)
-   * 9. Log the call
+   * 8. Validate JSON (if jsonMode) — retry once with repair prompt if invalid
+   * 9. Log the call with structured metadata
    * 10. Cache the response
    * 11. Return the response
    */
@@ -124,11 +111,10 @@ export class LLMGateway {
       const registry = getPromptRegistry();
       const invocation: PromptInvocation = {
         promptId: request.promptId,
-        version: 0, // 0 means "use active version"
+        version: 0,
         variables: request.variables,
       };
 
-      // Find the active version
       const template = registry.get(request.promptId);
       if (template) {
         invocation.version = template.version;
@@ -168,17 +154,19 @@ export class LLMGateway {
     const inputCheck = checkInputGuardrails(llmRequest);
     if (!inputCheck.passed) {
       guardrailViolations = inputCheck.violations;
-      // Log the guardrail violation
       await logLLMCall(llmRequest, null, "Input guardrail violation", guardrailViolations, promptId, promptVersion);
       throw new LLMGuardrailError("input_guardrail", inputCheck.violations.join("; "));
     }
 
     // ─── Step 4: Check cache ────────────────────────────────────────────────
     const router = getModelRouter();
-    const { provider, route } = router.route(taskType);
-    const model = request.model || route.model;
-    const temperature = request.temperature ?? route.temperature;
-    const maxTokens = request.maxTokens ?? route.maxTokens;
+    const failoverChain = router.routeWithFailover(taskType);
+    const primaryRoute = failoverChain[0]?.route;
+    const primaryProvider = failoverChain[0]?.provider.name || "unknown";
+
+    const model = request.model || primaryRoute?.model || "gemini-1.5-flash";
+    const temperature = request.temperature ?? primaryRoute?.temperature ?? 0.5;
+    const maxTokens = request.maxTokens ?? primaryRoute?.maxTokens ?? 2000;
 
     const cache = getResponseCache();
     const cacheKey = cache.key(messages, model, temperature);
@@ -186,10 +174,6 @@ export class LLMGateway {
     if (useCache) {
       const cached = cache.get(cacheKey);
       if (cached) {
-        // Cache hit — log and return
-        await logLLMCall(llmRequest, cached, null, null, promptId, promptVersion);
-
-        // Validate JSON if needed
         let data: unknown | null = null;
         let repaired = false;
         if (request.jsonMode) {
@@ -197,6 +181,8 @@ export class LLMGateway {
           data = validation.data;
           repaired = validation.repaired;
         }
+
+        console.log(`[LLM] ✓ CACHE HIT | ${cached.provider}/${cached.model} | ${taskType} | ${cached.latencyMs}ms | exec=${executionId}`);
 
         return {
           content: cached.content,
@@ -213,46 +199,106 @@ export class LLMGateway {
           repaired,
           promptId,
           promptVersion,
+          failoverCount: 0,
+          primaryProvider,
+          servedBy: cached.provider,
         };
       }
     }
 
-    // ─── Step 5+6: Route to provider and execute ────────────────────────────
-    let response: LLMResponse | undefined;
-    let retryCount = 0;
-    const maxRetries = 2;
+    // ─── Step 5+6: Route to provider with failover ──────────────────────────
+    let llmResponse: LLMResponse | null = null;
+    let failoverCount = 0;
+    const attemptedProviders: string[] = [];
+    const failoverReasons: string[] = [];
 
-    while (retryCount <= maxRetries) {
-      try {
-        response = await provider.complete({
-          ...llmRequest,
-          model,
-          temperature,
-          maxTokens,
-        });
-        break;
-      } catch (err) {
-        const isProviderError = err instanceof ProviderError || (err as any)?.name === "LLMProviderError";
-        const retryable = isProviderError ? (err as any)?.retryable : false;
+    for (const entry of failoverChain) {
+      const providerName = entry.provider.name;
+      attemptedProviders.push(providerName);
 
-        if (retryable && retryCount < maxRetries) {
-          retryCount++;
-          const backoff = Math.pow(2, retryCount) * 1000; // 2s, 4s
-          console.log(`[LLM Gateway] Retrying in ${backoff}ms (attempt ${retryCount}/${maxRetries})`);
-          await new Promise((resolve) => setTimeout(resolve, backoff));
-          continue;
+      // Determine the model for this provider
+      const providerModel = entry.route.model || model;
+
+      // Retry logic within a single provider (transient failures)
+      const maxRetries = 2;
+      let retryCount = 0;
+
+      while (retryCount <= maxRetries) {
+        try {
+          const startMs = Date.now();
+          llmResponse = await entry.provider.complete({
+            ...llmRequest,
+            model: providerModel,
+            temperature,
+            maxTokens,
+          });
+          const elapsedMs = Date.now() - startMs;
+
+          // Structured logging for successful call
+          console.log(
+            `[LLM] ✓ ${providerName}/${providerModel} | ${taskType} | ` +
+            `${llmResponse.totalTokens} tokens | ${elapsedMs}ms | ` +
+            `₹${(llmResponse.estimatedCostCents / 100).toFixed(4)}` +
+            (llmResponse.cached ? " (cached)" : "") +
+            (failoverCount > 0 ? ` | failover #${failoverCount} from ${primaryProvider}` : "") +
+            ` | exec=${executionId}` +
+            (request.workspaceId ? ` | ws=${request.workspaceId.slice(-8)}` : "")
+          );
+
+          break; // Success — exit retry loop
+        } catch (err) {
+          const isProviderError = err instanceof ProviderError || (err as any)?.name === "LLMProviderError";
+          const retryable = isProviderError ? (err as any)?.retryable : false;
+
+          if (retryable && retryCount < maxRetries) {
+            retryCount++;
+            const backoff = Math.pow(2, retryCount) * 1000;
+            console.log(
+              `[LLM] ↻ RETRY ${providerName} in ${backoff}ms (attempt ${retryCount}/${maxRetries}) | ` +
+              `task=${taskType} | exec=${executionId} | error: ${err instanceof Error ? err.message : String(err)}`
+            );
+            await new Promise((resolve) => setTimeout(resolve, backoff));
+            continue;
+          }
+
+          // Provider failed permanently — log and try next provider in failover chain
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          failoverReasons.push(`${providerName}: ${errorMsg}`);
+
+          console.log(
+            `[LLM] ✗ ${providerName} FAILED | task=${taskType} | exec=${executionId} | ` +
+            `error: ${errorMsg} | retries: ${retryCount}`
+          );
+
+          // Log the failed attempt
+          await logLLMCall(
+            { ...llmRequest, model: providerModel },
+            null,
+            `${providerName} error: ${errorMsg}`,
+            guardrailViolations.length > 0 ? guardrailViolations : null,
+            promptId,
+            promptVersion,
+          );
+
+          break; // Exit retry loop — move to next provider
         }
-
-        // Non-retryable error or max retries exhausted
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        await logLLMCall(llmRequest, null, errorMsg, guardrailViolations.length > 0 ? guardrailViolations : null, promptId, promptVersion);
-        throw err;
       }
+
+      if (llmResponse) break; // Success — exit failover loop
+
+      failoverCount++;
     }
 
-    // response is guaranteed assigned here — the loop only exits via break
-    // (after assignment) or throw. The non-null assertion documents this.
-    const llmResponse = response!;
+    // ─── If all providers failed (including mock), throw ─────────────────────
+    if (!llmResponse) {
+      const allErrors = failoverReasons.join("; ");
+      console.error(
+        `[LLM] ✗✗✗ ALL PROVIDERS FAILED | task=${taskType} | exec=${executionId} | ` +
+        `attempted: ${attemptedProviders.join(" → ")} | errors: ${allErrors}`
+      );
+      await logLLMCall(llmRequest, null, `All providers failed: ${allErrors}`, guardrailViolations.length > 0 ? guardrailViolations : null, promptId, promptVersion);
+      throw new Error(`All LLM providers failed. Attempted: ${attemptedProviders.join(" → ")}. Errors: ${allErrors}`);
+    }
 
     // ─── Step 7: Output guardrails ──────────────────────────────────────────
     const outputCheck = checkOutputGuardrails(llmResponse.content);
@@ -262,16 +308,71 @@ export class LLMGateway {
       throw new LLMGuardrailError("output_guardrail", outputCheck.violations.join("; "));
     }
 
-    // ─── Step 8: Validate JSON (if jsonMode) ────────────────────────────────
+    // ─── Step 8: Validate JSON (if jsonMode) with repair retry ──────────────
     let data: unknown | null = null;
     let repaired = false;
+
     if (request.jsonMode) {
       const validation = validateJsonResponse(llmResponse.content, request.jsonSchema);
+
       if (!validation.valid) {
-        // Log the validation failure
-        await logLLMCall(llmRequest, llmResponse, `JSON validation failed: ${validation.error}`, guardrailViolations.length > 0 ? guardrailViolations : null, promptId, promptVersion);
-        // Return the raw content — the caller can decide how to handle it
-        data = null;
+        // ─── JSON Repair Retry: try once with a repair prompt ───────────────
+        console.log(
+          `[LLM] ⚠ JSON INVALID from ${llmResponse.provider} | task=${taskType} | exec=${executionId} | ` +
+          `error: ${validation.error} | attempting repair...`
+        );
+
+        // Build a repair prompt
+        const repairMessages = [
+          ...messages,
+          { role: "assistant" as const, content: llmResponse.content },
+          {
+            role: "user" as const,
+            content: `The previous response was not valid JSON. Error: ${validation.error}\n\nPlease return ONLY valid JSON that matches this schema:\n${JSON.stringify(request.jsonSchema || {}, null, 2)}`,
+          },
+        ];
+
+        // Try repair with the same provider (no failover for repair — it's a quick fix)
+        try {
+          const repairResponse = await failoverChain[0].provider.complete({
+            ...llmRequest,
+            messages: repairMessages,
+            model: failoverChain[0].route.model || model,
+            temperature: 0.1, // Low temperature for repair
+            maxTokens,
+          });
+
+          const repairValidation = validateJsonResponse(repairResponse.content, request.jsonSchema);
+          if (repairValidation.valid) {
+            // Repair succeeded — use the repaired response
+            console.log(`[LLM] ✓ JSON REPAIRED | task=${taskType} | exec=${executionId}`);
+            llmResponse = repairResponse;
+            data = repairValidation.data;
+            repaired = true;
+          } else {
+            // Repair also failed — log and return structured error
+            console.log(
+              `[LLM] ✗ JSON REPAIR FAILED | task=${taskType} | exec=${executionId} | ` +
+              `error: ${repairValidation.error}`
+            );
+            await logLLMCall(
+              llmRequest,
+              llmResponse,
+              `JSON validation failed (repair also failed): ${repairValidation.error}`,
+              guardrailViolations.length > 0 ? guardrailViolations : null,
+              promptId,
+              promptVersion,
+            );
+            data = null;
+          }
+        } catch (repairErr) {
+          // Repair call itself failed — return structured error
+          console.log(
+            `[LLM] ✗ JSON REPAIR ERROR | task=${taskType} | exec=${executionId} | ` +
+            `error: ${repairErr instanceof Error ? repairErr.message : String(repairErr)}`
+          );
+          data = null;
+        }
       } else {
         data = validation.data;
         repaired = validation.repaired;
@@ -281,8 +382,8 @@ export class LLMGateway {
     // ─── Step 9: Log ────────────────────────────────────────────────────────
     await logLLMCall(llmRequest, llmResponse, null, null, promptId, promptVersion);
 
-    // ─── Step 10: Cache ─────────────────────────────────────────────────────
-    if (useCache) {
+    // ─── Step 10: Cache (only if JSON is valid or not in jsonMode) ──────────
+    if (useCache && (data !== null || !request.jsonMode)) {
       cache.set(cacheKey, llmResponse);
     }
 
@@ -302,11 +403,14 @@ export class LLMGateway {
       repaired,
       promptId,
       promptVersion,
+      failoverCount,
+      primaryProvider,
+      servedBy: llmResponse.provider,
     };
   }
 
   /**
-   * Convenience method for simple text completion (no JSON mode, no prompt registry).
+   * Convenience method for simple text completion.
    */
   async text(systemPrompt: string, userPrompt: string, options?: Partial<GatewayRequest>): Promise<string> {
     const response = await this.complete({

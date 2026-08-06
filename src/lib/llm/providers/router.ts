@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Model Router
+ * BIHARI AI — Model Router (Provider-Agnostic, Gemini-First)
  *
  * Selects the best provider + model for a given task type.
  *
@@ -7,66 +7,151 @@
  * 1. If LLM_PROVIDER is set explicitly, use that provider for all tasks
  * 2. If LLM_MODEL is set, use that specific model
  * 3. Otherwise, use the task-type-based routing table below
- * 4. If the selected provider is unavailable, fall back to Mock
+ * 4. If the selected provider is unavailable, walk the failover chain
  *
- * The router checks provider availability at call time, so if an API key
- * is removed or a local Ollama instance goes down, it gracefully degrades.
+ * Failover chain (in priority order):
+ *   Gemini → OpenAI → Anthropic → Ollama → Mock
+ *
+ * Gemini is the default because the platform ships with Google AI Pro.
+ * No provider is hardcoded as the only option — the system is provider-agnostic.
+ *
+ * The router checks provider availability dynamically at construction time.
+ * The gateway calls routeWithFailover() at call time to get the full chain.
  */
 
 import type { LLMProvider, ModelRoute, TaskType } from "../types";
 import { getProviders } from "./adapters";
 
-// ─── Default Routing Table ───────────────────────────────────────────────────
+// ─── Failover Chain ──────────────────────────────────────────────────────────
 
+/**
+ * The order in which providers are tried when the primary is unavailable
+ * or fails. Mock is always last — it never fails but produces deterministic
+ * (non-AI) output.
+ */
+export const FAILOVER_CHAIN = [
+  "gemini",
+  "openai",
+  "anthropic",
+  "ollama",
+  "mock",
+] as const;
+
+// ─── Default Routing Table (Gemini-first) ────────────────────────────────────
+
+/**
+ * Each task type specifies a preferred provider, model, temperature, and
+ * maxTokens. The provider field is the PREFERRED provider — if it's not
+ * available, the gateway walks the failover chain.
+ *
+ * Gemini models are the default. OpenAI/Anthropic models are listed as
+ * fallbacks in the route so the gateway knows which model to use for each
+ * provider in the failover chain.
+ */
 const DEFAULT_ROUTES: Record<TaskType, ModelRoute> = {
   planning: {
     taskType: "planning",
-    provider: "openai",
-    model: "gpt-4o-mini",
+    provider: "gemini",
+    model: "gemini-1.5-flash",
     temperature: 0.3,
     maxTokens: 2000,
   },
   reasoning: {
     taskType: "reasoning",
-    provider: "openai",
-    model: "gpt-4o-mini",
+    provider: "gemini",
+    model: "gemini-1.5-flash",
     temperature: 0.5,
     maxTokens: 1500,
   },
   tool_execution: {
     taskType: "tool_execution",
-    provider: "openai",
-    model: "gpt-4o-mini",
+    provider: "gemini",
+    model: "gemini-1.5-flash",
     temperature: 0.2,
     maxTokens: 1000,
   },
   finance_reasoning: {
     taskType: "finance_reasoning",
-    provider: "openai",
-    model: "gpt-4o",
+    provider: "gemini",
+    model: "gemini-1.5-pro",
     temperature: 0.3,
     maxTokens: 2000,
   },
   summarization: {
     taskType: "summarization",
-    provider: "openai",
-    model: "gpt-4o-mini",
+    provider: "gemini",
+    model: "gemini-1.5-flash",
     temperature: 0.3,
     maxTokens: 1000,
   },
   drafting: {
     taskType: "drafting",
-    provider: "openai",
-    model: "gpt-4o",
+    provider: "gemini",
+    model: "gemini-1.5-pro",
     temperature: 0.7,
     maxTokens: 2000,
   },
   general: {
     taskType: "general",
-    provider: "openai",
-    model: "gpt-4o-mini",
+    provider: "gemini",
+    model: "gemini-1.5-flash",
     temperature: 0.5,
     maxTokens: 1500,
+  },
+};
+
+// ─── Fallback models per provider ────────────────────────────────────────────
+
+/**
+ * When failover occurs, the gateway needs to know which model to use for
+ * the fallback provider. This map provides a sensible default model for
+ * each provider + task type combination.
+ */
+const FALLBACK_MODELS: Record<string, Record<TaskType, string>> = {
+  openai: {
+    planning: "gpt-4o-mini",
+    reasoning: "gpt-4o-mini",
+    tool_execution: "gpt-4o-mini",
+    finance_reasoning: "gpt-4o",
+    summarization: "gpt-4o-mini",
+    drafting: "gpt-4o",
+    general: "gpt-4o-mini",
+  },
+  anthropic: {
+    planning: "claude-3-haiku-20240307",
+    reasoning: "claude-3-haiku-20240307",
+    tool_execution: "claude-3-haiku-20240307",
+    finance_reasoning: "claude-3-5-sonnet-20241022",
+    summarization: "claude-3-haiku-20240307",
+    drafting: "claude-3-5-sonnet-20241022",
+    general: "claude-3-haiku-20240307",
+  },
+  ollama: {
+    planning: "llama3.1",
+    reasoning: "llama3.1",
+    tool_execution: "llama3.1",
+    finance_reasoning: "llama3.1",
+    summarization: "llama3.1",
+    drafting: "llama3.1",
+    general: "llama3.1",
+  },
+  mock: {
+    planning: "mock-1.0",
+    reasoning: "mock-1.0",
+    tool_execution: "mock-1.0",
+    finance_reasoning: "mock-1.0",
+    summarization: "mock-1.0",
+    drafting: "mock-1.0",
+    general: "mock-1.0",
+  },
+  gemini: {
+    planning: "gemini-1.5-flash",
+    reasoning: "gemini-1.5-flash",
+    tool_execution: "gemini-1.5-flash",
+    finance_reasoning: "gemini-1.5-pro",
+    summarization: "gemini-1.5-flash",
+    drafting: "gemini-1.5-pro",
+    general: "gemini-1.5-flash",
   },
 };
 
@@ -86,11 +171,10 @@ export class ModelRouter {
     this.forcedProvider = process.env.LLM_PROVIDER || null;
     this.forcedModel = process.env.LLM_MODEL || null;
 
-    // If a forced provider is set, override all routes to use it
+    // If a forced provider is set and available, override all routes
     if (this.forcedProvider && this.forcedProvider !== "mock") {
       const provider = this.providers[this.forcedProvider];
       if (provider && provider.available) {
-        // Override all routes to use the forced provider
         for (const taskType of Object.keys(this.routes) as TaskType[]) {
           this.routes[taskType] = {
             ...this.routes[taskType],
@@ -103,27 +187,109 @@ export class ModelRouter {
   }
 
   /**
-   * Returns the provider and route for a given task type.
-   * Falls back to Mock if the selected provider is unavailable.
+   * Returns the preferred provider and route for a given task type.
+   * Does NOT walk the failover chain — use routeWithFailover() for that.
+   * Kept for backward compatibility with code that calls route().
    */
   route(taskType: TaskType): { provider: LLMProvider; route: ModelRoute } {
     const route = this.routes[taskType] || this.routes.general;
     let provider = this.providers[route.provider];
 
-    // If the selected provider is not available, fall back to Mock
+    // If the preferred provider is not available, find the first available
     if (!provider || !provider.available) {
+      for (const name of FAILOVER_CHAIN) {
+        const candidate = this.providers[name];
+        if (candidate && candidate.available) {
+          provider = candidate;
+          return {
+            provider,
+            route: {
+              ...route,
+              provider: name,
+              model: this.getModelForProvider(name, taskType),
+            },
+          };
+        }
+      }
+      // Should never reach here since mock is always available
       provider = this.providers.mock;
       return {
         provider,
-        route: {
-          ...route,
-          provider: "mock",
-          model: provider.name === "mock" ? "mock-1.0" : route.model,
-        },
+        route: { ...route, provider: "mock", model: "mock-1.0" },
       };
     }
 
     return { provider, route };
+  }
+
+  /**
+   * Returns the ordered list of (provider, route) pairs to try for a given
+   * task type. The gateway iterates this list, trying each provider in turn
+   * until one succeeds.
+   *
+   * The first entry is the preferred provider from the routing table.
+   * Subsequent entries follow the failover chain, skipping the preferred
+   * provider (it's already first) and any unavailable providers.
+   *
+   * Mock is always included as the last entry.
+   */
+  routeWithFailover(taskType: TaskType): Array<{ provider: LLMProvider; route: ModelRoute; failoverReason?: string }> {
+    const route = this.routes[taskType] || this.routes.general;
+    const result: Array<{ provider: LLMProvider; route: ModelRoute; failoverReason?: string }> = [];
+
+    // Check if the preferred provider from the routing table is available
+    const preferredName = route.provider;
+    const preferred = this.providers[preferredName];
+
+    if (preferred && preferred.available) {
+      result.push({
+        provider: preferred,
+        route: { ...route, provider: preferredName },
+      });
+    }
+
+    // Walk the failover chain, adding available providers not already included
+    for (const name of FAILOVER_CHAIN) {
+      if (name === preferredName) continue; // already added (or attempted)
+      const candidate = this.providers[name];
+      if (candidate && candidate.available) {
+        // Skip if already in the result
+        if (result.some((r) => r.provider.name === candidate.name)) continue;
+        result.push({
+          provider: candidate,
+          route: {
+            ...route,
+            provider: name,
+            model: this.getModelForProvider(name, taskType),
+          },
+          failoverReason: `${preferredName} unavailable`,
+        });
+      }
+    }
+
+    // Ensure mock is always last (it's always available)
+    if (!result.some((r) => r.provider.name === "mock")) {
+      result.push({
+        provider: this.providers.mock,
+        route: { ...route, provider: "mock", model: "mock-1.0" },
+        failoverReason: "all real providers exhausted",
+      });
+    }
+
+    return result;
+  }
+
+  /**
+   * Returns the model name to use for a given provider and task type.
+   * Falls back to the provider's default model, then to "mock-1.0".
+   */
+  private getModelForProvider(providerName: string, taskType: TaskType): string {
+    const models = FALLBACK_MODELS[providerName];
+    if (models && models[taskType]) {
+      return models[taskType];
+    }
+    // Fall back to the forced model or a generic default
+    return this.forcedModel || "gpt-4o-mini";
   }
 
   /**
@@ -139,6 +305,16 @@ export class ModelRouter {
    */
   getAvailableProviders(): LLMProvider[] {
     return Object.values(this.providers).filter((p) => p.available);
+  }
+
+  /**
+   * Returns the failover chain as a list of provider names (for logging).
+   */
+  getFailoverChain(): string[] {
+    return FAILOVER_CHAIN.filter((name) => {
+      const p = this.providers[name];
+      return p && p.available;
+    });
   }
 }
 
