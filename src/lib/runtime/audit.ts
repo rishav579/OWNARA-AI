@@ -34,6 +34,11 @@ export async function appendAudit(
   tx: Parameters<Parameters<typeof db["$transaction"]>[0]>[0],
   input: AuditEntryInput
 ): Promise<void> {
+  // Serialize concurrent audit appends within the same workspace.
+  // pg_advisory_xact_lock is held until the transaction commits/rolls back.
+  // Different workspaces hash to different lock keys and proceed in parallel.
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${input.workspaceId}))`;
+
   // Get the last entry in this workspace's chain
   const lastEntry = await tx.auditLog.findFirst({
     where: { workspaceId: input.workspaceId },

@@ -166,9 +166,10 @@ async function planTask(
       let invoiceId = invoiceIdMatch?.[1];
 
       // If we have an invoice number but no ID, look it up
+      // CRITICAL: filter by workspaceId to prevent cross-tenant data access
       if (!invoiceId && invoiceNumMatch) {
         const inv = await db.invoice.findFirst({
-          where: { invoiceNumber: invoiceNumMatch[1] },
+          where: { invoiceNumber: invoiceNumMatch[1], workspaceId: task.workspaceId },
         });
         invoiceId = inv?.id;
       }

@@ -63,48 +63,55 @@ export function stopWorker(): void {
  * (after processTask returns).
  */
 async function pollOnce(): Promise<void> {
-  // Atomically claim a task using SELECT ... FOR UPDATE SKIP LOCKED.
-  // This is PostgreSQL-specific and prevents concurrent workers from
-  // picking up the same task.
-  //
-  // The transaction:
-  //   1. Locks the first available queued/executing task (SKIP LOCKED
-  //      means other workers skip locked rows and get the next one)
-  //   2. Loads the task + employee for processing
-  //   3. Commits (releasing the lock) — the task is now in a state
-  //      that this worker will process
-  //
-  // We use a short-lived transaction just for the claim. The actual
-  // task processing happens after the claim transaction commits.
-  // This prevents long-running locks.
+  // ─── Stale step recovery ──────────────────────────────────────────────
+  // Reset steps stuck in "running" for more than 5 minutes (worker crash recovery)
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+  await db.taskStep.updateMany({
+    where: { status: "running", startedAt: { lt: fiveMinutesAgo } },
+    data: { status: "pending" },
+  });
 
+  // ─── Approval expiration ──────────────────────────────────────────────
+  // Fail tasks with expired pending approvals (timeoutAt < now)
+  const expiredApprovals = await db.approval.findMany({
+    where: { status: "pending", timeoutAt: { lt: new Date() } },
+    select: { id: true, taskId: true, workspaceId: true },
+  });
+  for ( const ea of expiredApprovals) {
+    await db.$transaction(async (tx) => {
+      await tx.approval.updateMany({
+        where: { id: ea.id, status: "pending" },
+        data: { status: "expired", decidedAt: new Date(), decision: "expired" },
+      });
+      await tx.task.update({
+        where: { id: ea.taskId },
+        data: { status: "failed" },
+      });
+      await tx.taskStep.updateMany({
+        where: { taskId: ea.taskId, status: "pending" },
+        data: { status: "skipped", completedAt: new Date() },
+      });
+    });
+    console.log(`[Worker] Expired approval ${ea.id} for task ${ea.taskId}`);
+  }
+
+  // ─── Task claiming ────────────────────────────────────────────────────
   let claimedTask: { id: string; title: string; status: string; employeeId: string } | null = null;
 
   try {
     claimedTask = await db.$transaction(async (tx) => {
-      // Use raw SQL for FOR UPDATE SKIP LOCKED — Prisma doesn't support
-      // this natively. We select only the task ID + basic info, then
-      // let processTask load the full task with relations.
       const result = await tx.$queryRaw<{ id: string; title: string; status: string; employeeId: string }[]>`
         SELECT "id", "title", "status", "employeeId"
         FROM "public"."Task"
         WHERE "status" IN ('queued', 'executing')
-        ORDER BY "status" ASC, "createdAt" ASC
+        ORDER BY "createdAt" ASC
         LIMIT 1
         FOR UPDATE SKIP LOCKED
       `;
-
-      if (!result || result.length === 0) {
-        return null;
-      }
-
+      if (!result || result.length === 0) return null;
       return result[0];
-    }, {
-      // Short timeout — if we can't claim quickly, another worker has the lock
-      timeout: 5000,
-    });
+    }, { timeout: 5000 });
   } catch (err) {
-    // Transaction timeout or error — skip this cycle
     console.error("[Worker] Claim error:", err);
     return;
   }
