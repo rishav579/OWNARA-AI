@@ -61,11 +61,21 @@ export async function POST(request: NextRequest) {
       return error("SESSION_NOT_FOUND", "Session not found or already revoked.", 401);
     }
 
-    // Step 3: Revoke the old session (token rotation)
-    await db.session.update({
-      where: { id: matchedSession.id },
+    // Step 3: Revoke the old session atomically (token rotation).
+    //
+    // updateMany with revokedAt: null in the WHERE clause is an atomic
+    // claim: if the same refresh token is presented twice concurrently
+    // (replay attack or dual-tab refresh), only the first call matches
+    // (count === 1) and proceeds to issue new tokens. The second call
+    // gets count === 0 — the session was already revoked — and is rejected.
+    const revoked = await db.session.updateMany({
+      where: { id: matchedSession.id, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+
+    if (revoked.count === 0) {
+      return error("SESSION_REVOKED", "Session already used. Please log in again.", 401);
+    }
 
     // Step 4: Create new session with new tokens
     const tokenPayload = {

@@ -102,9 +102,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
     }
 
-    // Update the approval record
-    await db.approval.update({
-      where: { id },
+    // ─── Atomic claim (concurrency guard) ────────────────────────────────
+    // updateMany with status: "pending" in the WHERE clause is an atomic
+    // operation. If two managers approve simultaneously, only one updateMany
+    // matches (count === 1) and proceeds to resumeAfterApproval. The other
+    // gets count === 0 — the approval was already decided — and returns 409.
+    // This prevents duplicate tool execution (e.g. double reminder emails).
+    const claimed = await db.approval.updateMany({
+      where: { id, workspaceId, status: "pending" },
       data: {
         status: "approved",
         decidedBy: user.id,
@@ -113,6 +118,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         reason: body.reason || (body.modifiedAction ? `Modified by manager` : null),
       },
     });
+
+    if (claimed.count === 0) {
+      return error("CONFLICT", "Approval was already decided by another user.", 409);
+    }
 
     // Resume the task — this marks the approval_gate step as completed,
     // transitions the task back to "executing", and writes audit entries.

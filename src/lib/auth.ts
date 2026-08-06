@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import { db } from "@/lib/db";
 import { cookies } from "next/headers";
 
@@ -36,6 +37,7 @@ export interface JwtPayload {
   workspaceId?: string;
   role?: string;
   type: "access" | "refresh";
+  jti?: string; // Unique JWT ID — ensures each token is unique even with same payload
   iat?: number;
   exp?: number;
 }
@@ -54,8 +56,13 @@ export function signAccessToken(payload: Omit<JwtPayload, "type" | "iat" | "exp"
   });
 }
 
-export function signRefreshToken(payload: Omit<JwtPayload, "type" | "iat" | "exp">): string {
-  return jwt.sign({ ...payload, type: "refresh" }, getJWTSecret(), {
+export function signRefreshToken(payload: Omit<JwtPayload, "type" | "iat" | "exp" | "jti">): string {
+  // jti (JWT ID) is a random unique ID that makes each refresh token unique,
+  // even when the payload is identical. This is critical for token rotation:
+  // without it, signRefreshToken would produce the same token every time,
+  // making rotation meaningless — the "new" token would match the old session.
+  const jti = crypto.randomUUID();
+  return jwt.sign({ ...payload, type: "refresh", jti }, getJWTSecret(), {
     expiresIn: REFRESH_TOKEN_TTL,
   });
 }
@@ -69,11 +76,17 @@ export function verifyToken(token: string): JwtPayload | null {
 }
 
 export function hashToken(token: string): string {
-  return bcrypt.hashSync(token, 10);
+  // bcrypt truncates input at 72 bytes. JWT refresh tokens are ~375 chars,
+  // so two tokens sharing the same first 72 bytes would produce the same hash.
+  // Hash the token with SHA-256 first (64 hex chars = 64 bytes, within bcrypt's limit),
+  // then bcrypt the digest. This ensures every unique token produces a unique hash.
+  const digest = crypto.createHash("sha256").update(token).digest("hex");
+  return bcrypt.hashSync(digest, 10);
 }
 
 export function compareToken(token: string, hash: string): boolean {
-  return bcrypt.compareSync(token, hash);
+  const digest = crypto.createHash("sha256").update(token).digest("hex");
+  return bcrypt.compareSync(digest, hash);
 }
 
 // Get the authenticated user from the request (access token in Authorization header or cookie)

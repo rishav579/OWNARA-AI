@@ -14,9 +14,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!approval) return error("NOT_FOUND", "Approval not found.", 404);
     if (approval.status !== "pending") return error("CONFLICT", "Approval is not pending.", 409);
 
-    // Update the approval record
-    await db.approval.update({
-      where: { id },
+    // ─── Atomic claim (concurrency guard) ────────────────────────────────
+    // updateMany with status: "pending" ensures only ONE concurrent reject
+    // call proceeds to failAfterApprovalRejection. A simultaneous second
+    // call (e.g. two managers) gets count === 0 and returns 409.
+    const claimed = await db.approval.updateMany({
+      where: { id, workspaceId, status: "pending" },
       data: {
         status: "rejected",
         decidedBy: user.id,
@@ -25,6 +28,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         reason: body.reason || null,
       },
     });
+
+    if (claimed.count === 0) {
+      return error("CONFLICT", "Approval was already decided by another user.", 409);
+    }
 
     // Fail the task — this marks the approval_gate step as failed,
     // transitions the task to "failed", and writes audit entries.
