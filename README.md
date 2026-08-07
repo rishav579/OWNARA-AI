@@ -148,7 +148,7 @@ See [`.env.example`](./.env.example) for the full list.
 | Layer | Technology |
 |-------|------------|
 | Framework | Next.js 16 (App Router) + TypeScript 5 |
-| Database | **PostgreSQL 16+** via Prisma ORM |
+| Database | SQLite (dev) / PostgreSQL 16+ (prod) via Prisma ORM |
 | AI | Google Gemini (default), OpenAI/Anthropic optional |
 | Auth | JWT + bcrypt, refresh-token rotation |
 | Email | nodemailer (SMTP, optional) |
@@ -156,9 +156,23 @@ See [`.env.example`](./.env.example) for the full list.
 
 ---
 
-## Important: PostgreSQL Only
+## Database: SQLite (dev) or PostgreSQL (prod)
 
-This project uses PostgreSQL exclusively. The worker runtime depends on `SELECT ... FOR UPDATE SKIP LOCKED` for atomic task claiming — a PostgreSQL-specific feature that SQLite does not support. SQLite cannot be used.
+BIHARI AI is **database-portable**. The concurrency layer (`src/lib/concurrency.ts`)
+auto-detects the provider from `DATABASE_URL` and uses the appropriate primitives:
+
+| Primitive | PostgreSQL | SQLite |
+|-----------|-----------|--------|
+| Task claiming | `SELECT ... FOR UPDATE SKIP LOCKED` | `findFirst` (single-writer model) |
+| Audit-chain lock | `pg_advisory_xact_lock` | no-op (`@@unique` constraint protects chain) |
+
+- **SQLite** (default): zero-ops, persistent file, perfect for local dev and demos.
+  Just set `DATABASE_URL=file:./db/custom.db` and run `bun run db:push`.
+- **PostgreSQL**: for production multi-worker, multi-workspace deployments.
+  Set `DATABASE_URL=postgresql://...` and switch `provider = "postgresql"` in
+  `prisma/schema.prisma`, then run `bun run db:push`.
+
+The schema contains no provider-specific types — switching is a one-line change.
 
 ---
 

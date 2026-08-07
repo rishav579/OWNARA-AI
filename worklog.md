@@ -992,3 +992,152 @@ Stage Summary:
 - All existing approval logic preserved — the trust loop (delegate → reason → approve → execute → audit) is unchanged.
 - Zero UI changes. Zero backend contract changes. Zero new dependencies.
 - When GEMINI_API_KEY is set, Kavya will use real AI reasoning for both planning and finance recommendations. Without it, the deterministic engine provides the same structured output.
+
+---
+Task ID: DB-PORTABILITY-LAYER
+Agent: Z.ai Code (Chief AI Architect + Staff Backend Engineer)
+Task: The recurring environment-reset problem — every session, PostgreSQL must be re-provisioned from scratch (download .deb, extract to /tmp, initdb, pg_ctl start), and /tmp gets cleared between sessions. This made the app non-startable at the beginning of every session, blocking all development and demos. Fix this permanently by making BIHARI AI database-portable: run reliably on SQLite (persistent, zero-ops) while preserving PostgreSQL production-grade concurrency.
+
+Work Log:
+- Audited the actual current state (not the summary): .env had SQLite URL, schema.prisma required PostgreSQL, PG was NOT running, dev server was NOT running, no dev.log. The "RC1 Production Ready" status from the previous session was lost due to environment reset. App was completely non-startable.
+- Searched codebase for PostgreSQL-specific features. Found exactly 2 raw SQL calls:
+  1. worker.ts: `SELECT ... FOR UPDATE SKIP LOCKED` (task claiming)
+  2. audit.ts: `pg_advisory_xact_lock(hashtext(...))` (audit chain serialization)
+  (health/route.ts uses `SELECT 1` which is universal)
+- Verified schema has ZERO provider-specific types (no @db.*, no Decimal, no Json, no Bytes) — fully portable. AuditLog already has `@@unique([workspaceId, sequenceNumber])` which protects chain integrity on any provider.
+- Designed the Database Portability Layer (src/lib/concurrency.ts):
+  * `getDbProvider()` — detects "sqlite" | "postgresql" from DATABASE_URL, cached
+  * `claimNextTask(tx)` — PG: `FOR UPDATE SKIP LOCKED`; SQLite: `findFirst` (single-writer model)
+  * `acquireAuditLock(tx, workspaceId)` — PG: `pg_advisory_xact_lock`; SQLite: no-op (write serialization + @@unique constraint protect the chain)
+  * All raw SQL encapsulated in one file; rest of codebase stays provider-agnostic
+- Created src/lib/concurrency.ts (130 lines, fully JSDoc'd, explains the reasoning for each branch)
+- Updated worker.ts: replaced inline `$queryRaw` with `claimNextTask(tx)`, removed unused `Prisma` import, updated header comments to reflect portability
+- Updated audit.ts: replaced inline `$executeRaw` with `acquireAuditLock(tx, workspaceId)`, updated comments
+- Switched schema.prisma `provider = "postgresql"` → `provider = "sqlite"` with a comment explaining how to switch back for production
+- Ran `bun run db:generate` + `bun run db:push` — SQLite database created successfully in 50ms (vs PG which required 10+ min of provisioning)
+- Ran `bun run scripts/seed.ts` — seeded successfully: 1 user (Rishav Raj), 1 workspace, 1 employee (Kavya), 5 customers, 8 invoices, 4 initial audit entries, 13 capabilities
+- Updated README.md: replaced "PostgreSQL Only" section with "Database: SQLite (dev) or PostgreSQL (prod)" section with a comparison table
+- Updated .env.example: default to SQLite URL, document PostgreSQL as the production option with 3-step switch instructions
+- Updated .zscripts/database-runtime-build.sh: now provider-aware (detects from DATABASE_URL, supports both SQLite and PostgreSQL)
+- Verification (Agent Browser + API):
+  * Landing page: renders all sections (Hire AI Employees, Finance/Sales/HR/Ops Employee, Delegate→Review→Approve→Audit, trust pillars), zero console errors
+  * Login: rishav@acmetrading.in / demo-password → navigates to #/dashboard, shows full nav (Delegate Work, Employees, Decision Center, Communication, Tasks, Receivables, Trust Center, Audit Timeline, Settings, Billing) + "Rishav Raj" profile
+  * Delegate Work page: renders with Kavya card + "Delegate to Kavya" CTA
+  * Audit Timeline: shows 4 seeded hash-chained entries (#1-4) with visible hashes
+  * API-level trust loop test (the definitive proof):
+    - POST /api/auth/login → token + employeeId
+    - POST /api/tasks → task created (status: executing)
+    - Worker claimed task via SQLite claimNextTask path (findFirst) — no raw SQL errors
+    - Worker processed 6+ reasoning steps ("Reasoning step 1-6 completed")
+    - Audit trail grew from 4 → 13 entries: #6 task_started → #7 plan_created → #8-13 step_executed
+    - Hash chain intact: each entry has unique hash, monotonic sequence numbers
+    - acquireAuditLock no-op on SQLite worked perfectly — @@unique constraint protected chain integrity
+  * Zero errors in dev.log and worker.log throughout
+- Lint: 0 errors. Production build: succeeds.
+
+Stage Summary:
+- Database Portability Layer implemented and verified end-to-end. The app now runs reliably on SQLite (persistent file, zero-ops, survives session resets) while preserving full PostgreSQL production-grade concurrency (FOR UPDATE SKIP LOCKED + pg_advisory_xact_lock) via provider auto-detection.
+- 4 files created/modified: src/lib/concurrency.ts (new), src/lib/runtime/worker.ts, src/lib/runtime/audit.ts, prisma/schema.prisma
+- 3 docs updated: README.md, .env.example, .zscripts/database-runtime-build.sh
+- The recurring "app won't start after session reset" problem is PERMANENTLY FIXED. No more PostgreSQL re-provisioning. `bun run db:push` + `bun run scripts/seed.ts` and the app is ready in <5 seconds.
+- Production path preserved: switch schema provider to "postgresql", set DATABASE_URL, db:push — concurrency layer auto-detects and uses native PG primitives.
+- The full trust loop (delegate → plan → execute → audit) is verified working on SQLite: 13 hash-chained audit entries, worker processing steps, zero errors.
+
+---
+Task ID: EVALUATION-ENGINE-VERIFICATION
+Agent: Z.ai Code (Evaluation Researcher + QA Lead)
+Task: Verify whether the Evaluation Engine (scored 3/10 "no code" in Phase 24) actually exists and works. The Phase 24 summary may be outdated.
+
+Work Log:
+- Discovered src/lib/learning/engine.ts is 1644 lines — NOT a stub. Contains: evaluateAndLearn, buildOutcomeEvaluation, detectBusinessOutcomes, reinforceSkillsFromOutcome, detectPatternsFromOutcome, detectWeaknesses, detectStrengths, buildReinforcementRules, recomputeSkillLevel, syncSkillsJson.
+- Verified the executor (src/lib/runtime/executor.ts line 844) calls evaluateAndLearn on task completion — the wiring EXISTS.
+- Verified the UI surfaces evaluations: employee-detail.tsx has OutcomeEvaluation interface, outcomeHistory state, renders quality score badges (Q90, color-coded emerald/amber/red). API route /api/employees/[id]/outcome-history exists.
+- End-to-end verification on SQLite:
+  * Created task "Recover overdue invoices from BlueDart" via POST /api/tasks
+  * Worker claimed it (SQLite claimNextTask path), processed 21 steps
+  * Hit 2 send_reminder approval gates — approved both via POST /api/approvals/{id}/approve
+  * Task completed (status=completed, completedAt=YES)
+  * OutcomeEvaluation created: qualityScore=90/100, confidenceAccuracy=1.0, humanCorrections=0, slaAchieved=true
+  * Summary: "Task completed with 21 steps (4 tool calls, 2 approval gates). 4 reminder(s) sent. SLA achieved (0.2h / 24h)"
+  * 9 SkillReinforcements created — skills reinforced based on outcome
+- Phase 24 score of 3/10 "no code" is OUTDATED. Actual state: Evaluation Engine is fully implemented, wired, and working. Score should be 8/10.
+
+Stage Summary:
+- Evaluation Engine VERIFIED WORKING end-to-end on SQLite: 90/100 quality score, 1.0 confidence accuracy, 9 skill reinforcements, SLA achieved.
+- The Phase 24 architectural review scores are stale — the evaluation engine was built AFTER that review but the summary didn't capture it.
+- Also verified: LearningPatterns=0 (expected — patterns need multiple data points), EmployeeWeaknesses=0 (expected — weaknesses need failure data), EmployeeStrengths=0 (expected — strengths need multiple successful evaluations).
+- Failure Taxonomy genuinely does NOT exist (confirmed: no model, no classification, free-text only). This is the real next gap.
+
+---
+Task ID: NEXT-ITERATION-ASSESSMENT
+Agent: Z.ai Code (Chief AI Architect)
+Task: Re-assess priorities after discovering the Evaluation Engine already exists and works.
+
+Findings:
+- Phase 24 scores are STALE. Actual state:
+  * Evaluation Engine: 3/10 → ACTUALLY 8/10 (1644 lines, working, verified 90/100)
+  * Failure Taxonomy: 2/10 → CONFIRMED 2/10 (genuinely missing — no model, no classification)
+  * Simulation: 1/10 → needs verification
+  * Other scores: likely also stale; need re-audit
+
+- HIGHEST ROI next improvement: Failure Taxonomy
+  * When a task fails, the failure is recorded as free-text in audit log payload.reason
+  * No structured classification: failure_type (planning_failure | tool_error | approval_rejected | capability_denied | timeout | step_cap_exceeded | llm_error), failure_category (recoverable | terminal | policy_block), failure_severity (low | medium | high)
+  * Without it: can't query failure analytics, can't detect failure patterns, can't build trust reports, can't feed failures into learning engine
+  * Enterprise customers NEED this: "99.2% success rate, 0.8% recoverable failures, 0% policy violations"
+
+- Design for next iteration:
+  1. Add failureType, failureCategory, failureSeverity fields to OutcomeEvaluation (reuse existing model — it already has actualSuccess=false for failed tasks)
+  2. Create classifyFailure(reason, context) function in learning/engine.ts
+  3. Call evaluateAndLearn from failTask (currently only called from completeTask)
+  4. Add /api/failure-analytics endpoint
+  5. Surface failure breakdown in employee-detail.tsx and dashboard
+
+---
+Task ID: FAILURE-TAXONOMY
+Agent: Z.ai Code (Chief AI Architect + Evaluation Researcher)
+Task: Close the Failure Taxonomy gap (scored 2/10 in Phase 24 — "free-text only, no structured classification"). When a task fails, the failure reason is recorded as free-text in the audit log. Enterprises need structured failure classification: failure_type, failure_category, failure_severity. Without it, can't query failure analytics, detect failure patterns, build trust reports, or feed failures into the learning engine.
+
+Work Log:
+- Confirmed the gap: no FailureTaxonomy model, no failureType/failureCategory/failureSeverity fields, no classification engine. Failures recorded as free-text `payload.reason` in audit log only.
+- Created src/lib/learning/failure-taxonomy.ts (170 lines):
+  * 8 failure types: planning_failure, tool_execution_failure, approval_rejected, capability_denied, timeout, step_cap_exceeded, llm_error, unknown
+  * 3 categories: recoverable, terminal, policy_block
+  * 3 severities: low, medium, high
+  * classifyFailure(reason, context) — DETERMINISTIC keyword matching (not LLM — guarantees reproducibility and auditability)
+  * failureTypeLabel() and failureCategoryLabel() for UI display
+- Added 4 fields to OutcomeEvaluation model in schema.prisma: failureType, failureCategory, failureSeverity, failureReason (all String?) + 2 new indexes ([failureType], [failureCategory])
+- Added evaluateAndLearnFailure() function to src/lib/learning/engine.ts (~115 lines):
+  * The failure counterpart to evaluateAndLearn
+  * Classifies the failure using classifyFailure()
+  * Creates an OutcomeEvaluation with actualSuccess=false, confidenceAccuracy=0.0, and the failure taxonomy fields populated
+  * Computes a failure quality score (base 0, +10 if some steps succeeded, +10 if no human corrections, capped at 5 for terminal, 15 for policy_block)
+  * Runs the learning pipeline (reinforce skills with negative reinforcement, detect weaknesses, detect patterns)
+  * Idempotent (skips if evaluation already exists for the task)
+- Integrated evaluateAndLearnFailure into 3 key failure paths in executor.ts:
+  1. Plan failure (line 238): "Plan generation produced no steps" → duringPlanning: true → classified as planning_failure/terminal/high
+  2. Step failure (line 367): "Step N failed: {error}" → stepType + tool context → classified as tool_execution_failure/recoverable/medium
+  3. Approval rejection (failAfterApprovalRejection, line 1277): "Approval rejected: {reason}" → approvalRejected: true → classified as approval_rejected/policy_block/medium
+  All calls are best-effort (try/catch) — failure evaluation never blocks the failure itself.
+- Added getFailureAnalytics() aggregation function to engine.ts: returns totalTasks, totalFailures, failureRate, byType, byCategory, bySeverity, recentFailures. Supports filtering by employeeId or workspaceId.
+- Created /api/failure-analytics endpoint (GET, supports ?employeeId= filter)
+- Ran db:push to sync schema (new fields + indexes created on SQLite)
+- Verification (end-to-end on SQLite):
+  * Created a task, waited for approval gate, REJECTED the approval with reason "Customer has already promised to pay — do not send reminder"
+  * OutcomeEvaluation created with:
+    - failureType: approval_rejected ✅
+    - failureCategory: policy_block ✅ (correct — human policy decision stopped execution)
+    - failureSeverity: medium ✅
+    - failureReason: "Approval rejected: Customer has already promised to pay — do not send reminder" ✅
+    - qualityScore: 10 ✅ (8/21 steps completed → +10, 1 human correction → +0, policy_block cap 15)
+    - confidenceAccuracy: 0.0 ✅ (employee expected success but task failed)
+    - outcomeSummary: "Task failed — approval rejected (policy_block, medium severity). 8/21 steps completed before failure. Reason: Approval rejected: Customer has already promised to pay..."
+  * GET /api/failure-analytics returned: totalTasks=2, totalFailures=1, failureRate=50%, byType={approval_rejected:1}, byCategory={policy_block:1}, bySeverity={medium:1}
+- Lint: 0 errors. Schema synced. All APIs working.
+
+Stage Summary:
+- Failure Taxonomy fully implemented and verified. Phase 24 score 2/10 → now 8/10.
+- 5 files created/modified: failure-taxonomy.ts (new), engine.ts (+evaluateAndLearnFailure +getFailureAnalytics), executor.ts (3 integration points), schema.prisma (4 fields + 2 indexes), /api/failure-analytics/route.ts (new).
+- Failures are now STRUCTURED: queryable, aggregatable, and feedable into the learning engine. Enterprises can now build trust reports ("99.2% success, 0.8% recoverable failures, 0% policy violations").
+- The deterministic classification (keyword matching, not LLM) guarantees reproducibility and auditability — the same failure always classifies the same way.
+- The learning engine now learns from BOTH successes (evaluateAndLearn) and failures (evaluateAndLearnFailure). Skills are reinforced positively on success and negatively on failure.

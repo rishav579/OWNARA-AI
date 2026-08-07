@@ -3,7 +3,11 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  // Provider-portable: set to "postgresql" for production multi-worker
+  // deployments. The concurrency layer (src/lib/concurrency.ts) auto-detects
+  // the provider from DATABASE_URL and uses the appropriate primitives.
+  // SQLite is the default for zero-ops local/dev/demo environments.
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -753,12 +757,22 @@ model OutcomeEvaluation {
   // Free-form outcome summary (deterministic, built from facts)
   outcomeSummary         String  @default("")
 
+  // ─── Failure Taxonomy (populated when actualSuccess = false) ──────────────
+  // Structured failure classification so failures are queryable, aggregatable,
+  // and feedable into the learning engine. See src/lib/learning/failure-taxonomy.ts
+  failureType            String?  // planning_failure | tool_execution_failure | approval_rejected | capability_denied | timeout | step_cap_exceeded | llm_error | unknown
+  failureCategory        String?  // recoverable | terminal | policy_block
+  failureSeverity        String?  // low | medium | high
+  failureReason          String?  // the original free-text reason (preserved for auditability)
+
   createdAt              DateTime @default(now())
 
   workspace              Workspace @relation(fields: [workspaceId], references: [id])
 
   @@index([employeeId, createdAt])
   @@index([workspaceId, createdAt])
+  @@index([failureType])
+  @@index([failureCategory])
 }
 
 // ─── 2. Skill Reinforcement ──────────────────────────────────────────────────

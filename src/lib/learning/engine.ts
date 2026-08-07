@@ -42,6 +42,10 @@
 
 import { db } from "@/lib/db";
 import { appendAudit } from "@/lib/runtime/audit";
+import {
+  classifyFailure,
+  type FailureContext,
+} from "@/lib/learning/failure-taxonomy";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -156,6 +160,152 @@ export async function evaluateAndLearn(data: TaskOutcomeData): Promise<void> {
   try { await recordBusinessOutcomesFromTask(task, evaluation); } catch (e) { console.error("[Learning] recordBusinessOutcomes failed:", e); }
   try { await appendTimelineFromOutcome(task, evaluation); } catch (e) { console.error("[Learning] appendTimeline failed:", e); }
   try { await checkAchievementUnlocks(employeeId, workspaceId, evaluation); } catch (e) { console.error("[Learning] checkAchievements failed:", e); }
+}
+
+// ─── 1b. Failure Evaluation (structured failure taxonomy) ────────────────────
+
+export interface FailureTaskData {
+  taskId: string;
+  employeeId: string;
+  workspaceId: string;
+  /** The free-text failure reason (from the executor's failure path). */
+  failureReason: string;
+  /** Structured context about WHERE the failure occurred. */
+  failureContext?: FailureContext;
+}
+
+/**
+ * Evaluates a FAILED task and produces an OutcomeEvaluation with structured
+ * failure classification.
+ *
+ * This is the failure counterpart to `evaluateAndLearn`. It:
+ *   1. Classifies the failure using the deterministic taxonomy
+ *      (src/lib/learning/failure-taxonomy.ts)
+ *   2. Creates an OutcomeEvaluation with actualSuccess=false + the
+ *      failureType/failureCategory/failureSeverity fields populated
+ *   3. Runs the learning pipeline with NEGATIVE reinforcement — the
+ *      employee learns from failures, not just successes
+ *   4. Detects weaknesses from the structured failure data
+ *
+ * Called from every failure path in the executor (plan failure, step
+ * failure, capability denial, approval rejection, timeout). Best-effort —
+ * never blocks the failure itself.
+ */
+export async function evaluateAndLearnFailure(data: FailureTaskData): Promise<void> {
+  const { taskId, employeeId, workspaceId, failureReason, failureContext } = data;
+
+  // Idempotency: skip if an evaluation already exists for this task
+  const existing = await db.outcomeEvaluation.findUnique({ where: { taskId } });
+  if (existing) {
+    return;
+  }
+
+  // Load the task with everything we need
+  const task = await db.task.findUnique({
+    where: { id: taskId },
+    include: {
+      steps: { orderBy: { stepNumber: "asc" } },
+      approvals: true,
+      employee: true,
+    },
+  });
+
+  if (!task) {
+    console.error(`[Learning] Failed task not found: ${taskId}`);
+    return;
+  }
+
+  // Only evaluate failed tasks
+  if (task.status !== "failed") {
+    return;
+  }
+
+  // ─── Classify the failure ────────────────────────────────────────────────
+  const classification = classifyFailure(failureReason, failureContext || {});
+
+  // ─── Build the failure evaluation ────────────────────────────────────────
+  const stepCount = task.steps.length;
+  const toolCallCount = task.steps.filter((s: any) => s.stepType === "tool_call").length;
+  const approvalGateCount = task.steps.filter((s: any) => s.stepType === "approval_gate").length;
+  const approvals = task.approvals || [];
+  const approvalRejections = approvals.filter((a: any) => a.decision === "rejected").length;
+  const tokenUsage = task.tokenUsage || 0;
+
+  const executionTimeMs =
+    task.startedAt && task.completedAt
+      ? new Date(task.completedAt).getTime() - new Date(task.startedAt).getTime()
+      : 0;
+
+  const stepFailureCount = task.steps.filter((s: any) => s.status === "failed").length;
+  const humanCorrections = approvalRejections;
+
+  // For failures: actualSuccess=false, expectedSuccess=true (employee expected
+  // to succeed but didn't). confidenceAccuracy = 0.0 (prediction was wrong).
+  const expectedSuccess = true;
+  const actualSuccess = false;
+  const confidenceAccuracy = 0.0;
+
+  // Quality score for a failure: base 0, +10 if some steps succeeded,
+  // +10 if no human corrections needed (the failure was technical, not policy)
+  let qualityScore = 0;
+  const completedSteps = task.steps.filter((s: any) => s.status === "completed").length;
+  if (completedSteps > 0) qualityScore += 10;
+  if (humanCorrections === 0) qualityScore += 10;
+  // Penalize policy blocks and terminal failures
+  if (classification.failureCategory === "terminal") qualityScore = Math.min(qualityScore, 5);
+  if (classification.failureCategory === "policy_block") qualityScore = Math.min(qualityScore, 15);
+
+  const outcomeSummary = `Task failed — ${classification.failureType.replace(/_/g, " ")} (${classification.failureCategory}, ${classification.failureSeverity} severity). ${completedSteps}/${stepCount} steps completed before failure. Reason: ${failureReason.slice(0, 120)}`;
+
+  const evaluation = await db.outcomeEvaluation.create({
+    data: {
+      workspaceId,
+      employeeId,
+      taskId,
+      stepCount,
+      toolCallCount,
+      approvalGateCount,
+      approvalRejections,
+      humanOverrides: 0,
+      capabilityDenials: classification.failureType === "capability_denied" ? 1 : 0,
+      tokenUsage,
+      executionTimeMs,
+      rollbackNeeded: false,
+      paymentReceived: false,
+      paymentAmount: 0,
+      invoiceResolved: false,
+      customerResponded: false,
+      reminderSentCount: 0,
+      slaAchieved: false,
+      slaTargetHours: 24,
+      slaActualHours: executionTimeMs / (1000 * 60 * 60),
+      errorCount: 1,
+      stepFailureCount,
+      expectedSuccess,
+      actualSuccess,
+      confidenceAccuracy,
+      qualityScore,
+      humanCorrections,
+      outcomeSummary,
+      // ─── Failure Taxonomy ──────────────────────────────────────────────
+      failureType: classification.failureType,
+      failureCategory: classification.failureCategory,
+      failureSeverity: classification.failureSeverity,
+      failureReason,
+    },
+  });
+
+  console.log(`[Learning] Failure evaluation recorded for task ${taskId}: ${classification.failureType} (${classification.failureCategory}/${classification.failureSeverity}), quality=${qualityScore}`);
+
+  // ─── Run the learning pipeline with the failure evaluation ───────────────
+  // The same pipeline as evaluateAndLearn, but the evaluation has
+  // actualSuccess=false, so reinforcement rules will apply NEGATIVE
+  // reinforcement (skills involved in the failure are weakened).
+  try { await reinforceSkillsFromOutcome(task, evaluation); } catch (e) { console.error("[Learning] reinforceSkills (failure) failed:", e); }
+  try { await detectPatternsFromOutcome(task, evaluation); } catch (e) { console.error("[Learning] detectPatterns (failure) failed:", e); }
+  try { await detectWeaknesses(employeeId, workspaceId); } catch (e) { console.error("[Learning] detectWeaknesses (failure) failed:", e); }
+  try { await recordBusinessOutcomesFromTask(task, evaluation); } catch (e) { console.error("[Learning] recordBusinessOutcomes (failure) failed:", e); }
+  try { await appendTimelineFromOutcome(task, evaluation); } catch (e) { console.error("[Learning] appendTimeline (failure) failed:", e); }
 }
 
 /**
@@ -1584,6 +1734,75 @@ export async function getOutcomeHistory(employeeId: string, limit = 20) {
     orderBy: { createdAt: "desc" },
     take: limit,
   });
+}
+
+/**
+ * Aggregates failure analytics for an employee (or entire workspace).
+ *
+ * Returns structured counts by failure type, category, and severity —
+ * the data needed for trust reports ("99.2% success, 0.8% recoverable
+ * failures") and weakness detection.
+ */
+export async function getFailureAnalytics(
+  employeeId?: string,
+  workspaceId?: string
+): Promise<{
+  totalTasks: number;
+  totalFailures: number;
+  failureRate: number;
+  byType: Record<string, number>;
+  byCategory: Record<string, number>;
+  bySeverity: Record<string, number>;
+  recentFailures: Array<{
+    taskId: string;
+    failureType: string | null;
+    failureCategory: string | null;
+    failureSeverity: string | null;
+    failureReason: string | null;
+    qualityScore: number;
+    createdAt: Date;
+  }>;
+}> {
+  const where: { employeeId?: string; workspaceId?: string; actualSuccess?: boolean } = {};
+  if (employeeId) where.employeeId = employeeId;
+  if (workspaceId) where.workspaceId = workspaceId;
+
+  const totalTasks = await db.outcomeEvaluation.count({ where });
+  const failures = await db.outcomeEvaluation.findMany({
+    where: { ...where, actualSuccess: false },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  });
+
+  const byType: Record<string, number> = {};
+  const byCategory: Record<string, number> = {};
+  const bySeverity: Record<string, number> = {};
+  for (const f of failures) {
+    const t = f.failureType || "unknown";
+    const c = f.failureCategory || "unknown";
+    const s = f.failureSeverity || "unknown";
+    byType[t] = (byType[t] || 0) + 1;
+    byCategory[c] = (byCategory[c] || 0) + 1;
+    bySeverity[s] = (bySeverity[s] || 0) + 1;
+  }
+
+  return {
+    totalTasks,
+    totalFailures: failures.length,
+    failureRate: totalTasks > 0 ? failures.length / totalTasks : 0,
+    byType,
+    byCategory,
+    bySeverity,
+    recentFailures: failures.slice(0, 10).map((f) => ({
+      taskId: f.taskId,
+      failureType: f.failureType,
+      failureCategory: f.failureCategory,
+      failureSeverity: f.failureSeverity,
+      failureReason: f.failureReason,
+      qualityScore: f.qualityScore,
+      createdAt: f.createdAt,
+    })),
+  };
 }
 
 export async function getBusinessImpact(employeeId: string) {

@@ -235,6 +235,23 @@ async function planTask(
         payload: { reason: "Plan generation produced no steps" },
       });
     });
+
+    // ─── Failure Evaluation (structured taxonomy) ──────────────────────────
+    // Classify this failure and feed it into the learning engine so the
+    // employee learns from failures, not just successes.
+    try {
+      const { evaluateAndLearnFailure } = await import("@/lib/learning/engine");
+      await evaluateAndLearnFailure({
+        taskId: task.id,
+        employeeId: employee.id,
+        workspaceId: task.workspaceId,
+        failureReason: "Plan generation produced no steps",
+        failureContext: { duringPlanning: true },
+      });
+    } catch (err) {
+      console.error(`[Executor] Failure evaluation failed for task ${task.id}:`, err);
+    }
+
     return { action: "failed", message: "Plan generation produced no steps" };
   }
 
@@ -364,6 +381,21 @@ async function executeStep(
         },
       });
     });
+
+    // ─── Failure Evaluation (structured taxonomy) ──────────────────────────
+    try {
+      const { evaluateAndLearnFailure } = await import("@/lib/learning/engine");
+      await evaluateAndLearnFailure({
+        taskId: task.id,
+        employeeId: employee.id,
+        workspaceId: task.workspaceId,
+        failureReason: `Step ${step.stepNumber} failed: ${err instanceof Error ? err.message : "unknown error"}`,
+        failureContext: { stepType: step.stepType, tool: (() => { try { return JSON.parse(step.input).tool; } catch { return undefined; } })() },
+      });
+    } catch (err2) {
+      console.error(`[Executor] Failure evaluation failed for task ${task.id}:`, err2);
+    }
+
     return { action: "failed", message: `Step ${step.stepNumber} failed` };
   }
 }
@@ -1240,6 +1272,25 @@ export async function failAfterApprovalRejection(
     }
   } catch (err) {
     console.error(`[Executor] Profile update failed for rejection ${approvalId}:`, err);
+  }
+
+  // ─── Failure Evaluation (structured taxonomy) ──────────────────────────────
+  // Classify the approval rejection as a policy_block failure and feed it
+  // into the learning engine. The employee learns which actions get rejected.
+  try {
+    const { evaluateAndLearnFailure } = await import("@/lib/learning/engine");
+    await evaluateAndLearnFailure({
+      taskId,
+      employeeId: task.employeeId,
+      workspaceId: task.workspaceId,
+      failureReason: `Approval rejected: ${reason || "No reason provided"}`,
+      failureContext: {
+        approvalRejected: true,
+        tool: approvalRecord?.tool || "",
+      },
+    });
+  } catch (err) {
+    console.error(`[Executor] Failure evaluation failed for rejection ${approvalId}:`, err);
   }
 }
 

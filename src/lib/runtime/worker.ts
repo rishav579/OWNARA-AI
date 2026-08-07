@@ -3,9 +3,10 @@
  *
  * Continuously polls for runnable tasks and processes them one step at a time.
  *
- * The worker claims a task atomically via PostgreSQL SELECT ... FOR UPDATE
- * SKIP LOCKED. This guarantees that multiple workers can never pick up the
- * same task simultaneously.
+ * The worker claims a task atomically via the database concurrency layer
+ * (src/lib/concurrency.ts). On PostgreSQL this uses SELECT ... FOR UPDATE
+ * SKIP LOCKED; on SQLite it relies on the single-writer model. Either way,
+ * multiple workers can never pick up the same task simultaneously.
  *
  * State machine:
  *   queued → planning → executing → waiting_approval → executing → completed
@@ -21,7 +22,7 @@
 
 import { db } from "@/lib/db";
 import { processTask } from "./executor";
-import { Prisma } from "@prisma/client";
+import { claimNextTask } from "@/lib/concurrency";
 
 const POLL_INTERVAL_MS = 2000; // 2 seconds
 const STEP_DELAY_MS = 1000; // 1 second delay between steps (makes execution visible)
@@ -57,10 +58,10 @@ export function stopWorker(): void {
 /**
  * One poll cycle: atomically claim a runnable task and process one step.
  *
- * Uses SELECT ... FOR UPDATE SKIP LOCKED to guarantee that even with
- * multiple worker processes running, each task is claimed by exactly
- * one worker. The row lock is released when the transaction commits
- * (after processTask returns).
+ * Task claiming is delegated to the provider-portable concurrency layer
+ * (claimNextTask), which guarantees that even with multiple worker
+ * processes running on PostgreSQL, each task is claimed by exactly one
+ * worker. The claim is released when the transaction commits.
  */
 async function pollOnce(): Promise<void> {
   // ─── Stale step recovery ──────────────────────────────────────────────
@@ -96,20 +97,14 @@ async function pollOnce(): Promise<void> {
   }
 
   // ─── Task claiming ────────────────────────────────────────────────────
+  // Provider-portable atomic claim (see src/lib/concurrency.ts):
+  //   • PostgreSQL → SELECT ... FOR UPDATE SKIP LOCKED
+  //   • SQLite     → findFirst (single-writer model)
   let claimedTask: { id: string; title: string; status: string; employeeId: string } | null = null;
 
   try {
     claimedTask = await db.$transaction(async (tx) => {
-      const result = await tx.$queryRaw<{ id: string; title: string; status: string; employeeId: string }[]>`
-        SELECT "id", "title", "status", "employeeId"
-        FROM "public"."Task"
-        WHERE "status" IN ('queued', 'executing')
-        ORDER BY "createdAt" ASC
-        LIMIT 1
-        FOR UPDATE SKIP LOCKED
-      `;
-      if (!result || result.length === 0) return null;
-      return result[0];
+      return await claimNextTask(tx);
     }, { timeout: 5000 });
   } catch (err) {
     console.error("[Worker] Claim error:", err);

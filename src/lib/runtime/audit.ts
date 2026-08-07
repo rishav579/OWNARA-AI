@@ -9,6 +9,7 @@
  * per-workspace monotonic.
  */
 import { db } from "@/lib/db";
+import { acquireAuditLock } from "@/lib/concurrency";
 import crypto from "crypto";
 
 export interface AuditEntryInput {
@@ -35,9 +36,12 @@ export async function appendAudit(
   input: AuditEntryInput
 ): Promise<void> {
   // Serialize concurrent audit appends within the same workspace.
-  // pg_advisory_xact_lock is held until the transaction commits/rolls back.
-  // Different workspaces hash to different lock keys and proceed in parallel.
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${input.workspaceId}))`;
+  // Provider-portable (see src/lib/concurrency.ts):
+  //   • PostgreSQL → pg_advisory_xact_lock (held until commit; different
+  //     workspaces proceed in parallel).
+  //   • SQLite → no-op (single-writer serialization + the
+  //     @@unique([workspaceId, sequenceNumber]) constraint protect the chain).
+  await acquireAuditLock(tx, input.workspaceId);
 
   // Get the last entry in this workspace's chain
   const lastEntry = await tx.auditLog.findFirst({
