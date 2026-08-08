@@ -39,6 +39,9 @@ async function main() {
   await db.customer.deleteMany();
   // Employee memory (must be before employee)
   await db.employeeMemory.deleteMany();
+  // Mandate (the fundamental primitive) + its memory — must be early (FK to Workspace, Employee, User)
+  await db.mandateMemory.deleteMany();
+  await db.mandate.deleteMany();
   // Trust/governance
   try { await db.trustScore.deleteMany(); } catch {}
   await db.employee.deleteMany();
@@ -49,6 +52,16 @@ async function main() {
   try { await db.department.deleteMany(); } catch {}
   try { await db.integration.deleteMany(); } catch {}
   await db.session.deleteMany();
+  // Learning engine tables (FK to Workspace + Employee)
+  try { await db.employeeAchievement.deleteMany(); } catch {}
+  try { await db.achievement.deleteMany(); } catch {}
+  try { await db.careerTimelineEntry.deleteMany(); } catch {}
+  try { await db.businessOutcome.deleteMany(); } catch {}
+  try { await db.employeeStrength.deleteMany(); } catch {}
+  try { await db.employeeWeakness.deleteMany(); } catch {}
+  try { await db.learningPattern.deleteMany(); } catch {}
+  try { await db.skillReinforcement.deleteMany(); } catch {}
+  try { await db.outcomeEvaluation.deleteMany(); } catch {}
   await db.workspaceMember.deleteMany();
   await db.workspace.deleteMany();
   await db.user.deleteMany();
@@ -63,6 +76,21 @@ async function main() {
       emailVerifiedAt: new Date(),
       status: "active",
       avatarColor: "#10b981",
+    },
+  });
+
+  // ─── Demo Account (permanent demo login for design partners) ───────────────
+  // demo@bihari.ai / BihariDemo@2026!
+  // Same workspace as Rishav — the demo viewer sees the same company.
+  const demoHash = await bcrypt.hash("BihariDemo@2026!", 10);
+  const demoUser = await db.user.create({
+    data: {
+      email: "demo@bihari.ai",
+      passwordHash: demoHash,
+      name: "Demo Viewer",
+      emailVerifiedAt: new Date(),
+      status: "active",
+      avatarColor: "#8b5cf6",
     },
   });
   console.log("  ✓ Created user: Rishav Raj");
@@ -86,7 +114,18 @@ async function main() {
       joinedAt: new Date(),
     },
   });
+  // Demo user is an admin member of the same workspace
+  await db.workspaceMember.create({
+    data: {
+      workspaceId: workspace.id,
+      userId: demoUser.id,
+      role: "admin",
+      status: "active",
+      joinedAt: new Date(),
+    },
+  });
   console.log("  ✓ Created workspace: Acme Trading");
+  console.log("  ✓ Demo account: demo@bihari.ai / BihariDemo@2026!");
 
   // ─── Templates ────────────────────────────────────────────────────────────
   // V1 ships only the Finance Employee template. Future employee templates
@@ -409,11 +448,46 @@ async function main() {
   });
   console.log("  ✓ Seeded initial audit trail (4 entries)");
 
-  console.log("\n✅ Clean V1 seed complete!");
-  console.log("   Login: rishav@acmetrading.in / demo-password");
+  // ─── Mandate: Maintain Healthy Receivables ─────────────────────────────────
+  // The fundamental primitive in action. Rishav entrusts Kavya with a
+  // PERSISTENT organizational responsibility — not a single task, but a
+  // continuous mandate to keep receivables healthy. Kavya pursues this state
+  // autonomously within her authority, escalating to Rishav for approvals.
+  const { grantMandate, appendMandateMemory, evaluateMandateHealth } = await import("../src/lib/mandate/engine");
+  const { id: mandateId } = await grantMandate({
+    workspaceId: workspace.id,
+    grantorId: rohit.id,
+    tenantId: kavya.id,
+    title: "Maintain Healthy Receivables",
+    declaration: "Receivables older than 30 days should remain below 15% of total outstanding, and every overdue invoice should have an active resolution plan.",
+    successCriteria: "overdueRate <= 0.15",
+    authoritySpec: {
+      autonomous: ["generate_reminder", "search_knowledge", "update_collection_case"],
+      requiresApproval: ["send_reminder", "send_email"],
+      forbidden: ["offer_discount_above_10", "send_legal_notice", "write_off_invoice"],
+      escalationTriggers: ["disputed_invoice", "customer_bankruptcy", "invoice_over_90_days"],
+    },
+  });
+  console.log("  ✓ Granted Mandate: Maintain Healthy Receivables (tenant: Kavya)");
+
+  // Seed Mandate memory — the accumulated context that survives tenant replacement
+  await appendMandateMemory(mandateId, "strategy", "BlueDart Logistics responds to second reminders within 48 hours; first reminders are often ignored.", "supervisor", undefined, 0.8);
+  await appendMandateMemory(mandateId, "customer_pattern", "Reliance Retail disputes invoices with GST mismatches — always verify GSTIN before sending reminders.", "supervisor", undefined, 0.9);
+  await appendMandateMemory(mandateId, "approval_feedback", "Rishav approved a 5% early-payment discount for Tata Steel in Aug 2025 — precedent for negotiated settlements.", "approval", undefined, 0.7);
+  await appendMandateMemory(mandateId, "outcome_lesson", "Sending reminders on Tuesday mornings yields 23% higher response rate than Fridays.", "evaluation", undefined, 0.6);
+  await appendMandateMemory(mandateId, "observation", "Currently 3 of 8 invoices are overdue, totaling ₹4,20,000. Two customers (BlueDart, Reliance) account for 78% of overdue amount.", "supervisor", undefined, 0.85);
+  console.log("  ✓ Seeded 5 Mandate memory entries (context that survives tenant replacement)");
+
+  // Compute and store the initial health score
+  await evaluateMandateHealth(mandateId);
+  console.log("  ✓ Computed Mandate health score from live receivables data");
+
+  console.log("\n✅ V1 seed complete!");
+  console.log("   Login (demo):   demo@bihari.ai / BihariDemo@2026!");
+  console.log("   Login (owner):  rishav@acmetrading.in / demo-password");
   console.log("   Workspace: acme-trading");
-  console.log("   1 Finance Employee (Kavya), 5 customers, 8 invoices, audit trail seeded.");
-  console.log("   Delegate work from the UI and the worker will execute it live.");
+  console.log("   1 Finance Employee (Kavya), 1 active Mandate, 5 customers, 8 invoices.");
+  console.log("   The Mandate 'Maintain Healthy Receivables' is live — Kavya pursues it continuously.");
 }
 
 main()

@@ -19,6 +19,9 @@ import { SettingsPage } from "@/components/app/pages/settings";
 import { BillingPage } from "@/components/app/pages/billing";
 import { FinancePage } from "@/components/app/pages/finance";
 import { DelegateWorkPage } from "@/components/app/pages/delegate-work";
+import { MandatesPage } from "@/components/app/pages/mandates";
+import { MandateDetailPage } from "@/components/app/pages/mandate-detail";
+import { GrantMandatePage } from "@/components/app/pages/grant-mandate";
 import { LoadingScreen } from "@/components/app/loading-states";
 
 function AppRouter() {
@@ -71,6 +74,16 @@ function AppRouter() {
       break;
     case "delegate":
       page = <DelegateWorkPage />;
+      break;
+    case "mandates":
+      if (route.segments[1]) {
+        page = <MandateDetailPage mandateId={route.segments[1]} />;
+      } else {
+        page = <MandatesPage />;
+      }
+      break;
+    case "grant-mandate":
+      page = <GrantMandatePage />;
       break;
     case "employees":
       if (route.segments[1]) {

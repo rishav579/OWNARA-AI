@@ -45,6 +45,7 @@ import {
   XCircle,
   Loader2,
   Send,
+  Scroll,
 } from "lucide-react";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -96,6 +97,13 @@ export function DashboardPage() {
   const { data: auditEntries = [] } = useQuery({
     queryKey: ["audit", "ops-center"],
     queryFn: () => api.audit.list({ limit: 20 }),
+  });
+
+  // 4b. Mandates — the fundamental primitive. Shown front-and-center.
+  const { data: mandates = [] } = useQuery({
+    queryKey: ["mandates", "dashboard"],
+    queryFn: () => api.mandates.list(),
+    refetchInterval: 15000,
   });
 
   // 5. Learning data for the first active employee (patterns for insights)
@@ -281,6 +289,86 @@ export function DashboardPage() {
             </button>
           )}
         </div>
+      </section>
+
+      {/* ═══════════════════════════════════════════════════════════════════════
+          SECTION 1b: MANDATES — the living responsibilities entrusted to AI
+          ═══════════════════════════════════════════════════════════════════════ */}
+      <section>
+        <SectionHeader
+          title="Active Mandates"
+          subtitle="Persistent responsibilities your AI workforce pursues continuously"
+          action={{ label: "Grant Mandate", path: "grant-mandate" }}
+          navigate={navigate}
+        />
+        {mandates.length === 0 ? (
+          <EmptyState
+            icon={Scroll}
+            title="No Mandates yet"
+            description="A Mandate is a persistent organizational responsibility you entrust to an AI employee. Unlike a task, it pursues a desired state continuously."
+            action={
+              <button onClick={() => navigate("grant-mandate")} className="rounded-lg bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-emerald-950 hover:bg-emerald-400">
+                Grant your first Mandate
+              </button>
+            }
+          />
+        ) : (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {mandates.map((m: any) => (
+              <button
+                key={m.id}
+                onClick={() => navigate(`mandates/${m.id}`)}
+                className="group rounded-xl border border-zinc-800 bg-zinc-900/50 p-5 text-left transition-all hover:border-zinc-700 hover:bg-zinc-900"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <Scroll className="h-4 w-4 shrink-0 text-emerald-400" />
+                      <h3 className="truncate text-sm font-semibold text-zinc-50">{m.title}</h3>
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-xs text-zinc-400">{m.declaration}</p>
+                  </div>
+                  <span className={cn(
+                    "flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[0.6rem] font-semibold",
+                    m.status === "active" ? "bg-emerald-500/15 text-emerald-400" :
+                    m.status === "paused" ? "bg-amber-500/15 text-amber-400" :
+                    "bg-zinc-500/15 text-zinc-400"
+                  )}>
+                    {m.status === "active" && <Activity className="h-2.5 w-2.5" />}
+                    {m.status}
+                  </span>
+                </div>
+                <div className="mt-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-zinc-500">Desired-state health</span>
+                    <span className={cn("font-bold", m.healthScore >= 80 ? "text-emerald-400" : m.healthScore >= 50 ? "text-amber-400" : "text-red-400")}>
+                      {Math.round(m.healthScore)}%
+                    </span>
+                  </div>
+                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-zinc-800">
+                    <div
+                      className={cn("h-full rounded-full", m.healthScore >= 80 ? "bg-emerald-500" : m.healthScore >= 50 ? "bg-amber-500" : "bg-red-500")}
+                      style={{ width: `${m.healthScore}%` }}
+                    />
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center gap-3 text-[0.65rem] text-zinc-500">
+                  <span className="flex items-center gap-1">
+                    <Bot className="h-3 w-3" />
+                    {m.tenant?.name || "Unassigned"}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Activity className="h-3 w-3" />
+                    {m._count?.tasks || 0} episodes
+                  </span>
+                  <span className="ml-auto flex items-center gap-0.5 text-emerald-400 opacity-0 transition-opacity group-hover:opacity-100">
+                    View <ChevronRight className="h-3 w-3" />
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* ═══════════════════════════════════════════════════════════════════════

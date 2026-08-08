@@ -23,6 +23,7 @@
 import { db } from "@/lib/db";
 import { processTask } from "./executor";
 import { claimNextTask } from "@/lib/concurrency";
+import { superviseMandates } from "@/lib/mandate/supervisor";
 
 const POLL_INTERVAL_MS = 2000; // 2 seconds
 const STEP_DELAY_MS = 1000; // 1 second delay between steps (makes execution visible)
@@ -64,6 +65,16 @@ export function stopWorker(): void {
  * worker. The claim is released when the transaction commits.
  */
 async function pollOnce(): Promise<void> {
+  // ─── Mandate Supervisor ────────────────────────────────────────────────
+  // The continuous-execution loop for active Mandates. Evaluates health and
+  // spawns episodes (Tasks) when the desired state is not met. This is what
+  // makes a Mandate ALIVE — it pursues its outcome 24/7, not just once.
+  try {
+    await superviseMandates();
+  } catch (err) {
+    console.error("[Worker] Mandate supervisor error:", err);
+  }
+
   // ─── Stale step recovery ──────────────────────────────────────────────
   // Reset steps stuck in "running" for more than 5 minutes (worker crash recovery)
   const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);

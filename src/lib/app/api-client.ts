@@ -390,4 +390,31 @@ export const api = {
     },
     metrics: () => apiFetch<any>("/finance/metrics"),
   },
+
+  // Mandates — the fundamental primitive
+  mandates: {
+    list: (status?: string) => {
+      const qs = status && status !== "all" ? `?status=${status}` : "";
+      return apiFetch<any[]>(`/mandates${qs}`);
+    },
+    get: (id: string) => apiFetch<any>(`/mandates/${id}`),
+    grant: (data: {
+      title: string;
+      declaration: string;
+      successCriteria: string;
+      authoritySpec: any;
+      tenantId?: string;
+      parentMandateId?: string;
+    }) => apiFetch<any>("/mandates", { method: "POST", body: JSON.stringify(data) }),
+    pause: (id: string, reason?: string) =>
+      apiFetch<any>(`/mandates/${id}/pause`, { method: "POST", body: JSON.stringify({ reason }) }),
+    resume: (id: string) =>
+      apiFetch<any>(`/mandates/${id}/resume`, { method: "POST", body: JSON.stringify({}) }),
+    revoke: (id: string, reason?: string) =>
+      apiFetch<any>(`/mandates/${id}/revoke`, { method: "POST", body: JSON.stringify({ reason }) }),
+    reassign: (id: string, newTenantId: string, reason?: string) =>
+      apiFetch<any>(`/mandates/${id}/reassign`, { method: "POST", body: JSON.stringify({ newTenantId, reason }) }),
+    evaluate: (id: string) =>
+      apiFetch<any>(`/mandates/${id}?action=evaluate`, { method: "PATCH" }),
+  },
 };

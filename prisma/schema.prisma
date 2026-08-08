@@ -30,6 +30,7 @@ model User {
   tasks            Task[]              @relation("TaskAssignedBy")
   ownedWorkspaces  Workspace[]         @relation("WorkspaceOwner")
   workspaceMembers WorkspaceMember[]
+  grantedMandates  Mandate[]           @relation("MandateGrantor")
 }
 
 model Workspace {
@@ -78,6 +79,8 @@ model Workspace {
   reminders          Reminder[]
   tasks              Task[]
   trustScores        TrustScore[]
+  // ─── Mandate (the fundamental primitive) ───────────────────────────────────
+  mandates           Mandate[]
   owner              User                @relation("WorkspaceOwner", fields: [ownerUserId], references: [id])
   members            WorkspaceMember[]
 }
@@ -156,6 +159,7 @@ model Employee {
   documents        KnowledgeDocument[]
   tasks            Task[]
   trustScores      TrustScore[]
+  mandatesAsTenant Mandate[]
 }
 
 model Tool {
@@ -202,15 +206,151 @@ model Task {
   completedAt DateTime?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
+  // A Task is an EPISODE spawned by a Mandate to make progress toward its
+  // desired state. Mandate-less tasks (legacy / ad-hoc delegation) are still
+  // supported — mandateId is nullable. (See Mandate model.)
+  mandateId   String?
   approvals   Approval[]
   assigner    User       @relation("TaskAssignedBy", fields: [assignedBy], references: [id])
   employee    Employee   @relation(fields: [employeeId], references: [id])
   workspace   Workspace  @relation(fields: [workspaceId], references: [id])
+  mandate     Mandate?   @relation(fields: [mandateId], references: [id], onDelete: SetNull)
   steps       TaskStep[]
 
   @@index([workspaceId, status])
   @@index([employeeId, status])
   @@index([workspaceId, createdAt])
+  @@index([mandateId])
+}
+
+// ─── MANDATE ─────────────────────────────────────────────────────────────────
+// The fundamental primitive of an AI-native organization.
+//
+// A Mandate is a persistent, self-executing, authority-bearing, outcome-bound,
+// accountable unit of organizational intent that outlives any human or any AI
+// tenant. It is NOT a task (imperative, one-shot), NOT an agent (the executor),
+// NOT a workflow (a script), NOT an OKR (a metric), NOT a smart contract
+// (deterministic code). It is the OFFICE — the declared intent plus the granted
+// authority to pursue it continuously.
+//
+// Anatomy:
+//   Declaration   — declarative desired state ("receivables < 30d overdue"),
+//                   not an imperative action ("send reminder")
+//   Authority     — what the tenant may do autonomously vs what needs escalation
+//   Tenant        — the AI Employee currently executing (replaceable; the
+//                   Mandate survives a tenant swap the way an office survives
+//                   a resignation)
+//   Memory        — accumulated learning, scoped to the Mandate (survives tenant
+//                   replacement)
+//   Ledger        — the hash-chained AuditLog (already exists; the Mandate's
+//                   accountable body)
+//   Outcome       — measurable health (is the desired state true? how close?)
+//   Lifecycle     — proposed → granted → active → paused → resolved | revoked | breached
+//   Composition   — a Mandate may delegate to child Mandates
+//   Version       — declarations evolve; versioned for auditability
+//
+// The Mandate graph IS the organization. The org chart becomes a shadow.
+model Mandate {
+  id              String    @id @default(cuid())
+  workspaceId     String
+
+  // ─── Declaration ──────────────────────────────────────────────────────────
+  // A short, human-granted title ("Maintain Healthy Receivables") and a
+  // declarative statement of the desired state in natural language. The tenant
+  // pursues this state continuously — it does not "complete" a single action.
+  title           String
+  declaration     String   // "Receivables older than 30 days should remain below 15% of total outstanding."
+  successCriteria String   // measurable: "overdueRate <= 0.15 sustained over 7 days"
+
+  // ─── Authority ────────────────────────────────────────────────────────────
+  // What the tenant may do AUTONOMOUSLY, what REQUIRES human approval, and
+  // what is FORBIDDEN. This is the boundary of trust — the core of the Mandate.
+  authoritySpec   String   @default("{}")
+  // JSON: {
+  //   autonomous: string[],       // e.g. ["generate_reminder","search_knowledge","update_collection_case"]
+  //   requiresApproval: string[], // e.g. ["send_reminder","send_email"]
+  //   forbidden: string[],        // e.g. ["offer_discount_above_10","send_legal_notice"]
+  //   escalationTriggers: string[] // e.g. ["disputed_invoice","customer_bankruptcy"]
+  // }
+
+  // ─── Tenant (the AI Employee currently executing this Mandate) ────────────
+  // Nullable so a Mandate can be granted but unassigned, or reassigned.
+  // CRITICAL: reassigning tenantId preserves the declaration, authority,
+  // memory, ledger, outcome history, and lifecycle. The Mandate outlives the
+  // tenant. This is the central architectural test.
+  tenantId        String?
+
+  // ─── Grantor (the human who entrusted this Mandate) ───────────────────────
+  grantorId       String
+
+  // ─── Lifecycle ────────────────────────────────────────────────────────────
+  // proposed → granted → active → paused → resolved | revoked | breached
+  //   proposed:  declared but not yet granted (draft)
+  //   granted:   authority conferred, tenant assigned, but not yet started
+  //   active:    tenant is continuously pursuing the desired state
+  //   paused:    temporarily halted by the grantor (e.g. during audit)
+  //   resolved:  the desired state is true AND sustained (terminal success)
+  //   revoked:   the grantor withdrew the Mandate (terminal, voluntary)
+  //   breached:  the tenant acted outside its authority (terminal, involuntary)
+  status          String    @default("proposed")
+  pausedAt        DateTime?
+  resolvedAt      DateTime?
+  revokedAt       DateTime?
+  breachedAt      DateTime?
+  resolutionNote  String?   // why resolved/revoked/breached
+
+  // ─── Version (declarations evolve) ─────────────────────────────────────────
+  version         Int       @default(1)
+  previousDeclaration String? // the declaration text before the current version
+
+  // ─── Outcome / Health ──────────────────────────────────────────────────────
+  // 0-100. How well is the desired state being maintained? Computed by the
+  // Mandate Supervisor from the successCriteria + live domain data.
+  healthScore     Float     @default(100)
+  healthNote      String?   // human-readable explanation of the current score
+  lastEvaluatedAt DateTime?
+
+  // ─── Composition (parent/child Mandates) ───────────────────────────────────
+  parentMandateId String?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // ─── Relations ─────────────────────────────────────────────────────────────
+  workspace       Workspace  @relation(fields: [workspaceId], references: [id])
+  tenant          Employee?  @relation(fields: [tenantId], references: [id])
+  grantor         User       @relation("MandateGrantor", fields: [grantorId], references: [id])
+  parentMandate   Mandate?   @relation("MandateComposition", fields: [parentMandateId], references: [id], onDelete: SetNull)
+  childMandates   Mandate[]  @relation("MandateComposition")
+  tasks           Task[]     // episodes spawned to make progress
+  memory          MandateMemory[]
+
+  @@index([workspaceId, status])
+  @@index([tenantId, status])
+  @@index([grantorId])
+  @@index([parentMandateId])
+}
+
+// ─── Mandate Memory ──────────────────────────────────────────────────────────
+// Memory scoped to the MANDATE, not the tenant. This is what makes a Mandate
+// survive tenant replacement with its judgment intact: the new tenant inherits
+// everything this Mandate has perceived, tried, learned, and had approved or
+// rejected. (EmployeeMemory stays on the tenant for cross-Mandate memory.)
+model MandateMemory {
+  id          String   @id @default(cuid())
+  mandateId   String
+  memoryType  String   // observation | strategy | approval_feedback | outcome_lesson | customer_pattern
+  content     String
+  sourceType  String?  // task | approval | evaluation | supervisor | human
+  sourceId    String?
+  importance  Float    @default(0.5) // 0-1, decays/promotes over time
+  createdAt   DateTime @default(now())
+  supersededAt DateTime?
+
+  mandate     Mandate  @relation(fields: [mandateId], references: [id], onDelete: Cascade)
+
+  @@index([mandateId, memoryType])
+  @@index([mandateId, createdAt])
 }
 
 model TaskStep {
