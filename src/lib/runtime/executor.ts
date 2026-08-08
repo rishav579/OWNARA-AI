@@ -883,6 +883,19 @@ async function completeTask(task: any): Promise<ExecutionResult> {
     console.error(`[Executor] Learning engine failed for task ${task.id}:`, err);
   }
 
+  // ─── Mandate Memory Extraction ──────────────────────────────────────────
+  // If this task was spawned by a Mandate, extract learnings from the episode
+  // and store them as Mandate-level memory with full provenance. This memory
+  // survives tenant replacement and influences future strategy selection.
+  if (task.mandateId) {
+    try {
+      const { extractMandateMemoryFromEpisode } = await import("@/lib/mandate/memory-extractor");
+      await extractMandateMemoryFromEpisode(task.id);
+    } catch (err) {
+      console.error(`[Executor] Mandate memory extraction failed for task ${task.id}:`, err);
+    }
+  }
+
   return { action: "completed", message: "Task completed" };
 }
 

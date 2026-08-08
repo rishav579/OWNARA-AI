@@ -26,6 +26,7 @@
 import { db } from "@/lib/db";
 import { appendAudit } from "@/lib/runtime/audit";
 import { evaluateMandateHealth } from "@/lib/mandate/engine";
+import { observeMandateState, selectStrategy, type SelectedStrategy } from "@/lib/mandate/strategy-selector";
 
 /** Minimum time between spawned episodes for the same Mandate (10 minutes). */
 const MIN_EPISODE_INTERVAL_MS = 10 * 60 * 1000;
@@ -83,14 +84,10 @@ async function superviseOne(mandate: {
 
   // ─── REASON: is the desired state being met? ──────────────────────────
   if (fresh.healthScore >= 100) {
-    // Desired state is sustained — no episode needed.
-    return;
+    return; // Desired state is sustained — no episode needed.
   }
 
   // ─── Throttle: don't spawn if there's already an active episode ─────────
-  // (prevents episode flooding. The 10-min interval is enforced by checking
-  // the most recent task's creation time — if the last episode was < 10 min
-  // ago, wait for it to finish before spawning another.)
   const activeEpisodes = await db.task.count({
     where: {
       mandateId: mandate.id,
@@ -98,10 +95,9 @@ async function superviseOne(mandate: {
     },
   });
   if (activeEpisodes >= MAX_CONCURRENT_EPISODES) {
-    return; // An episode is already in progress — let it finish
+    return;
   }
 
-  // Check the last spawned episode's age — don't re-spawn too frequently
   const lastEpisode = await db.task.findFirst({
     where: { mandateId: mandate.id },
     orderBy: { createdAt: "desc" },
@@ -110,39 +106,56 @@ async function superviseOne(mandate: {
   if (lastEpisode) {
     const ageMs = Date.now() - new Date(lastEpisode.createdAt).getTime();
     if (ageMs < MIN_EPISODE_INTERVAL_MS) {
-      return; // Recently spawned an episode — wait
+      return;
     }
   }
 
-  // ─── ACT: spawn an episode (Task) to make progress toward the desired state ─
-  await spawnEpisode(mandate, fresh.healthScore, fresh.healthNote || "");
+  // ─── OBSERVE (deep): read the actual domain state ─────────────────────
+  // This is what makes the Mandate NOT a fixed workflow. The supervisor
+  // observes the REAL state of invoices, customers, collection cases, and
+  // reminders — then selects a strategy appropriate to what it sees.
+  const observedState = await observeMandateState(mandate.workspaceId);
+
+  // ─── REASON (deep): select a strategy based on observed state ──────────
+  // Different states produce DIFFERENT episodes. This is the proof that the
+  // Mandate is a control system, not a workflow.
+  const strategy = selectStrategy(observedState, mandate.title, mandate.declaration);
+  if (!strategy) {
+    // No actionable gap — the observed state doesn't warrant an episode.
+    // (e.g. all overdue invoices have recent reminders, or customers promised payment)
+    return;
+  }
+
+  // ─── ACT: spawn an episode using the selected strategy ─────────────────
+  await spawnEpisode(mandate, strategy);
 }
 
 /**
- * Spawns a Task (episode) under the Mandate. The task is linked to the Mandate
- * via mandateId, assigned to the Mandate's tenant, and given a title that
- * reflects the current gap between desired and actual state.
+ * Spawns a Task (episode) under the Mandate using the selected strategy.
  *
- * The task then flows through the normal trust loop (plan → approve → execute
- * → audit → evaluate), and the learning engine feeds back into Mandate memory.
+ * The episode title, description, and priority are all derived from the
+ * strategy — NOT hardcoded. Different strategies produce fundamentally
+ * different episodes:
+ *   • investigate_disputed → "Investigate disputed invoice INV-001..."
+ *   • prioritize_high_value → "Prioritize recovery from BlueDart..."
+ *   • send_reminder_campaign → "Send reminders for 3 overdue invoices"
+ *   • wait_for_promise → no episode (strategy returns null)
+ *
+ * The strategy reasoning is stored in the task description so the grantor
+ * can see WHY this episode was chosen. The strategy type is parsed by the
+ * memory extractor to generate strategy-specific learnings.
  */
 async function spawnEpisode(
   mandate: { id: string; workspaceId: string; title: string; declaration: string; tenantId: string | null },
-  healthScore: number,
-  healthNote: string
+  strategy: SelectedStrategy
 ): Promise<void> {
   if (!mandate.tenantId) return;
 
-  // Find the grantor (to assign the task)
   const fullMandate = await db.mandate.findUnique({
     where: { id: mandate.id },
     select: { grantorId: true },
   });
   if (!fullMandate) return;
-
-  // Build a task title that reflects the current gap
-  const episodeTitle = `Pursue: ${mandate.title} (health ${Math.round(healthScore)}%)`;
-  const episodeDesc = `Auto-spawned by the Mandate Supervisor. The desired state is not yet met.\n\nMandate: ${mandate.title}\nDeclaration: ${mandate.declaration}\nCurrent health: ${Math.round(healthScore)}% — ${healthNote}\n\nAction: Identify overdue invoices that are pushing the overdue rate above target, and pursue resolution within granted authority.`;
 
   await db.$transaction(async (tx) => {
     const task = await tx.task.create({
@@ -150,10 +163,10 @@ async function spawnEpisode(
         workspaceId: mandate.workspaceId,
         employeeId: mandate.tenantId,
         assignedBy: fullMandate.grantorId,
-        title: episodeTitle,
-        description: episodeDesc,
+        title: strategy.episodeTitle,
+        description: strategy.episodeDescription,
         status: "queued",
-        priority: healthScore < 50 ? "high" : "medium",
+        priority: strategy.priority,
         mandateId: mandate.id,
       },
     });
@@ -168,11 +181,13 @@ async function spawnEpisode(
       targetId: mandate.id,
       payload: {
         taskId: task.id,
-        healthScore: String(Math.round(healthScore)),
-        reason: "Desired state not met — supervisor spawned an episode to make progress",
+        strategy: strategy.strategy,
+        reasoning: strategy.reasoning.slice(0, 200),
+        observedOverdueRate: String((strategy.observedState.overdueRate * 100).toFixed(1)),
+        observedOverdueCount: String(strategy.observedState.overdueInvoiceCount),
       },
     });
 
-    console.log(`[Mandate Supervisor] Spawned episode ${task.id} for mandate ${mandate.id} (health ${Math.round(healthScore)}%)`);
+    console.log(`[Mandate Supervisor] Spawned episode ${task.id} for mandate ${mandate.id} — strategy: ${strategy.strategy}`);
   });
 }

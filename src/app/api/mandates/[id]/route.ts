@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { requireWorkspace } from "@/lib/auth";
 import { success, error, handleApiError } from "@/lib/api-response";
-import { evaluateMandateHealth, parseAuthoritySpec } from "@/lib/mandate/engine";
+import { evaluateMandateHealth, parseAuthoritySpec, computeMandateOutcomeEconomics } from "@/lib/mandate/engine";
 
 /**
  * GET /api/mandates/[id]
@@ -53,7 +53,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     // Parsed authority for the UI
     const authority = parseAuthoritySpec(mandate.authoritySpec);
 
-    return success({ ...mandate, authority, auditEntries });
+    // Outcome economics — the distinction between activity and outcome
+    const economics = await computeMandateOutcomeEconomics(id);
+
+    return success({ ...mandate, authority, auditEntries, economics });
   } catch (err) {
     return handleApiError(err);
   }

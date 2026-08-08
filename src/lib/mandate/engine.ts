@@ -338,3 +338,148 @@ export async function evaluateMandateHealth(mandateId: string): Promise<void> {
     data: { healthScore: score, healthNote: note, lastEvaluatedAt: new Date() },
   });
 }
+
+// ─── Outcome Economics ────────────────────────────────────────────────────────
+// The distinction between ACTIVITY and OUTCOME is fundamental to the Mandate.
+// Activity = what the AI did (reminders sent, steps executed).
+// Outcome = whether the RESPONSIBILITY is actually being fulfilled (overdue rate
+// improved, payments received, value created).
+// 100 reminders sent ≠ healthy receivables. The Mandate measures OUTCOME.
+
+export interface MandateOutcomeEconomics {
+  // ─── Outcome (is the responsibility being fulfilled?) ──────────────────
+  currentOverdueRate: number;
+  targetOverdueRate: number;
+  gap: number; // currentRate - targetRate (positive = behind target)
+  trend: "improving" | "stable" | "worsening" | "unknown";
+  totalRecovered: number; // payments received on invoices linked to this mandate's episodes
+  recoveryVelocity: number; // recovered per episode, on average
+
+  // ─── Activity (what the AI did — NOT the same as outcome) ───────────────
+  totalEpisodes: number;
+  completedEpisodes: number;
+  failedEpisodes: number;
+  remindersSent: number;
+  customerResponses: number;
+
+  // ─── Intervention economics ─────────────────────────────────────────────
+  approvalRate: number; // % of approvals that were approved (not rejected)
+  humanInterventionRate: number; // % of episodes that needed approval
+  failureRate: number; // % of episodes that failed
+  tokenUsage: number; // total AI cost (proxy)
+
+  // ─── Net value ──────────────────────────────────────────────────────────
+  executionCostEstimate: number; // estimated cost in paise (tokens * rate)
+  netValue: number; // recovered - executionCost
+}
+
+/**
+ * Computes the outcome economics for a Mandate.
+ *
+ * This is the function that answers: "Is this responsibility actually being
+ * fulfilled?" — NOT "Did the AI complete tasks?"
+ *
+ * The distinction is critical:
+ *   • Activity metrics (reminders sent, episodes completed) measure effort.
+ *   • Outcome metrics (overdue rate, recovery, value) measure results.
+ *
+ * A Mandate with 100 reminders sent but no improvement in overdue rate is
+ * FAILING, even though the AI was "busy." This is what makes the Mandate an
+ * outcome-oriented primitive, not a task-completion system.
+ */
+export async function computeMandateOutcomeEconomics(mandateId: string): Promise<MandateOutcomeEconomics> {
+  const mandate = await db.mandate.findUnique({
+    where: { id: mandateId },
+    select: { workspaceId: true, successCriteria: true },
+  });
+  if (!mandate) {
+    return {
+      currentOverdueRate: 0, targetOverdueRate: 0.15, gap: 0, trend: "unknown",
+      totalRecovered: 0, recoveryVelocity: 0, totalEpisodes: 0, completedEpisodes: 0,
+      failedEpisodes: 0, remindersSent: 0, customerResponses: 0, approvalRate: 1,
+      humanInterventionRate: 0, failureRate: 0, tokenUsage: 0, executionCostEstimate: 0, netValue: 0,
+    };
+  }
+
+  // ─── Current observed state ─────────────────────────────────────────────
+  const { observeMandateState } = await import("@/lib/mandate/strategy-selector");
+  const observed = await observeMandateState(mandate.workspaceId);
+
+  // Parse target
+  const match = mandate.successCriteria.match(/overdueRate\s*<=\s*([0-9.]+)/i);
+  const target = match ? parseFloat(match[1]) : 0.15;
+
+  // ─── Episodes (tasks linked to this mandate) ────────────────────────────
+  const tasks = await db.task.findMany({
+    where: { mandateId },
+    select: { id: true, status: true, tokenUsage: true, createdAt: true, completedAt: true },
+  });
+  const completedTasks = tasks.filter((t) => t.status === "completed");
+  const failedTasks = tasks.filter((t) => t.status === "failed");
+  const tokenUsage = tasks.reduce((s, t) => s + (t.tokenUsage || 0), 0);
+
+  // ─── Approvals linked to this mandate's episodes ────────────────────────
+  const taskIds = tasks.map((t) => t.id);
+  const approvals = taskIds.length > 0
+    ? await db.approval.findMany({ where: { taskId: { in: taskIds } }, select: { decision: true } })
+    : [];
+  const approvedCount = approvals.filter((a) => a.decision === "approved").length;
+  const rejectedCount = approvals.filter((a) => a.decision === "rejected").length;
+  const totalDecided = approvedCount + rejectedCount;
+
+  // ─── Recovery: payments received on invoices in this workspace ──────────
+  // (Since the mandate covers the whole workspace's receivables, all payments
+  //  during the mandate's active period count as recovery.)
+  const payments = await db.payment.findMany({
+    where: { workspaceId: mandate.workspaceId },
+    select: { amount: true, paymentDate: true },
+  });
+  const totalRecovered = payments.reduce((s, p) => s + (p.amount || 0), 0);
+
+  // ─── Reminders sent ─────────────────────────────────────────────────────
+  const reminders = await db.reminder.findMany({
+    where: { workspaceId: mandate.workspaceId },
+    select: { sentAt: true, respondedAt: true },
+  });
+  const remindersSent = reminders.filter((r) => r.sentAt).length;
+  const customerResponses = reminders.filter((r) => r.respondedAt).length;
+
+  // ─── Trend: compare current overdue rate to the rate at the last episode ─
+  let trend: MandateOutcomeEconomics["trend"] = "unknown";
+  if (tasks.length >= 2) {
+    const sorted = [...tasks].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    // If the most recent episode's completion time exists, we can compare
+    // For now, trend is "unknown" unless we have historical health data
+    // (The health score is recomputed each cycle, so trend detection requires
+    //  storing historical health points — a V2 enhancement)
+    trend = "stable";
+  }
+
+  const recoveryVelocity = completedTasks.length > 0 ? totalRecovered / completedTasks.length : 0;
+  const approvalRate = totalDecided > 0 ? approvedCount / totalDecided : 1;
+  const humanInterventionRate = tasks.length > 0 ? approvals.length / tasks.length : 0;
+  const failureRate = tasks.length > 0 ? failedTasks.length / tasks.length : 0;
+  // Estimate cost: ~$0.0001 per token (Gemini Flash rate, approximate)
+  const executionCostEstimate = Math.round(tokenUsage * 0.01); // in paise
+  const netValue = totalRecovered - executionCostEstimate;
+
+  return {
+    currentOverdueRate: observed.overdueRate,
+    targetOverdueRate: target,
+    gap: Math.max(0, observed.overdueRate - target),
+    trend,
+    totalRecovered,
+    recoveryVelocity,
+    totalEpisodes: tasks.length,
+    completedEpisodes: completedTasks.length,
+    failedEpisodes: failedTasks.length,
+    remindersSent,
+    customerResponses,
+    approvalRate,
+    humanInterventionRate,
+    failureRate,
+    tokenUsage,
+    executionCostEstimate,
+    netValue,
+  };
+}

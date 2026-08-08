@@ -43,6 +43,7 @@ import {
   Loader2,
   Lock,
   AlertTriangle,
+  TrendingUp,
 } from "lucide-react";
 
 const STATUS_META: Record<string, { label: string; className: string }> = {
@@ -287,6 +288,64 @@ export function MandateDetailPage({ mandateId }: { mandateId: string }) {
         </div>
       </div>
 
+      {/* Outcome Economics — Activity vs Outcome */}
+      {mandate.economics && (
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-zinc-200">
+            <TrendingUp className="h-4 w-4 text-emerald-400" />
+            Outcome Economics
+          </h3>
+          <p className="mt-1 text-xs text-zinc-500">
+            Is this responsibility actually being fulfilled? Activity (what the AI did) ≠ Outcome (whether the desired state is met). 100 reminders sent ≠ healthy receivables.
+          </p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {/* Outcome metrics */}
+            <div className="rounded-lg border border-emerald-900/50 bg-emerald-500/5 p-3">
+              <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-emerald-400">Overdue Rate (Outcome)</div>
+              <div className="mt-1 text-xl font-bold text-zinc-100">{(mandate.economics.currentOverdueRate * 100).toFixed(1)}%</div>
+              <div className="text-[0.6rem] text-zinc-500">Target: ≤ {(mandate.economics.targetOverdueRate * 100).toFixed(0)}% · Gap: +{(mandate.economics.gap * 100).toFixed(1)}pp</div>
+            </div>
+            <div className="rounded-lg border border-emerald-900/50 bg-emerald-500/5 p-3">
+              <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-emerald-400">Total Recovered</div>
+              <div className="mt-1 text-xl font-bold text-emerald-400">₹{Math.round(mandate.economics.totalRecovered / 100).toLocaleString("en-IN")}</div>
+              <div className="text-[0.6rem] text-zinc-500">{mandate.economics.completedEpisodes} episodes · ₹{Math.round(mandate.economics.recoveryVelocity / 100).toLocaleString("en-IN")}/episode</div>
+            </div>
+            {/* Activity metrics (deliberately separate from outcome) */}
+            <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3">
+              <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-zinc-500">Reminders Sent (Activity)</div>
+              <div className="mt-1 text-xl font-bold text-zinc-300">{mandate.economics.remindersSent}</div>
+              <div className="text-[0.6rem] text-zinc-600">{mandate.economics.customerResponses} customer responses</div>
+            </div>
+            <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3">
+              <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-zinc-500">Episodes (Activity)</div>
+              <div className="mt-1 text-xl font-bold text-zinc-300">{mandate.economics.totalEpisodes}</div>
+              <div className="text-[0.6rem] text-zinc-600">{mandate.economics.completedEpisodes} completed · {mandate.economics.failedEpisodes} failed</div>
+            </div>
+          </div>
+          {/* Net value + intervention economics */}
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3">
+              <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-zinc-500">Net Value Created</div>
+              <div className="mt-1 text-lg font-bold text-emerald-400">₹{Math.round(mandate.economics.netValue / 100).toLocaleString("en-IN")}</div>
+              <div className="text-[0.6rem] text-zinc-600">Recovered ₹{Math.round(mandate.economics.totalRecovered / 100).toLocaleString("en-IN")} − Cost ₹{Math.round(mandate.economics.executionCostEstimate / 100).toLocaleString("en-IN")}</div>
+            </div>
+            <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3">
+              <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-zinc-500">Human Intervention</div>
+              <div className="mt-1 text-lg font-bold text-zinc-300">{(mandate.economics.humanInterventionRate * 100).toFixed(0)}%</div>
+              <div className="text-[0.6rem] text-zinc-600">Approval rate: {(mandate.economics.approvalRate * 100).toFixed(0)}%</div>
+            </div>
+            <div className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3">
+              <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-zinc-500">Failure Rate</div>
+              <div className="mt-1 text-lg font-bold text-zinc-300">{(mandate.economics.failureRate * 100).toFixed(0)}%</div>
+              <div className="text-[0.6rem] text-zinc-600">{mandate.economics.failedEpisodes} of {mandate.economics.totalEpisodes} episodes failed</div>
+            </div>
+          </div>
+          <div className="mt-2 text-[0.6rem] text-zinc-600">
+            DEMO DATA: Recovery figures are based on seeded payment data. Execution cost is estimated from token usage at approximate Gemini Flash rates. Do not present as real customer outcomes.
+          </div>
+        </div>
+      )}
+
       {/* Authority */}
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
         <h3 className="flex items-center gap-2 text-sm font-semibold text-zinc-200">
@@ -351,9 +410,16 @@ export function MandateDetailPage({ mandateId }: { mandateId: string }) {
             <div key={mem.id} className="rounded-lg border border-zinc-800 bg-zinc-950/50 p-3">
               <div className="flex items-center justify-between">
                 <span className="rounded bg-violet-500/15 px-1.5 py-0.5 text-[0.6rem] font-medium text-violet-300">{mem.memoryType.replace(/_/g, " ")}</span>
-                <span className="text-[0.6rem] text-zinc-600">{new Date(mem.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>
+                <div className="flex items-center gap-2 text-[0.6rem] text-zinc-600">
+                  {mem.sourceType && <span className="rounded bg-zinc-800 px-1 py-0.5">via {mem.sourceType}</span>}
+                  {typeof mem.importance === "number" && <span>confidence: {Math.round(mem.importance * 100)}%</span>}
+                  <span>{new Date(mem.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>
+                </div>
               </div>
               <p className="mt-1.5 text-xs text-zinc-300">{mem.content}</p>
+              {mem.sourceId && (
+                <div className="mt-1 text-[0.6rem] text-zinc-600">Provenance: episode {mem.sourceId.slice(-8)}</div>
+              )}
             </div>
           ))}
         </div>
