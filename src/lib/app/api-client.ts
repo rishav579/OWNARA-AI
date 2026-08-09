@@ -389,6 +389,11 @@ export const api = {
       return apiFetch<any[]>(`/finance/reminders${qs}`);
     },
     metrics: () => apiFetch<any>("/finance/metrics"),
+    import: (rows: any[], dataType: "invoices" | "customers" | "payments") =>
+      apiFetch<{ imported: number; skipped: number; errors: number; errorRows: Array<{ row: number; error: string }> }>("/finance/import", {
+        method: "POST",
+        body: JSON.stringify({ rows, dataType }),
+      }),
   },
 
   // Mandates — the fundamental primitive

@@ -116,13 +116,34 @@ async function superviseOne(mandate: {
   // reminders — then selects a strategy appropriate to what it sees.
   const observedState = await observeMandateState(mandate.workspaceId);
 
-  // ─── REASON (deep): select a strategy based on observed state ──────────
-  // Different states produce DIFFERENT episodes. This is the proof that the
-  // Mandate is a control system, not a workflow.
-  const strategy = selectStrategy(observedState, mandate.title, mandate.declaration);
+  // ─── RETRIEVE MEMORY: load the Mandate's accumulated learning ──────────
+  // This closes the memory loop. The strategy selector uses past memory to
+  // influence its reasoning — customer patterns, strategy outcomes, approval
+  // feedback, and outcome lessons all shape the next strategy selection.
+  const memoryEntries = await db.mandateMemory.findMany({
+    where: { mandateId: mandate.id, supersededAt: null },
+    orderBy: { importance: "desc" },
+    take: 20,
+    select: { id: true, memoryType: true, content: true, importance: true },
+  });
+
+  // ─── REASON (deep): select a strategy based on observed state + memory ─
+  // Different states produce DIFFERENT episodes. Memory from past episodes
+  // influences the reasoning. This is the proof that the Mandate is a
+  // control system that LEARNS, not a fixed workflow.
+  const strategy = selectStrategy(
+    observedState,
+    mandate.title,
+    mandate.declaration,
+    memoryEntries.map((m) => ({
+      id: m.id,
+      memoryType: m.memoryType,
+      content: m.content,
+      importance: m.importance,
+    }))
+  );
   if (!strategy) {
     // No actionable gap — the observed state doesn't warrant an episode.
-    // (e.g. all overdue invoices have recent reminders, or customers promised payment)
     return;
   }
 
@@ -185,9 +206,10 @@ async function spawnEpisode(
         reasoning: strategy.reasoning.slice(0, 200),
         observedOverdueRate: String((strategy.observedState.overdueRate * 100).toFixed(1)),
         observedOverdueCount: String(strategy.observedState.overdueInvoiceCount),
+        memoryUsed: JSON.stringify(strategy.memoryUsed.map((m) => ({ id: m.id, type: m.memoryType }))),
       },
     });
 
-    console.log(`[Mandate Supervisor] Spawned episode ${task.id} for mandate ${mandate.id} — strategy: ${strategy.strategy}`);
+    console.log(`[Mandate Supervisor] Spawned episode ${task.id} for mandate ${mandate.id} — strategy: ${strategy.strategy}, memory used: ${strategy.memoryUsed.length}`);
   });
 }

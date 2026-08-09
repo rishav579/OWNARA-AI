@@ -103,7 +103,7 @@ export async function extractMandateMemoryFromEpisode(taskId: string): Promise<v
   const recentPayments = await db.payment.findMany({
     where: {
       workspaceId: task.workspaceId,
-      recordedAt: { gte: taskCreatedAt?.createdAt },
+      paymentDate: { gte: taskCreatedAt?.createdAt },
     },
     select: { id: true, amount: true, invoiceId: true },
     take: 10,
