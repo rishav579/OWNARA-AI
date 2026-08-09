@@ -584,7 +584,7 @@ model Invoice {
   id              String           @id @default(cuid())
   workspaceId     String
   customerId      String
-  invoiceNumber   String           @unique
+  invoiceNumber   String
   issueDate       DateTime
   dueDate         DateTime
   subtotal        Int
@@ -604,6 +604,7 @@ model Invoice {
   payments        Payment[]
   reminders       Reminder[]
 
+  @@unique([workspaceId, invoiceNumber])
   @@index([workspaceId, status])
   @@index([workspaceId, dueDate])
   @@index([customerId, status])

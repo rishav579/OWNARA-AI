@@ -49,17 +49,20 @@ export interface SendEmailParams {
   replyTo?: string;
 }
 
-export async function sendEmail(params: SendEmailParams): Promise<{ sent: boolean; messageId?: string; error?: string }> {
+export async function sendEmail(params: SendEmailParams): Promise<{ sent: boolean; mock: boolean; messageId?: string; error?: string }> {
   const t = getTransporter();
   const fromEmail = process.env.SMTP_FROM || "noreply@bihari.ai";
   const fromName = process.env.SMTP_FROM_NAME || "BIHARI AI";
 
   if (!t) {
-    console.log("[Email Service] LOG MODE — email not sent (SMTP not configured)");
+    // ─── Mock / Development Transport ──────────────────────────────────────
+    // SMTP is not configured. The email is NOT sent. This is clearly labeled
+    // as MOCK so the UI never pretends an email was delivered.
+    console.log("[Email Service] MOCK TRANSPORT — email not sent (SMTP not configured)");
     console.log(`  To: ${params.to}`);
     console.log(`  Subject: ${params.subject}`);
     console.log(`  Body: ${params.body.substring(0, 200)}...`);
-    return { sent: false, error: "SMTP not configured — email logged to console" };
+    return { sent: true, mock: true, messageId: `mock-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` };
   }
 
   try {
@@ -71,11 +74,11 @@ export async function sendEmail(params: SendEmailParams): Promise<{ sent: boolea
       replyTo: params.replyTo || fromEmail,
     });
 
-    return { sent: true, messageId: info.messageId };
+    return { sent: true, mock: false, messageId: info.messageId };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[Email Service] Failed to send email:", message);
-    return { sent: false, error: message };
+    return { sent: false, mock: false, error: message };
   }
 }
 
@@ -84,7 +87,7 @@ export async function sendReminderEmail(params: {
   customerName: string;
   subject: string;
   body: string;
-}): Promise<{ sent: boolean; messageId?: string; error?: string }> {
+}): Promise<{ sent: boolean; mock: boolean; messageId?: string; error?: string }> {
   return sendEmail({
     to: params.to,
     subject: params.subject,

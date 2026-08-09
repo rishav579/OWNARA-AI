@@ -240,23 +240,43 @@ async function main() {
   const daysAgo = (n: number) => new Date(now.getTime() - n * 24 * 60 * 60 * 1000);
   const daysAhead = (n: number) => new Date(now.getTime() + n * 24 * 60 * 60 * 1000);
 
+  // Realistic receivables data — mix of current and overdue invoices.
+  // dueDays: NEGATIVE = due in the future (current), POSITIVE = overdue by N days.
+  // Target: ~30% overdue rate (realistic for a mid-sized Indian SME).
   const invoiceDefs = [
-    // Sundar Electronics — current (not overdue)
-    { customerIdx: 0, invoiceNumber: "INV-2025-001", issueDays: 5, dueDays: 25, subtotal: 15000000, tax: 2700000 },
-    // Nair Textiles — 1-30 days overdue, no reminders
+    // ─── Current invoices (due in the future) — ₹1.21 Cr ──────────────────
+    // Sundar Electronics — current, large
+    { customerIdx: 0, invoiceNumber: "INV-2025-001", issueDays: 5, dueDays: -25, subtotal: 45000000, tax: 8100000 },
+    // Sundar Electronics — current
+    { customerIdx: 0, invoiceNumber: "INV-2025-006", issueDays: 2, dueDays: -28, subtotal: 28000000, tax: 5040000 },
+    // Sundar Electronics — current
+    { customerIdx: 0, invoiceNumber: "INV-2025-010", issueDays: 10, dueDays: -20, subtotal: 15000000, tax: 2700000 },
+    // Nair Textiles — current
+    { customerIdx: 1, invoiceNumber: "INV-2025-011", issueDays: 3, dueDays: -27, subtotal: 12000000, tax: 2160000 },
+    // BlueDart Logistics — current, partially paid
+    { customerIdx: 2, invoiceNumber: "INV-2025-005", issueDays: 50, dueDays: -10, subtotal: 6700000, tax: 1206000, partialPayment: 3000000 },
+    // ─── 1-30 days overdue — ₹24 L ────────────────────────────────────────
+    // Nair Textiles — 15 days overdue, no reminders yet
     { customerIdx: 1, invoiceNumber: "INV-2025-002", issueDays: 45, dueDays: 15, subtotal: 8500000, tax: 1530000 },
-    // BlueDart Logistics — 31-60 days overdue, 1 reminder sent
-    { customerIdx: 2, invoiceNumber: "INV-2025-003", issueDays: 75, dueDays: 45, subtotal: 12000000, tax: 2160000 },
-    // FastFreight India — 61-90 days overdue, 2 reminders sent
-    { customerIdx: 3, invoiceNumber: "INV-2025-004", issueDays: 105, dueDays: 90, subtotal: 4500000, tax: 810000 },
-    // Acme Pharma — 90+ days overdue, 3 reminders sent (write-off candidate)
-    { customerIdx: 4, invoiceNumber: "INV-2024-098", issueDays: 125, dueDays: 65, subtotal: 22000000, tax: 3960000 },
-    // BlueDart Logistics — partially paid
-    { customerIdx: 2, invoiceNumber: "INV-2025-005", issueDays: 50, dueDays: 20, subtotal: 6700000, tax: 1206000 },
-    // Sundar Electronics — another current invoice
-    { customerIdx: 0, invoiceNumber: "INV-2025-006", issueDays: 2, dueDays: 28, subtotal: 9500000, tax: 1710000 },
-    // Nair Textiles — 1-30 days overdue, 1 reminder sent
-    { customerIdx: 1, invoiceNumber: "INV-2025-007", issueDays: 40, dueDays: 5, subtotal: 3200000, tax: 576000 },
+    // Nair Textiles — 5 days overdue
+    { customerIdx: 1, invoiceNumber: "INV-2025-007", issueDays: 35, dueDays: 5, subtotal: 5500000, tax: 990000 },
+    // BlueDart Logistics — 10 days overdue
+    { customerIdx: 2, invoiceNumber: "INV-2025-012", issueDays: 40, dueDays: 10, subtotal: 6000000, tax: 1080000 },
+    // ─── 31-60 days overdue — ₹17 L ───────────────────────────────────────
+    // BlueDart Logistics — 45 days overdue, 1 reminder sent
+    { customerIdx: 2, invoiceNumber: "INV-2025-003", issueDays: 75, dueDays: 45, subtotal: 9000000, tax: 1620000 },
+    // FastFreight India — 35 days overdue
+    { customerIdx: 3, invoiceNumber: "INV-2025-013", issueDays: 65, dueDays: 35, subtotal: 4000000, tax: 720000 },
+    // ─── 61-90 days overdue — ₹11 L ───────────────────────────────────────
+    // FastFreight India — 75 days overdue, 2 reminders sent
+    { customerIdx: 3, invoiceNumber: "INV-2025-004", issueDays: 105, dueDays: 75, subtotal: 4500000, tax: 810000 },
+    // Sundar Electronics — 65 days overdue (unusual for this customer)
+    { customerIdx: 0, invoiceNumber: "INV-2025-014", issueDays: 95, dueDays: 65, subtotal: 3000000, tax: 540000 },
+    // ─── 90+ days overdue — ₹19 L ─────────────────────────────────────────
+    // Acme Pharma — 95 days overdue, 3 reminders sent (write-off candidate)
+    { customerIdx: 4, invoiceNumber: "INV-2024-098", issueDays: 125, dueDays: 95, subtotal: 12000000, tax: 2160000 },
+    // Acme Pharma — 105 days overdue
+    { customerIdx: 4, invoiceNumber: "INV-2024-099", issueDays: 135, dueDays: 105, subtotal: 4000000, tax: 720000 },
   ];
 
   const invoiceRecords = [];

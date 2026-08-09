@@ -1363,3 +1363,35 @@ Stage Summary:
 - The memory loop is closed and proven with a real completed episode.
 - The Mandate survives tenant replacement with all context intact.
 - 5 files created/modified: strategy-selector.ts (memory parameter), supervisor.ts (memory retrieval), memory-extractor.ts (Payment field fix), /api/finance/import/route.ts (new), tests/mvp-acceptance.ts (new), api-client.ts (import method), package.json (test script).
+
+---
+Task ID: MVP-1.0-FINALIZATION
+Agent: Z.ai Code (Founding Team — finish MVP 1.0 to 10/10)
+Task: Take the existing BIHARI AI codebase and finish MVP 1.0 until it satisfies the 10/10 acceptance criteria. Fix the blockers: onboarding doesn't grant Mandate, seed data 100% overdue, email mock vs failed, invoice number global unique (workspace isolation bug). Add new-customer flow test.
+
+Work Log:
+- AUDIT: Inspected entire codebase. Identified 4 blockers:
+  1. Onboarding setup doesn't grant a Mandate (fresh customer can't reach active dashboard with Mandate)
+  2. Seed data has ALL invoices overdue (100% overdue rate — unrealistic)
+  3. Email service returns "failed" for mock transport (trust issue — should be "mock")
+  4. Invoice number is globally @unique (workspace isolation bug — two workspaces can't have same invoice number)
+- FIX 1: Realistic seed data. Changed invoiceDefs to use negative dueDays (future dates) for current invoices. Now ~36% overdue rate (realistic for mid-sized Indian SME). Health score is now 30% (not 0%).
+- FIX 2: Email mock transport. sendEmail() now returns {sent: true, mock: true} for mock transport (was {sent: false, error: "..."}). Reminder status is "sent_mock" (not "failed"). responseNotes stores "MOCK TRANSPORT — email not actually delivered". The UI will never pretend an email was delivered when it wasn't.
+- FIX 3: Onboarding grants Mandate. Added Step 5 to onboarding/setup/route.ts: after hiring Kavya and importing invoices, grants "Maintain Healthy Receivables" Mandate with authority spec + evaluates initial health. Fresh customers now get a Mandate automatically.
+- FIX 4: Invoice number workspace isolation. Changed `invoiceNumber String @unique` to `@@unique([workspaceId, invoiceNumber])` — invoice numbers are now unique per workspace, not globally. Two workspaces can have INV-001.
+- TEST: Created tests/new-customer-flow.ts — 41 assertions covering the complete fresh-customer journey: signup → empty state → CSV import → duplicate handling → malformed data → onboarding → Mandate granted → authority verified → Kavya exists → health computed → outcome economics → workspace isolation → cleanup.
+- Fixed test cleanup order (MandateMemory linked via mandateId, employee FK constraints require deleting employeeToolPermission/employeeCapability/employeeMemory/employeeProfile before employee).
+- VERIFICATION:
+  * New Customer Flow Test: 41/41 passed
+  * MVP Acceptance Tests: 68/68 passed
+  * Browser: login as demo@bihari.ai → dashboard shows "Active Mandates" with health 30% (realistic) → Mandate detail shows "Overdue rate 36.1% exceeds the 15% target. 9 invoices need attention." → zero console errors
+  * Lint: 0 errors
+- Schema change: `@@unique([workspaceId, invoiceNumber])` replaces global `@unique` on invoiceNumber. This is a workspace isolation fix — not a new feature.
+
+Stage Summary:
+- MVP 1.0 is FUNCTIONALLY COMPLETE and CUSTOMER-READY.
+- The fresh-customer test (Gate S) passes: a new customer can signup → import CSV → get Kavya + Mandate granted automatically → reach active dashboard without developer intervention.
+- The seed data is now realistic (36% overdue, health 30%) — not a degenerate 100% overdue scenario.
+- Email evidence is honest: mock transport is labeled "sent_mock" with "MOCK TRANSPORT — email not actually delivered" in responseNotes.
+- Workspace isolation is fixed: invoice numbers are unique per workspace, not globally.
+- 109 total test assertions (41 new-customer + 68 acceptance), ALL PASSED.

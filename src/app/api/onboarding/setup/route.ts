@@ -231,16 +231,40 @@ export async function POST(request: NextRequest) {
       taskId = task.id;
     }
 
+    // ─── Step 5: Grant the "Maintain Healthy Receivables" Mandate ──────────
+    // The Mandate is the persistent organizational responsibility. Unlike the
+    // first task (which is a temporary episode), the Mandate persists and
+    // continuously pursues the desired state. This is what makes BIHARI AI
+    // different from a task-management tool.
+    const { grantMandate, evaluateMandateHealth } = await import("@/lib/mandate/engine");
+    const { id: mandateId } = await grantMandate({
+      workspaceId,
+      grantorId: user.id,
+      tenantId: financeEmployee.id,
+      title: "Maintain Healthy Receivables",
+      declaration: "Receivables older than 30 days should remain below 15% of total outstanding, and every overdue invoice should have an active resolution plan.",
+      successCriteria: "overdueRate <= 0.15",
+      authoritySpec: {
+        autonomous: ["generate_reminder", "search_knowledge", "update_collection_case"],
+        requiresApproval: ["send_reminder", "send_email"],
+        forbidden: ["offer_discount_above_10", "send_legal_notice", "write_off_invoice"],
+        escalationTriggers: ["disputed_invoice", "customer_bankruptcy", "invoice_over_90_days"],
+      },
+    });
+    // Compute initial health from the just-imported data
+    await evaluateMandateHealth(mandateId);
+
     return success({
       workspaceId,
       employee: { id: financeEmployee.id, name: financeEmployee.name, role: financeEmployee.role },
+      mandateId,
       customersCreated: customerCount,
       invoicesImported: invoiceCount,
       overdueInvoices: overdueCount,
       taskId,
       message: overdueCount > 0
-        ? "Finance Employee hired. First task generated — Kavya is now processing your overdue invoices."
-        : "Finance Employee hired. No overdue invoices found — Kavya is idle and ready.",
+        ? "Finance Employee hired. Mandate granted — Kavya is now continuously pursuing healthy receivables."
+        : "Finance Employee hired. Mandate granted — Kavya is monitoring your receivables.",
     }, 201);
   } catch (err) {
     return handleApiError(err);

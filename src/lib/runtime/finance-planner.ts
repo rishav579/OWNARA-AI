@@ -342,7 +342,9 @@ export async function executeFinanceTool(
       });
 
       let emailSent = false;
+      let emailMock = false;
       let emailError: string | undefined;
+      let emailMessageId: string | undefined;
 
       if (customer?.email) {
         const { sendReminderEmail } = await import("@/lib/email/service");
@@ -353,25 +355,31 @@ export async function executeFinanceTool(
           body: reminder.body,
         });
         emailSent = result.sent;
+        emailMock = result.mock;
         emailError = result.error;
+        emailMessageId = result.messageId;
       }
 
-      // Update reminder status regardless — the approval was given,
-      // the email was attempted. If it failed, the error is recorded.
+      // Update reminder status: "sent" for real SMTP, "sent_mock" for mock transport, "failed" for errors
+      const reminderStatus = emailSent ? (emailMock ? "sent_mock" : "sent") : "failed";
       await db.reminder.update({
         where: { id: reminder.id },
         data: {
-          status: emailSent ? "sent" : "failed",
+          status: reminderStatus,
           sentAt: emailSent ? new Date() : null,
+          // Store mock/messageId in responseNotes for evidence
+          responseNotes: emailMock ? "MOCK TRANSPORT — email not actually delivered" : (emailMessageId ? `messageId: ${emailMessageId}` : null),
         },
       });
 
       return {
         output: {
           reminderId: reminder.id,
-          status: emailSent ? "sent" : "failed",
+          status: reminderStatus,
+          mock: emailMock,
           sentTo: customer?.email || "",
           subject: reminder.subject,
+          messageId: emailMessageId || "",
           emailError: emailError || "",
         },
         tokens: 200,
