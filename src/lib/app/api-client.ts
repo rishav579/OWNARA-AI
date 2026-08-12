@@ -421,5 +421,7 @@ export const api = {
       apiFetch<any>(`/mandates/${id}/reassign`, { method: "POST", body: JSON.stringify({ newTenantId, reason }) }),
     evaluate: (id: string) =>
       apiFetch<any>(`/mandates/${id}?action=evaluate`, { method: "PATCH" }),
+    timeline: (id: string) =>
+      apiFetch<any[]>(`/mandates/${id}/timeline`),
   },
 };

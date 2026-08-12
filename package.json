@@ -12,7 +12,10 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset",
-    "test": "bun run tests/mvp-acceptance.ts"
+    "test": "bun run tests/mvp-acceptance.ts",
+    "test:evaluation": "bun run tests/evaluation-suite.ts",
+    "test:customer": "bun run tests/new-customer-flow.ts",
+    "test:all": "bun run tests/mvp-acceptance.ts && bun run tests/evaluation-suite.ts && bun run tests/new-customer-flow.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

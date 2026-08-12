@@ -1395,3 +1395,55 @@ Stage Summary:
 - Email evidence is honest: mock transport is labeled "sent_mock" with "MOCK TRANSPORT — email not actually delivered" in responseNotes.
 - Workspace isolation is fixed: invoice numbers are unique per workspace, not globally.
 - 109 total test assertions (41 new-customer + 68 acceptance), ALL PASSED.
+
+---
+Task ID: MVP-HARDENING-FINAL
+Agent: Z.ai Code (Founding Team — final hardening + validation)
+Task: Make MVP 1.0 credible enough for a real design partner. Attack remaining weaknesses: execution contract clarity, business outcome proof, outcome timeline, evaluation suite, demo theatre removal. Do NOT add features — harden what exists.
+
+Work Log:
+- PHASE A (Execution Contract): Verified the execution boundary is explicit. Reminder status distinguishes "sent" (real SMTP), "sent_mock" (mock transport), and "failed" (error). The finance-planner.ts records mock:true in the output and "MOCK TRANSPORT — email not actually delivered" in responseNotes. No false success.
+- PHASE B (Business Outcome Proof): The outcome economics already separates activity (reminders sent, episodes) from outcome (overdue rate, recovered amount). Payments are labeled "DEMO DATA (seeded payment, not caused by AI)" in the timeline. The UI never claims AI caused a payment.
+- PHASE C (Outcome Timeline): Created /api/mandates/[id]/timeline — a visualization layer that pulls existing events from audit log, tasks, reminders, payments, and health evaluations. Does NOT invent events. Each event has: timestamp, type, title, description, evidenceType (activity/outcome/lifecycle), simulated (boolean). Added timeline section to mandate-detail.tsx with color-coded dots (amber=simulated, emerald=outcome, violet=lifecycle, zinc=activity) and SIMULATED/OUTCOME badges. Browser-verified: shows "Payment received: ₹30,000" with SIMULATED badge and "DEMO DATA (seeded payment, not caused by AI)" description.
+- PHASE D (Approval UX): The existing decision-center.tsx already shows WHAT (action), WHO (customer/invoice), WHY (finance reasoning), AUTHORITY (tool + criticality), EVIDENCE (structured evidence groups), RISK (risk score + assessment), and CONFIDENCE. No changes needed — the approval UX is already comprehensive.
+- PHASE E (Failure Handling): Verified existing failure paths: SMTP failure → reminder status "failed" with error recorded; malformed CSV → error row reporting; duplicate invoice → skipped; unauthorized approval → 403/409; duplicate approval → atomic updateMany guard; worker crash → stale step recovery (5min reset); forbidden action → authority check rejects. All handled by existing architecture.
+- PHASE F (Evaluation Suite): Created tests/evaluation-suite.ts — 10 deterministic business scenarios:
+  1. Normal overdue → send_reminder_campaign ✅
+  2. High-value customer → prioritize_high_value ✅
+  3. Unresponsive → escalate_unresponsive ✅
+  4. Disputed → investigate_disputed ✅
+  5. Promised payment → wait_for_promise ✅
+  6. Healthy receivables → null (no action) ✅
+  7. Memory says strategy failed → still selects appropriate strategy + references memory ✅
+  8. Memory says customer responds → selects strategy + uses memory ✅
+  9. Conflicting memories → deterministic safe behavior + memory consulted ✅
+  10. Insufficient evidence → null (avoids overconfident action) ✅
+  All 10 scenarios PASS.
+- PHASE N (Remove Demo Theatre): Verified all simulations are labeled:
+  * Mock email → status "sent_mock" + "MOCK TRANSPORT" in responseNotes + "SIMULATED" badge in timeline
+  * Seeded payments → "DEMO DATA (seeded payment, not caused by AI)" in timeline
+  * Seeded memory → sourceType "supervisor" visible in UI (not presented as live-learned)
+  * Outcome economics → "DEMO DATA: Recovery figures are based on seeded payment data" label
+  * No hardcoded strategy presented as dynamic reasoning — strategy selector is deterministic and auditable
+
+Verification:
+- Evaluation Suite: 10/10 scenarios PASS
+- MVP Acceptance Tests: 68/68 PASS
+- New Customer Flow Test: 41/41 PASS
+- Total: 119/119 assertions PASS
+- Browser: Mandate detail page shows Outcome Timeline with SIMULATED/OUTCOME badges, DEMO DATA labels, honest event descriptions. Zero console errors.
+- Lint: 0 errors
+
+Files changed:
+- src/app/api/mandates/[id]/timeline/route.ts (NEW — timeline visualization API)
+- src/lib/app/api-client.ts (added mandates.timeline method)
+- src/components/app/pages/mandate-detail.tsx (added timeline query + timeline section with SIMULATED/OUTCOME badges)
+- tests/evaluation-suite.ts (NEW — 10 deterministic business scenarios)
+- package.json (added test:evaluation, test:customer, test:all scripts)
+
+Stage Summary:
+- MVP 1.0 is hardened and validated. 119 automated assertions pass across 3 test suites.
+- The Outcome Timeline provides the chronological business+AI event view with honest simulation labeling.
+- The evaluation suite proves the strategy selector responds correctly to 10 representative business scenarios including memory-influenced decisions.
+- All demo theatre removed: mock transport, seeded payments, and seeded memory are explicitly labeled as SIMULATED/DEMO DATA.
+- The product is honest, measurable, safe, demonstrable, evaluated, and customer-usable.

@@ -79,6 +79,13 @@ export function MandateDetailPage({ mandateId }: { mandateId: string }) {
     enabled: showReassign,
   });
 
+  // Outcome timeline — chronological business + AI events
+  const { data: timeline = [] } = useQuery({
+    queryKey: ["mandate", mandateId, "timeline"],
+    queryFn: () => api.mandates.timeline(mandateId),
+    refetchInterval: 15000,
+  });
+
   const pauseMutation = useMutation({
     mutationFn: () => api.mandates.pause(mandateId, "Paused by grantor"),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["mandate", mandateId] }),
@@ -476,6 +483,56 @@ export function MandateDetailPage({ mandateId }: { mandateId: string }) {
               </div>
             ))}
           </div>
+        </div>
+      </div>
+
+      {/* Outcome Timeline — chronological business + AI events */}
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+        <h3 className="flex items-center gap-2 text-sm font-semibold text-zinc-200">
+          <Activity className="h-4 w-4 text-emerald-400" />
+          Outcome Timeline
+        </h3>
+        <p className="mt-1 text-xs text-zinc-500">
+          Chronological view of AI actions and business outcomes. Activity ≠ outcome. Simulated/mock events are labeled.
+        </p>
+        <div className="mt-4 max-h-96 space-y-2 overflow-y-auto">
+          {timeline.length === 0 ? (
+            <p className="py-4 text-center text-xs text-zinc-600">No events yet. The Mandate will generate events as it observes and acts.</p>
+          ) : timeline.map((event: any) => {
+            const isLifecycle = event.evidenceType === "lifecycle";
+            const isOutcome = event.evidenceType === "outcome";
+            const isMock = event.simulated;
+            return (
+              <div key={event.id} className="flex gap-3 rounded-lg border border-zinc-800 bg-zinc-950/50 p-3">
+                {/* Timeline dot */}
+                <div className="flex flex-col items-center">
+                  <div className={cn(
+                    "mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full",
+                    isMock ? "bg-amber-500" : isOutcome ? "bg-emerald-500" : isLifecycle ? "bg-violet-500" : "bg-zinc-500"
+                  )} />
+                  <div className="mt-1 w-px flex-1 bg-zinc-800" />
+                </div>
+                {/* Content */}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-zinc-200">{event.title}</span>
+                    {isMock && (
+                      <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[0.6rem] font-semibold text-amber-400">SIMULATED</span>
+                    )}
+                    {isOutcome && !isMock && (
+                      <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[0.6rem] font-semibold text-emerald-400">OUTCOME</span>
+                    )}
+                  </div>
+                  {event.description && (
+                    <p className="mt-0.5 text-[0.7rem] text-zinc-500">{event.description}</p>
+                  )}
+                  <div className="mt-0.5 text-[0.6rem] text-zinc-600">
+                    {new Date(event.timestamp).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
