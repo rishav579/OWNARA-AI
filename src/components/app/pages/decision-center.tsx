@@ -33,6 +33,7 @@ import {
   User,
   FileCheck,
   Activity,
+  Target,
 } from "lucide-react";
 
 const EVIDENCE_GROUPS = [
@@ -329,10 +330,12 @@ function DecisionDetail({
         )}
       </div>
 
-      {/* ─── 2. Context ─── */}
+      {/* ─── 2. Context (WHAT / WHO / CURRENT STATE) ─── */}
       {(invoiceNumber || customerName) && (
         <div className="border-b border-zinc-800 p-5">
-          <div className="mb-3 text-[0.65rem] font-semibold uppercase tracking-wider text-zinc-500">Context</div>
+          <div className="mb-3 text-[0.65rem] font-semibold uppercase tracking-wider text-zinc-500">
+            What · Who · Current State
+          </div>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
             {customerName && (
               <ContextField label="Customer" value={customerName} />
@@ -353,6 +356,23 @@ function DecisionDetail({
               <ContextField label="Priority" value={collectionPriority.toUpperCase()} />
             )}
           </div>
+        </div>
+      )}
+
+      {/* ─── 2b. Expected Effect (what business state the action attempts to change) ─── */}
+      {recommendedAction && (
+        <div className="border-b border-zinc-800 p-5">
+          <div className="mb-3 flex items-center gap-1.5 text-[0.65rem] font-semibold uppercase tracking-wider text-zinc-500">
+            <Target className="h-3.5 w-3.5" /> Expected Effect
+          </div>
+          <p className="text-sm leading-relaxed text-zinc-300">
+            Approving this will: <span className="font-medium text-zinc-100">{recommendedAction}</span>
+            {outstanding && (
+              <span className="mt-1 block text-xs text-zinc-500">
+                Target outcome: reduce outstanding balance of {formatINR(outstanding)} and improve Mandate health.
+              </span>
+            )}
+          </p>
         </div>
       )}
 

@@ -60,33 +60,32 @@ export function LandingPage() {
         <div className="relative mx-auto max-w-4xl px-4 py-24 text-center sm:px-6 sm:py-32">
           <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/50 px-3 py-1 text-xs text-zinc-400">
             <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            The AI Employee Platform
+            AI Employees for real business work
           </div>
           <h1 className="text-4xl font-bold tracking-tight text-zinc-50 sm:text-6xl">
-            Hire AI Employees
+            Meet Kavya, your
             <br />
             <span className="bg-gradient-to-r from-emerald-400 to-teal-300 bg-clip-text text-transparent">
-              you can trust
+              AI Finance Employee
             </span>
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-zinc-400">
-            BIHARI AI is the platform for hiring AI Employees that do real business work.
-            Your first employee — a Finance Employee — chases overdue invoices,
-            drafts collection reminders, and recovers payments. All under your approval.
+            She works to keep your receivables healthy — within the authority you give her,
+            with human approval when required, and with every consequential action recorded.
           </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <button
               onClick={() => navigate("login?signup=1")}
               className="group flex items-center gap-2 rounded-lg bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-emerald-950 transition-all hover:bg-emerald-400"
             >
-              Hire your Finance Employee
+              Meet Kavya
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
             </button>
             <button
               onClick={() => navigate("login")}
               className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/50 px-5 py-2.5 text-sm font-semibold text-zinc-200 transition-colors hover:border-zinc-700"
             >
-              View live demo
+              See how it works
             </button>
           </div>
 
@@ -95,6 +94,51 @@ export function LandingPage() {
             <span className="flex items-center gap-1.5"><ShieldCheck className="h-4 w-4 text-emerald-500" /> Human approval for every critical action</span>
             <span className="flex items-center gap-1.5"><ScrollText className="h-4 w-4 text-emerald-500" /> Full audit trail, hash-chained</span>
             <span className="flex items-center gap-1.5"><Eye className="h-4 w-4 text-emerald-500" /> Explainable decisions</span>
+          </div>
+        </div>
+      </section>
+
+      {/* Problem */}
+      <section className="border-t border-zinc-900 py-20">
+        <div className="mx-auto max-w-3xl px-4 sm:px-6">
+          <h2 className="text-2xl font-bold tracking-tight text-zinc-50 sm:text-3xl">
+            Chasing overdue invoices is manual, repetitive, and endless.
+          </h2>
+          <p className="mt-4 text-zinc-400">
+            Your finance team knows the routine: check aging, identify overdue accounts, draft reminders,
+            send follow-ups, track responses, update collection cases. Every week. Every invoice. Every customer.
+          </p>
+          <p className="mt-3 text-zinc-400">
+            It never stops — and it never gets easier. Until now.
+          </p>
+        </div>
+      </section>
+
+      {/* Meet Kavya */}
+      <section className="border-t border-zinc-900 py-20">
+        <div className="mx-auto max-w-3xl px-4 sm:px-6 text-center">
+          <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/20">
+            <Bot className="h-8 w-8 text-white" />
+          </div>
+          <h2 className="text-3xl font-bold tracking-tight text-zinc-50 sm:text-4xl">
+            Meet Kavya
+          </h2>
+          <p className="mx-auto mt-4 max-w-xl text-lg text-zinc-400">
+            Kavya is an AI Finance Employee. You delegate a responsibility — not a task —
+            and she pursues it continuously, within your authority.
+          </p>
+          <div className="mt-8 rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 text-left">
+            <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-emerald-400">
+              The Responsibility
+            </div>
+            <div className="mt-2 text-xl font-semibold text-zinc-100">
+              Maintain Healthy Receivables
+            </div>
+            <p className="mt-2 text-sm text-zinc-400">
+              Kavya continuously observes your receivables, evaluates whether they're healthy,
+              and takes action to keep them healthy — drafting reminders, prioritizing accounts,
+              and escalating unresponsive customers.
+            </p>
           </div>
         </div>
       </section>
