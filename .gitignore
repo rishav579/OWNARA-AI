@@ -58,3 +58,6 @@ prompt
 server.log
 # Skills directory
 /skills/
+# Database file (SQLite — never commit)
+db/custom.db
+*.db

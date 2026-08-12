@@ -32,6 +32,14 @@ import { initProfile } from "@/lib/profile/engine";
  */
 export async function POST(request: NextRequest) {
   try {
+    // ─── Production guard ──────────────────────────────────────────────────
+    // The demo endpoint creates pre-seeded demo accounts. It must NEVER be
+    // available in production — production customers must go through real
+    // signup + onboarding. This guard prevents accidental exposure.
+    if (process.env.NODE_ENV === "production" && process.env.ENABLE_DEMO_ENDPOINT !== "true") {
+      return error("FORBIDDEN", "Demo endpoint is disabled in production.", 403);
+    }
+
     const body = await parseBody<{ email?: string; password?: string; workspaceName?: string }>(request).catch(() => ({}) as { email?: string; password?: string; workspaceName?: string });
 
     // Generate unique demo credentials (or use provided ones)

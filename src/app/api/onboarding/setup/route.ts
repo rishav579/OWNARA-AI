@@ -184,52 +184,12 @@ export async function POST(request: NextRequest) {
       overdueCount = result.overdueCount;
     }
 
-    // ─── Step 4: Auto-generate the first task ──────────────────────────────
-    // "Process overdue invoices" — the customer never presses "Create Task".
-    let taskId: string | null = null;
-    if (overdueCount > 0) {
-      const task = await db.$transaction(async (tx) => {
-        const newTask = await tx.task.create({
-          data: {
-            workspaceId,
-            employeeId: financeEmployee.id,
-            assignedBy: user.id,
-            title: "Process overdue invoices",
-            description: `Review ${overdueCount} overdue invoice(s), calculate aging, generate appropriate reminders, and send after human approval. Prioritize by days overdue and customer risk level.`,
-            status: "queued",
-            priority: "high",
-            stepCap: 20,
-            tokenCap: 100000,
-            tokenUsage: 0,
-            startedAt: new Date(),
-          },
-        });
-
-        await tx.employee.update({
-          where: { id: financeEmployee.id },
-          data: { state: "assigned", taskCount: { increment: 1 } },
-        });
-
-        await appendAudit(tx, {
-          workspaceId,
-          entryType: "task_started",
-          actorType: "user",
-          actorId: user.id,
-          actorName: user.name,
-          targetType: "task",
-          targetId: newTask.id,
-          payload: {
-            title: newTask.title,
-            employee: financeEmployee.name,
-            steps: "0",
-            tokens: "0",
-          },
-        });
-
-        return newTask;
-      });
-      taskId = task.id;
-    }
+    // ─── Step 4: (Removed) Manual first task ───────────────────────────────
+    // The Mandate Supervisor now handles episode spawning automatically.
+    // When the Mandate is granted (Step 5), the supervisor will observe the
+    // overdue invoices and spawn an appropriate strategy-based episode.
+    // No manual task creation is needed — the Mandate is self-activating.
+    const taskId: string | null = null;
 
     // ─── Step 5: Grant the "Maintain Healthy Receivables" Mandate ──────────
     // The Mandate is the persistent organizational responsibility. Unlike the
