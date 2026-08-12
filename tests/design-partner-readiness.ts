@@ -225,53 +225,78 @@ async function main() {
     check(25, "No console errors (API level)", true, "no API errors returned 500");
 
     // ─── Clean up ────────────────────────────────────────────────────────
+    // Proper cleanup: delete all records in correct FK dependency order.
+    // No catch-and-ignore — if cleanup fails, the test FAILS (Phase 13 rule).
     console.log("\n── Cleanup ──");
     const userId = signupRes.data.data.user.id;
-    try {
-      await db.session.deleteMany({ where: { userId } });
-      await db.workspaceMember.deleteMany({ where: { userId } });
-      const mandateIds = await db.mandate.findMany({ where: { workspaceId }, select: { id: true } });
-      if (mandateIds.length > 0) {
-        await db.mandateMemory.deleteMany({ where: { mandateId: { in: mandateIds.map((m) => m.id) } } });
-      }
-      await db.mandate.deleteMany({ where: { workspaceId } });
-      await db.approval.deleteMany({ where: { workspaceId } });
-      await db.taskStep.deleteMany({ where: { task: { workspaceId } } });
-      await db.task.deleteMany({ where: { workspaceId } });
-      await db.reminder.deleteMany({ where: { workspaceId } });
-      await db.payment.deleteMany({ where: { workspaceId } });
-      await db.collectionCase.deleteMany({ where: { workspaceId } });
-      await db.invoice.deleteMany({ where: { workspaceId } });
-      await db.customer.deleteMany({ where: { workspaceId } });
-      await db.employeeToolPermission.deleteMany({ where: { employee: { workspaceId } } });
-      await db.employeeCapability.deleteMany({ where: { employee: { workspaceId } } });
-      await db.employeeMemory.deleteMany({ where: { workspaceId } });
-      await db.employeeProfile.deleteMany({ where: { workspaceId } });
-      await db.employee.deleteMany({ where: { workspaceId } });
-      await db.auditLog.deleteMany({ where: { workspaceId } });
-      try { await db.knowledgeDocument.deleteMany({ where: { workspaceId } }); } catch {}
-      try { await db.trustScore.deleteMany({ where: { workspaceId } }); } catch {}
-      try { await db.notification.deleteMany({ where: { workspaceId } }); } catch {}
-      try { await db.llmUsage.deleteMany({ where: { workspaceId } }); } catch {}
-      try { await db.executionContract.deleteMany({ where: { workspaceId } }); } catch {}
-      try { await db.outcomeEvaluation.deleteMany({ where: { workspaceId } }); } catch {}
-      try { await db.skillReinforcement.deleteMany({ where: { workspaceId } }); } catch {}
-      try { await db.businessOutcome.deleteMany({ where: { workspaceId } }); } catch {}
-      try { await db.learningPattern.deleteMany({ where: { workspaceId } }); } catch {}
-      try { await db.employeeWeakness.deleteMany({ where: { workspaceId } }); } catch {}
-      try { await db.employeeStrength.deleteMany({ where: { workspaceId } }); } catch {}
-      try { await db.careerTimelineEntry.deleteMany({ where: { workspaceId } }); } catch {}
-      try { await db.department.deleteMany({ where: { workspaceId } }); } catch {}
-      try { await db.policy.deleteMany({ where: { workspaceId } }); } catch {}
-      try { await db.approvalRule.deleteMany({ where: { workspaceId } }); } catch {}
-      try { await db.integration.deleteMany({ where: { workspaceId } }); } catch {}
-      await db.workspace.delete({ where: { id: workspaceId } });
-      await db.user.delete({ where: { id: userId } });
-      console.log("  ✅ Test data cleaned up");
-    } catch (cleanupErr) {
-      console.log(`  ⚠️  Cleanup incomplete (non-blocking): ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`);
-      console.log("  ℹ️  All 25 verification points passed — cleanup is not a verification gate.");
+
+    // 1. Auth-related
+    await db.session.deleteMany({ where: { userId } });
+    await db.workspaceMember.deleteMany({ where: { userId } });
+
+    // 2. Mandate-scoped (memory belongs to mandate, not workspace)
+    const mandateIds = await db.mandate.findMany({ where: { workspaceId }, select: { id: true } });
+    if (mandateIds.length > 0) {
+      await db.mandateMemory.deleteMany({ where: { mandateId: { in: mandateIds.map((m) => m.id) } } });
     }
+
+    // 3. Task-scoped (approvals + steps reference tasks)
+    const taskIds = await db.task.findMany({ where: { workspaceId }, select: { id: true } });
+    if (taskIds.length > 0) {
+      await db.approval.deleteMany({ where: { taskId: { in: taskIds.map((t) => t.id) } } });
+      await db.taskStep.deleteMany({ where: { taskId: { in: taskIds.map((t) => t.id) } } });
+      await db.executionContract.deleteMany({ where: { taskId: { in: taskIds.map((t) => t.id) } } });
+      await db.llmUsage.deleteMany({ where: { taskId: { in: taskIds.map((t) => t.id) } } });
+    }
+    await db.task.deleteMany({ where: { workspaceId } });
+    await db.mandate.deleteMany({ where: { workspaceId } });
+
+    // 4. Employee-scoped (many tables reference employeeId)
+    const employeeIds = await db.employee.findMany({ where: { workspaceId }, select: { id: true } });
+    if (employeeIds.length > 0) {
+      const empIdList = employeeIds.map((e) => e.id);
+      await db.employeeToolPermission.deleteMany({ where: { employeeId: { in: empIdList } } });
+      await db.employeeCapability.deleteMany({ where: { employeeId: { in: empIdList } } });
+      await db.employeeMemory.deleteMany({ where: { employeeId: { in: empIdList } } });
+      await db.employeeAchievement.deleteMany({ where: { employeeId: { in: empIdList } } });
+      await db.employeeSkill.deleteMany({ where: { employeeId: { in: empIdList } } });
+      await db.trustScore.deleteMany({ where: { employeeId: { in: empIdList } } });
+      // Profile references employee
+      await db.employeeProfile.deleteMany({ where: { employeeId: { in: empIdList } } });
+      // Learning tables reference employee
+      await db.outcomeEvaluation.deleteMany({ where: { employeeId: { in: empIdList } } });
+      await db.skillReinforcement.deleteMany({ where: { employeeId: { in: empIdList } } });
+      await db.businessOutcome.deleteMany({ where: { employeeId: { in: empIdList } } });
+      await db.careerTimelineEntry.deleteMany({ where: { employeeId: { in: empIdList } } });
+      await db.learningPattern.deleteMany({ where: { employeeId: { in: empIdList } } });
+      await db.employeeWeakness.deleteMany({ where: { employeeId: { in: empIdList } } });
+      await db.employeeStrength.deleteMany({ where: { employeeId: { in: empIdList } } });
+    }
+
+    // 5. Finance domain (followUpHistory cascades with collectionCase)
+    await db.reminder.deleteMany({ where: { workspaceId } });
+    await db.payment.deleteMany({ where: { workspaceId } });
+    await db.collectionCase.deleteMany({ where: { workspaceId } });
+    await db.invoice.deleteMany({ where: { workspaceId } });
+    await db.customer.deleteMany({ where: { workspaceId } });
+
+    // 6. Remaining workspace-scoped
+    await db.knowledgeDocument.deleteMany({ where: { workspaceId } });
+    await db.notification.deleteMany({ where: { workspaceId } });
+    await db.auditLog.deleteMany({ where: { workspaceId } });
+    await db.department.deleteMany({ where: { workspaceId } });
+    await db.policy.deleteMany({ where: { workspaceId } });
+    await db.approvalRule.deleteMany({ where: { workspaceId } });
+    await db.integration.deleteMany({ where: { workspaceId } });
+    await db.achievement.deleteMany({ where: { workspaceId } });
+
+    // 7. Employees (after all employee-dependent tables are cleared)
+    await db.employee.deleteMany({ where: { workspaceId } });
+
+    // 8. Finally, workspace + user
+    await db.workspace.delete({ where: { id: workspaceId } });
+    await db.user.delete({ where: { id: userId } });
+    console.log("  ✅ Test data cleaned up completely");
 
   } catch (err) {
     console.log(`\n❌ TEST CRASHED: ${err instanceof Error ? err.message : String(err)}`);

@@ -166,15 +166,15 @@ export function LandingPage() {
               Delegate → Review → Approve → Audit
             </h2>
             <p className="mt-3 text-zinc-400">
-              Every action your Finance Employee takes follows the same loop. You delegate a task,
-              the employee analyzes and plans, critical actions wait for your approval, and
+              Every action your Finance Employee takes follows the same loop. You delegate a responsibility,
+              the employee continuously observes and reasons, critical actions wait for your approval, and
               everything is recorded in an immutable audit trail.
             </p>
             <div className="mt-8 grid gap-3 sm:grid-cols-4">
               {[
-                { step: "01", label: "Delegate", desc: "Assign work to your Finance Employee" },
-                { step: "02", label: "Review", desc: "Employee analyzes, plans, and drafts actions" },
-                { step: "03", label: "Approve", desc: "You approve, reject, or modify" },
+                { step: "01", label: "Delegate", desc: "Entrust a responsibility to your Finance Employee" },
+                { step: "02", label: "Observe", desc: "Employee continuously observes and reasons" },
+                { step: "03", label: "Approve", desc: "You approve, reject, or modify critical actions" },
                 { step: "04", label: "Audit", desc: "Every action is hash-chained and verifiable" },
               ].map((s) => (
                 <div key={s.step} className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
