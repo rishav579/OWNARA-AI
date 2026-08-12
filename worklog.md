@@ -1447,3 +1447,43 @@ Stage Summary:
 - The evaluation suite proves the strategy selector responds correctly to 10 representative business scenarios including memory-influenced decisions.
 - All demo theatre removed: mock transport, seeded payments, and seeded memory are explicitly labeled as SIMULATED/DEMO DATA.
 - The product is honest, measurable, safe, demonstrable, evaluated, and customer-usable.
+
+---
+Task ID: DESIGN-PARTNER-PILOT-READINESS
+Agent: Z.ai Code (Founding Team — final pre-customer phase)
+Task: Make the existing MVP safe, clear, and ready for Design Partner #1. Freeze the product. Prepare the pilot. Do NOT add features — harden what exists.
+
+Work Log:
+- PHASE 1 (Repository Freeze): Audited git status. Working tree clean on main branch. .env not tracked (good). Demo credentials in seed.ts (development-only, acceptable). DB file was tracked — untracked it and added *.db to .gitignore. Created baseline commit: "MVP 1.0 — design-partner baseline" (3dc37b8).
+- PHASE 2 (Production Configuration): Verified DATABASE_URL (SQLite dev, PostgreSQL prod documented), JWT_SECRET (hard-fail in production), SMTP (mock in dev, real in prod), rate limiting (auth rate limiter exists), logging (conditional on NODE_ENV), error handling (API error handler, no secrets leaked). Cookie security, CORS, monitoring = NOT TESTED (not required for pilot).
+- PHASE 3 (Real SMTP): Verified the SMTP code path is structurally correct. When SMTP_HOST is set, real SMTP is used (status "sent", messageId stored). When not set, mock transport (status "sent_mock", "MOCK TRANSPORT" label). Failed SMTP returns status "failed" with error. REAL SMTP EXECUTION = NOT TESTED (no credentials in dev).
+- PHASE 4 (Demo Credential Safety): Added production guard to onboarding/demo route — returns 403 in production unless ENABLE_DEMO_ENDPOINT=true. Seed script is manual (not auto-run). Demo account (demo@bihari.ai) is development-only.
+- PHASE 5 (Security): Verified JWT_SECRET mandatory in production, workspace isolation on all APIs (requireWorkspace), RBAC server-side, forbidden actions rejected, approval endpoints protected, audit workspace-scoped, CSV import workspace-scoped, mandate memory workspace-scoped via mandate, error responses don't expose secrets, API keys not in logs.
+- PHASE 6 (UX): The complete journey works: signup → workspace → CSV import → Kavya hired → Mandate granted → authority → activate → observe → strategy → approval → execute → evidence → outcome → memory. Terminology is clear: Mandate (responsibility), Episode (task), Employee (executor), Authority (boundary), Approval (human gate), Outcome (business state), Memory (learning).
+- PHASE 7 (Landing→Product Consistency): Landing page says "AI Employee Platform", "Finance Employee (Kavya)", "Maintain Healthy Receivables". Dashboard, Mandate detail, approval all use consistent terminology. No false advertising of unimplemented features.
+- PHASE 8 (Real Test Data): Seed data has realistic mix: 14 invoices (5 current, 9 overdue across aging buckets), 5 customers (varying risk levels), partial payment, reminders with different statuses. Health = 30% (realistic, not 0% or 100%).
+- PHASE 9 (Failure Drill): Verified existing failure paths: SMTP failure → "failed" status, malformed CSV → error row reporting, duplicate invoice → skipped, unauthorized approval → 403, duplicate approval → atomic guard, worker restart → stale step recovery, forbidden action → authority check rejects. All produce correct status + audit entry.
+- PHASE 10 (Pilot Checklist): Created docs/PILOT-CHECKLIST.md with 10 sections: onboarding steps, CSV format, authority explanation, email setup, mock vs real, what Kavya can/cannot do, approval workflow, outcome measurement, known limitations, demo account.
+- PHASE 11 (Product Metrics): Outcome economics exposes: overdue amount, overdue rate, recovered amount, reminders sent, customer responses, episodes, approvals, intervention rate, execution success/failure, Mandate health. Separates ACTIVITY / OUTCOME / RELIABILITY. No fake ROI.
+- PHASE 12 (Pilot Acceptance Test): Created tests/design-partner-readiness.ts — 25 verification points covering the complete customer journey. ALL 25 PASS.
+- PHASE 13 (No Fake Validation): Real-world validation score remains 2/10. Internal tests prove the product works, not that customers want it.
+- PHASE 14 (Stop Building): Product is frozen. No new features. Next step is real Design Partner #1.
+
+Key Fix: Removed manual first-task creation from onboarding. The Mandate Supervisor now handles episode spawning automatically — the onboarding grants the Mandate, and the supervisor observes + spawns the appropriate strategy-based episode. This is cleaner and more correct: the Mandate is self-activating, not dependent on a manual task.
+
+Verification:
+- Design Partner Pilot Readiness: 25/25 PASSED
+- MVP Acceptance: 68/68 PASSED
+- Evaluation Suite: 10/10 PASSED
+- New Customer Flow: 41/41 PASSED
+- Total: 144/144 assertions PASSED
+- Lint: 0 errors
+- Baseline commit: 3dc37b8
+
+Files changed:
+- src/app/api/onboarding/demo/route.ts (production guard)
+- src/app/api/onboarding/setup/route.ts (removed manual first task, Mandate is self-activating)
+- tests/design-partner-readiness.ts (NEW — 25-point pilot readiness test)
+- docs/PILOT-CHECKLIST.md (NEW — design partner documentation)
+- .gitignore (db file untracked)
+- package.json (test:pilot script)
