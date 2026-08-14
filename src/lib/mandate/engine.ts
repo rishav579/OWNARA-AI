@@ -88,6 +88,92 @@ export function checkAuthority(
   return { allowed: true, mode: "approval" };
 }
 
+// ─── Effective Authority Resolution ──────────────────────────────────────────
+// The SINGLE source of truth for whether an action may execute.
+//
+// Effective authorization = intersection of:
+//   1. Mandate authority (organizational policy — what the responsibility allows)
+//   2. Employee capability (technical capability — what the executor can do)
+//   3. System safety (unknown/unclassified actions fail closed)
+//
+// Rules:
+//   - Mandate forbidden → ALWAYS blocked, regardless of employee capability
+//   - Mandate approval-required → ALWAYS requires approval, regardless of employee rules
+//   - Mandate autonomous → autonomous ONLY if employee has the capability
+//   - Mandate autonomous + employee incapable → BLOCKED
+//   - Unknown action (not in any Mandate list) → fail closed → approval required
+//
+// This function is the ONLY place where the authority decision is made.
+// The executor must call this before every tool execution and every approval gate.
+export interface EffectiveAuthorityDecision {
+  allowed: boolean;
+  mode: "autonomous" | "approval" | "forbidden" | "capability_denied" | "unknown";
+  mandateMode: "autonomous" | "approval" | "forbidden";
+  capabilityAllowed: boolean;
+  reason: string;
+}
+
+export function resolveEffectiveAuthority(
+  mandateAuthoritySpec: string,
+  action: string,
+  capabilityAllowed: boolean
+): EffectiveAuthorityDecision {
+  const mandateMode = checkAuthority(mandateAuthoritySpec, action);
+
+  // Rule 1: Mandate forbidden → ALWAYS blocked
+  if (mandateMode.mode === "forbidden") {
+    return {
+      allowed: false,
+      mode: "forbidden",
+      mandateMode: "forbidden",
+      capabilityAllowed,
+      reason: `Action "${action}" is FORBIDDEN by the Mandate's authority. Employee capability is irrelevant — the organizational policy prohibits this action.`,
+    };
+  }
+
+  // Rule 2: Mandate approval-required → ALWAYS requires approval
+  if (mandateMode.mode === "approval") {
+    return {
+      allowed: true,
+      mode: "approval",
+      mandateMode: "approval",
+      capabilityAllowed,
+      reason: `Action "${action}" requires human approval per the Mandate's authority. Employee capability: ${capabilityAllowed ? "granted" : "not granted — capability check will still run at execution."}`,
+    };
+  }
+
+  // Rule 3: Mandate autonomous → autonomous ONLY if employee has capability
+  if (mandateMode.mode === "autonomous") {
+    if (capabilityAllowed) {
+      return {
+        allowed: true,
+        mode: "autonomous",
+        mandateMode: "autonomous",
+        capabilityAllowed: true,
+        reason: `Action "${action}" is autonomous per the Mandate AND the employee has the capability. May proceed without approval.`,
+      };
+    } else {
+      return {
+        allowed: false,
+        mode: "capability_denied",
+        mandateMode: "autonomous",
+        capabilityAllowed: false,
+        reason: `Action "${action}" is autonomous per the Mandate, BUT the employee lacks the required capability. Blocked — the executor cannot perform this action.`,
+      };
+    }
+  }
+
+  // Rule 4: Unknown/unclassified action → fail closed → approval required
+  // (checkAuthority returns "approval" for unknown actions, so this is the default)
+  return {
+    allowed: true,
+    mode: "approval",
+    mandateMode: "approval",
+    capabilityAllowed,
+    reason: `Action "${action}" is not explicitly classified in the Mandate's authority. Fail closed — requires human approval.`,
+  };
+}
+
 export interface GrantMandateInput {
   workspaceId: string;
   grantorId: string;

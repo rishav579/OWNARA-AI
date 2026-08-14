@@ -16,7 +16,8 @@
     "test:evaluation": "bun run tests/evaluation-suite.ts",
     "test:customer": "bun run tests/new-customer-flow.ts",
     "test:all": "bun run tests/mvp-acceptance.ts && bun run tests/evaluation-suite.ts && bun run tests/new-customer-flow.ts",
-    "test:pilot": "bun run tests/design-partner-readiness.ts"
+    "test:pilot": "bun run tests/design-partner-readiness.ts",
+    "test:authority": "bun run tests/authority-consistency.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

@@ -70,6 +70,7 @@ export async function processTask(taskId: string): Promise<ExecutionResult> {
     where: { id: taskId },
     include: {
       employee: true,
+      mandate: true,
       steps: { orderBy: { stepNumber: "asc" } },
     },
   });
@@ -103,6 +104,34 @@ export async function processTask(taskId: string): Promise<ExecutionResult> {
       });
     });
     return { action: "continue", message: "Employee paused, task paused" };
+  }
+
+  // ─── Mandate Status Guard ──────────────────────────────────────────────
+  // If the task belongs to a Mandate, the Mandate must be active for
+  // consequential execution to proceed. Paused or revoked Mandates block
+  // all execution — this is the organizational policy boundary.
+  if (task.mandate && task.mandate.status !== "active") {
+    await db.$transaction(async (tx) => {
+      await tx.task.update({
+        where: { id: taskId },
+        data: { status: "failed" },
+      });
+      await appendAudit(tx, {
+        workspaceId: task.workspaceId,
+        entryType: "task_blocked_mandate_inactive",
+        actorType: "system",
+        actorId: null,
+        actorName: "Runtime",
+        targetType: "task",
+        targetId: taskId,
+        payload: {
+          mandateId: task.mandate!.id,
+          mandateStatus: task.mandate!.status,
+          reason: `Mandate is ${task.mandate!.status} — no consequential execution permitted`,
+        },
+      });
+    });
+    return { action: "failed", message: `Mandate is ${task.mandate.status} — execution blocked` };
   }
 
   // Phase 1: Planning — generate the step plan
@@ -261,6 +290,17 @@ async function planTask(
   }
 
   // Write the plan step (step 0 — the planning reasoning)
+  // ─── Authority Resolution ──────────────────────────────────────────────
+  // The Mandate's authoritySpec is the authoritative business-policy boundary.
+  // Employee approvalRules are NO LONGER used to determine whether a step
+  // requires approval. Instead, resolveEffectiveAuthority() computes the
+  // effective authorization from:
+  //   1. Mandate authority (if the task has a mandateId)
+  //   2. Employee capability (checked at execution time, not planning time)
+  //
+  // For tasks WITHOUT a Mandate (legacy/ad-hoc), fall back to employee
+  // approvalRules for backward compatibility.
+  const hasMandate = !!task.mandateId && !!task.mandate;
   const approvalRules: Record<string, string> = JSON.parse(employee.approvalRules);
 
   await db.$transaction(async (tx) => {
@@ -286,7 +326,21 @@ async function planTask(
     // Write each planned step as pending
     for (let i = 0; i < plan.steps.length; i++) {
       const step = plan.steps[i];
-      const isCritical = step.tool ? approvalRules[step.tool] === "critical" : false;
+      // ─── Effective Authority Decision ──────────────────────────────────
+      // If the task has a Mandate, use resolveEffectiveAuthority (Mandate
+      // authority is authoritative). Otherwise, fall back to employee
+      // approvalRules for backward compatibility.
+      let isCritical: boolean;
+      if (hasMandate && step.tool) {
+        const { resolveEffectiveAuthority } = await import("@/lib/mandate/engine");
+        // At planning time, we don't check capability yet — that happens at
+        // execution time. We pass true so the decision is based on Mandate
+        // authority alone. The capability check runs in executeToolStep.
+        const decision = resolveEffectiveAuthority(task.mandate!.authoritySpec, step.tool, true);
+        isCritical = decision.mode === "approval";
+      } else {
+        isCritical = step.tool ? approvalRules[step.tool] === "critical" : false;
+      }
 
       await tx.taskStep.create({
         data: {
@@ -454,6 +508,61 @@ async function executeToolStep(task: any, step: any, employee: any): Promise<Exe
     return await executeReasoningStep(task, step, employee);
   }
 
+  // ─── Mandate Authority Verification (BEFORE capability check) ────────────
+  // The Mandate's authority is the organizational policy boundary. If the
+  // action is forbidden by the Mandate, it is blocked regardless of employee
+  // capability. This is the authoritative check — employee approvalRules no
+  // longer override Mandate authority.
+  if (task.mandateId && task.mandate) {
+    const { resolveEffectiveAuthority } = await import("@/lib/mandate/engine");
+    const capPreCheck = await checkCapability(employee.id, toolName);
+    const decision = resolveEffectiveAuthority(task.mandate.authoritySpec, toolName, capPreCheck.allowed);
+
+    if (!decision.allowed) {
+      // Blocked by Mandate authority (forbidden or capability_denied)
+      await db.$transaction(async (tx) => {
+        await tx.taskStep.update({
+          where: { id: step.id },
+          data: {
+            status: "failed",
+            output: JSON.stringify({
+              error: decision.mode === "forbidden" ? "MANDATE_FORBIDDEN" : "CAPABILITY_DENIED",
+              authorityDecision: decision.mode,
+              mandateMode: decision.mandateMode,
+              reason: decision.reason,
+            }),
+            completedAt: new Date(),
+          },
+        });
+        await tx.task.update({
+          where: { id: task.id },
+          data: { status: "failed" },
+        });
+        await tx.employee.update({
+          where: { id: employee.id },
+          data: { state: "idle" },
+        });
+        await appendAudit(tx, {
+          workspaceId: task.workspaceId,
+          entryType: "authority_blocked",
+          actorType: "system",
+          actorId: null,
+          actorName: "Runtime",
+          targetType: "task_step",
+          targetId: step.id,
+          payload: {
+            tool: toolName,
+            decision: decision.mode,
+            mandateMode: decision.mandateMode,
+            reason: decision.reason,
+            mandateId: task.mandateId,
+          },
+        });
+      });
+      return { action: "failed", message: `Authority blocked: ${decision.reason}` };
+    }
+  }
+
   // ─── Capability Verification ──────────────────────────────────────────────
   // Before ANY tool execution, verify the employee has the required capability.
   // If denied: stop execution, write audit event, fail the step.
@@ -568,6 +677,58 @@ async function executeToolStep(task: any, step: any, employee: any): Promise<Exe
 async function executeApprovalGateStep(task: any, step: any, employee: any): Promise<ExecutionResult> {
   const input = JSON.parse(step.input);
   const toolName = input.tool;
+
+  // ─── Mandate Authority Verification (BEFORE capability check) ────────────
+  // Even for approval-gate steps, verify the Mandate hasn't forbidden this
+  // action. A forbidden action cannot be approved — it must always be blocked.
+  if (task.mandateId && task.mandate) {
+    const { resolveEffectiveAuthority } = await import("@/lib/mandate/engine");
+    const capPreCheck = await checkCapability(employee.id, toolName);
+    const decision = resolveEffectiveAuthority(task.mandate.authoritySpec, toolName, capPreCheck.allowed);
+
+    if (!decision.allowed) {
+      await db.$transaction(async (tx) => {
+        await tx.taskStep.update({
+          where: { id: step.id },
+          data: {
+            status: "failed",
+            output: JSON.stringify({
+              error: decision.mode === "forbidden" ? "MANDATE_FORBIDDEN" : "CAPABILITY_DENIED",
+              authorityDecision: decision.mode,
+              mandateMode: decision.mandateMode,
+              reason: decision.reason,
+            }),
+            completedAt: new Date(),
+          },
+        });
+        await tx.task.update({
+          where: { id: task.id },
+          data: { status: "failed" },
+        });
+        await tx.employee.update({
+          where: { id: employee.id },
+          data: { state: "idle" },
+        });
+        await appendAudit(tx, {
+          workspaceId: task.workspaceId,
+          entryType: "authority_blocked",
+          actorType: "system",
+          actorId: null,
+          actorName: "Runtime",
+          targetType: "task_step",
+          targetId: step.id,
+          payload: {
+            tool: toolName,
+            decision: decision.mode,
+            mandateMode: decision.mandateMode,
+            reason: decision.reason,
+            mandateId: task.mandateId,
+          },
+        });
+      });
+      return { action: "failed", message: `Authority blocked: ${decision.reason}` };
+    }
+  }
 
   // ─── Capability Verification (pre-approval) ───────────────────────────────
   // Before creating an approval gate, verify the employee has the capability.
@@ -917,7 +1078,7 @@ export async function resumeAfterApproval(
 ): Promise<void> {
   const task = await db.task.findUnique({
     where: { id: taskId },
-    include: { employee: true, steps: { orderBy: { stepNumber: "asc" } } },
+    include: { employee: true, mandate: true, steps: { orderBy: { stepNumber: "asc" } } },
   });
 
   if (!task) return;
@@ -929,6 +1090,75 @@ export async function resumeAfterApproval(
   const gateStep = task.steps.find(
     (s) => s.stepType === "approval_gate" && s.status === "pending"
   );
+
+  // ─── Mandate Authority Verification (post-approval) ───────────────────────
+  // Even after human approval, the Mandate's authority is the final word.
+  // If the Mandate was paused, revoked, or the action is forbidden, execution
+  // is blocked. Human approval does NOT override Mandate authority.
+  if (task.mandateId && task.mandate) {
+    // Check Mandate status — must be active
+    if (task.mandate.status !== "active") {
+      await db.$transaction(async (tx) => {
+        await tx.task.update({
+          where: { id: taskId },
+          data: { status: "failed" },
+        });
+        await tx.employee.update({
+          where: { id: task.employeeId },
+          data: { state: "idle", pendingApprovals: { decrement: 1 } },
+        });
+        await appendAudit(tx, {
+          workspaceId: task.workspaceId,
+          entryType: "post_approval_blocked_mandate_inactive",
+          actorType: "system",
+          actorId: null,
+          actorName: "Runtime",
+          targetType: "task",
+          targetId: taskId,
+          payload: {
+            mandateId: task.mandate!.id,
+            mandateStatus: task.mandate!.status,
+            reason: `Mandate is ${task.mandate!.status} — approved action cannot execute`,
+          },
+        });
+      });
+      return;
+    }
+
+    // Check Mandate authority — forbidden actions stay forbidden even after approval
+    const { resolveEffectiveAuthority } = await import("@/lib/mandate/engine");
+    const capPreCheck = await checkCapability(task.employeeId, approval.tool);
+    const decision = resolveEffectiveAuthority(task.mandate.authoritySpec, approval.tool, capPreCheck.allowed);
+    if (!decision.allowed) {
+      await db.$transaction(async (tx) => {
+        await tx.task.update({
+          where: { id: taskId },
+          data: { status: "failed" },
+        });
+        await tx.employee.update({
+          where: { id: task.employeeId },
+          data: { state: "idle", pendingApprovals: { decrement: 1 } },
+        });
+        await appendAudit(tx, {
+          workspaceId: task.workspaceId,
+          entryType: "post_approval_authority_blocked",
+          actorType: "system",
+          actorId: null,
+          actorName: "Runtime",
+          targetType: "task",
+          targetId: taskId,
+          payload: {
+            tool: approval.tool,
+            decision: decision.mode,
+            mandateMode: decision.mandateMode,
+            reason: decision.reason,
+            mandateId: task.mandateId,
+          },
+        });
+      });
+      return;
+    }
+  }
 
   // ─── Capability Verification (post-approval) ──────────────────────────────
   // Even after approval, verify the employee still has the capability.
