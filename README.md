@@ -1,181 +1,161 @@
-# BIHARI AI
+# OWNARA
 
-**The AI Employee Operating System.**
+**Governed AI Execution for Delegated Business Responsibilities**
 
-BIHARI AI hires AI Employees that do real business work. The first employee — **Kavya**, a Finance Employee — chases overdue invoices, drafts reminders, and escalates collection cases. Every irreversible action passes through a human approval gate, and every step is written to a hash-chained audit log.
+OWNARA is a governed AI execution system where businesses delegate persistent operational responsibilities—called **Mandates**—to specialized AI operators with strict authority boundaries, mandatory human approval gates, and cryptographic auditability.
+
+The current production implementation features **Kavya**, an AI accounts receivable and invoice collections operator for B2B businesses.
+
+---
+
+## How It Works
+
+OWNARA operates via a continuous 5-stage governed execution loop:
+
+```
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│   OBSERVE    │ ──► │    REASON    │ ──► │   APPROVE    │ ──► │   EXECUTE    │ ──► │    AUDIT     │
+│ Receivables  │     │ Strategy &   │     │ Human Review │     │ SMTP Email   │     │ SHA-256 Hash │
+│ State & Risk │     │ Reminders    │     │ Gate Locked  │     │ Delivery     │     │ Ledger & XP  │
+└──────────────┘     └──────────────┘     └──────────────┘     └──────────────┘     └──────────────┘
+```
+
+1. **Observe:** Inspects accounts receivable data, invoice aging buckets (1–30d, 31–60d, 61–90d, 90+d), customer credit profiles, and previous response history.
+2. **Reason:** Formulates targeted recovery strategies (e.g. prioritize high-value, investigate disputed invoices, escalate unresponsive debtors) and drafts tailored payment reminders.
+3. **Approve:** Pauses consequential actions before sending. Generates a canonical 17-field cryptographic Execution Contract (`EC-xxxx`) with a SHA-256 hash that locks upon human review.
+4. **Execute:** Delivers approved communication via verified SMTP email relay.
+5. **Audit:** Records every decision, approval, and outcome to a monotonic, hash-chained ledger and updates operator performance metrics.
+
+---
+
+## Current Scope & Limitations
+
+### Implemented Today
+- **Kavya (AI Finance Operator):** Specialized in B2B Accounts Receivable collections and overdue invoice follow-up.
+- **Mandate Engine & Supervisor:** Autonomous evaluation of persistent objectives (`overdueRate <= 0.15`) with dynamic strategy selection.
+- **Decision Center:** Human-in-the-loop review interface with contract inspection, diffs, and 1-click approvals/rejections.
+- **Tamper-Evident Audit Ledger:** Monotonic sequence numbers with SHA-256 hash chaining and PostgreSQL advisory transaction locks.
+- **Deterministic Evaluation Engine:** Post-task scorecards, skill leveling, and career timeline tracking.
+- **Multi-Provider LLM Gateway:** Server-side routing for Google Gemini (`gemini-2.0-flash` default), OpenAI, and Anthropic with deterministic fallbacks.
+- **CSV Data Importer:** Support for customer and invoice CSV file ingestion with GSTIN and payment term validation.
+
+### Explicitly Not Implemented / Out of Current Scope
+- **No Live Accounting Sync:** Automated two-way sync with Tally, Zoho Books, QuickBooks, or Stripe is not yet active (invoice data is imported via CSV).
+- **No Document RAG / Vector Search:** Document uploads record metadata only; embeddings and vector database retrieval are not active.
+- **No WhatsApp or Voice Collections:** Communication is delivered strictly via transactional email over SMTP.
+- **No Multi-Employee Suite:** Kavya (Accounts Receivable) is the single active operator; general Sales, HR, or Operations agents are not implemented.
+
+---
+
+## Architecture & Deployment Topology
+
+OWNARA runs as two concurrent services connected to PostgreSQL:
+
+1. **Web Service (Next.js 16 + React 19):** Serves the single-page application and REST API routes on port 3000.
+2. **Worker Service (Node.js / tsx):** Runs the background runtime engine, mandate supervisor, task executor, and audit writer.
+
+For cloud deployment instructions, see [Railway Staging Deployment Guide](./docs/RAILWAY-DEPLOYMENT.md).
 
 ---
 
 ## Prerequisites
 
-- **Node.js 20+** and **Bun** (runtime + package manager)
-- **PostgreSQL 16+** (local or managed — Railway, Neon, Supabase, RDS)
-- A **Google Gemini API key** (free tier is sufficient)
+- **Node.js 20+** and **npm**
+- **PostgreSQL 16+** (local or managed — Railway, Supabase, RDS, Neon)
+- **Google Gemini API Key** (Server-side `GEMINI_API_KEY`)
 
 ---
 
-## Quick Start
+## Local Development Setup
 
-### 1. Install dependencies
+### 1. Install Dependencies
 
 ```bash
-bun install
+npm install --legacy-peer-deps
 ```
 
-### 2. Configure environment
+### 2. Configure Environment
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` and set at minimum `DATABASE_URL` and `JWT_SECRET`.
+Set the required variables in `.env`:
+```env
+DATABASE_URL="postgresql://user:password@localhost:5432/ownara?schema=public"
+JWT_SECRET="replace-with-a-random-secret-at-least-32-chars-long"
+LLM_PROVIDER="gemini"
+LLM_MODEL="gemini-2.0-flash"
+GEMINI_API_KEY="your-gemini-api-key"
+NODE_ENV="development"
+```
 
-### 3. Start PostgreSQL
-
-**Option A — Install locally (Debian/Ubuntu):**
+### 3. Initialize Database Schema
 
 ```bash
-sudo apt-get install -y postgresql
-sudo service postgresql start
-sudo -u postgres createuser --superuser $USER
-createdb bihari
+npx prisma db push --accept-data-loss
 ```
 
-Set in `.env`:
-```
-DATABASE_URL=postgresql://$USER@localhost:5432/bihari?schema=public
-```
-
-**Option B — Docker:**
+### 4. Seed Database (Optional)
 
 ```bash
-docker run -d --name bihari-pg \
-  -e POSTGRES_USER=bihari \
-  -e POSTGRES_PASSWORD=password \
-  -e POSTGRES_DB=bihari \
-  -p 5432:5432 \
-  postgres:16
+npx tsx scripts/seed.ts
 ```
 
-Set in `.env`:
-```
-DATABASE_URL=postgresql://bihari:password@localhost:5432/bihari?schema=public
-```
-
-**Option C — Managed (Railway/Neon/Supabase):**
-
-Create a PostgreSQL database and copy the connection string into `.env`.
-
-### 4. Push the database schema
+### 5. Start Web Server
 
 ```bash
-bun run db:push
+npm run dev
 ```
+The application will be accessible at **http://localhost:3000**.
 
-This creates all tables and indexes from `prisma/schema.prisma`.
+### 6. Start Background Worker
 
-### 5. Seed demo data (optional)
-
+In a separate terminal window:
 ```bash
-bun run scripts/seed.ts
-```
-
-Creates: demo user (Rishav Raj), Acme Trading workspace, Kavya (Finance Employee), 5 customers, 8 invoices, capabilities, audit trail.
-
-**Login:** `rishav@acmetrading.in` / `demo-password`
-
-### 6. Start the web server
-
-```bash
-bun run dev
-```
-
-The app runs on **http://localhost:3000**.
-
-### 7. Start the worker process
-
-The worker is a **separate process** that polls the database for runnable tasks and executes the trust loop (plan → reason → approve → execute → audit).
-
-```bash
-bun run worker
+npm run worker
 ```
 
 ---
 
-## Environment Variables
-
-See [`.env.example`](./.env.example) for the full list.
-
-### Required
-
-| Variable | Purpose |
-|----------|---------|
-| `DATABASE_URL` | PostgreSQL connection string (`postgresql://...`) |
-| `JWT_SECRET` | JWT signing secret (≥ 32 chars) |
-| `LLM_PROVIDER` | `gemini` (default) |
-| `LLM_MODEL` | `gemini-1.5-flash` |
-| `GEMINI_API_KEY` | Google Gemini API key |
-| `NODE_ENV` | `production` or `development` |
-
-### Optional
-
-| Variable | Purpose |
-|----------|---------|
-| `OPENAI_API_KEY` | Enable OpenAI (not required — Gemini is default) |
-| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` | SMTP relay for email |
-| `SMTP_FROM` / `SMTP_FROM_NAME` | Sender identity |
-
-> **No paid OpenAI key is required.** V1 runs on PostgreSQL + Gemini free tier.
-
----
-
-## Scripts
+## Available Scripts
 
 | Command | Description |
-|--------|-------------|
-| `bun run dev` | Start Next.js dev server (port 3000) |
-| `bun run worker` | Start the AI Employee runtime worker |
-| `bun run build` | Production build |
-| `bun run start` | Start production server |
-| `bun run lint` | Run ESLint |
-| `bun run db:push` | Sync Prisma schema to PostgreSQL |
-| `bun run db:generate` | Regenerate Prisma client |
+|---|---|
+| `npm run dev` | Start Next.js development server on port 3000 |
+| `npm run worker` | Start background runtime execution worker (`scripts/worker.ts`) |
+| `npm run build` | Build standalone production bundle (`.next/standalone/`) |
+| `npm run start` | Start standalone production server (`node .next/standalone/server.js`) |
+| `npm run lint` | Run ESLint static analysis |
+| `npm run test:authority` | Run authority and permission boundary test suite |
+| `npm run test` | Run core MVP acceptance test suite |
+| `npm run test:evaluation` | Run 20-scenario mandate evaluation test suite |
+| `npm run test:staging` | Run controlled staging service verification (Gemini, SMTP, DB) |
+| `npm run db:push` | Push Prisma schema directly to PostgreSQL |
+| `npm run db:generate` | Regenerate Prisma client |
 
 ---
 
-## Technology Stack
+## Environment Variables Reference
 
-| Layer | Technology |
-|-------|------------|
-| Framework | Next.js 16 (App Router) + TypeScript 5 |
-| Database | SQLite (dev) / PostgreSQL 16+ (prod) via Prisma ORM |
-| AI | Google Gemini (default), OpenAI/Anthropic optional |
-| Auth | JWT + bcrypt, refresh-token rotation |
-| Email | nodemailer (SMTP, optional) |
-| Runtime | Bun (worker) + Node (web server) |
-
----
-
-## Database: SQLite (dev) or PostgreSQL (prod)
-
-BIHARI AI is **database-portable**. The concurrency layer (`src/lib/concurrency.ts`)
-auto-detects the provider from `DATABASE_URL` and uses the appropriate primitives:
-
-| Primitive | PostgreSQL | SQLite |
-|-----------|-----------|--------|
-| Task claiming | `SELECT ... FOR UPDATE SKIP LOCKED` | `findFirst` (single-writer model) |
-| Audit-chain lock | `pg_advisory_xact_lock` | no-op (`@@unique` constraint protects chain) |
-
-- **SQLite** (default): zero-ops, persistent file, perfect for local dev and demos.
-  Just set `DATABASE_URL=file:./db/custom.db` and run `bun run db:push`.
-- **PostgreSQL**: for production multi-worker, multi-workspace deployments.
-  Set `DATABASE_URL=postgresql://...` and switch `provider = "postgresql"` in
-  `prisma/schema.prisma`, then run `bun run db:push`.
-
-The schema contains no provider-specific types — switching is a one-line change.
+| Variable | Required | Default / Format | Description |
+|---|---|---|---|
+| `DATABASE_URL` | **Yes** | `postgresql://...` | Connection URL for PostgreSQL database |
+| `JWT_SECRET` | **Yes** | String (≥ 32 chars) | Secret key used for signing JWT access & refresh tokens |
+| `LLM_PROVIDER` | **Yes** | `gemini` | Primary LLM provider adapter |
+| `LLM_MODEL` | No | `gemini-2.0-flash` | Gemini model selection |
+| `GEMINI_API_KEY` | **Yes** | String | Google AI Studio server-side API key |
+| `SMTP_HOST` | No | Hostname | Outbound email relay host (e.g. `smtp.sendgrid.net`) |
+| `SMTP_PORT` | No | `587` | Outbound email relay port |
+| `SMTP_USER` | No | String | SMTP authentication username |
+| `SMTP_PASS` | No | String | SMTP authentication password / API key |
+| `SMTP_FROM` | No | `noreply@ownara.com` | Outbound email sender address |
+| `SMTP_FROM_NAME` | No | `OWNARA` | Outbound email sender display name |
+| `CORS_ALLOWED_ORIGINS` | No | URL | Allowed origins for CORS validation |
+| `NODE_ENV` | **Yes** | `production` / `development` | Node environment flag |
 
 ---
 
 ## License
 
-Proprietary. All rights reserved.
+Proprietary and Confidential. Copyright (c) 2026 OWNARA. All rights reserved.
