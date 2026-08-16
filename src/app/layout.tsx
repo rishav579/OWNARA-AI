@@ -14,26 +14,26 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "BIHARI AI — India's Trusted AI Employee Company",
+  title: "OWNARA — India's Trusted AI Employee Company",
   description:
     "Hire AI Employees you can actually trust. Delegate real work to role-based AI Employees that are reliable, transparent, auditable, and always under human control.",
   keywords: [
-    "BIHARI AI",
+    "OWNARA",
     "AI Employee",
     "AI Workforce",
     "Business Automation",
     "Audit-First AI",
     "India AI",
   ],
-  authors: [{ name: "BIHARI AI" }],
+  authors: [{ name: "OWNARA" }],
   icons: {
     icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
   },
   openGraph: {
-    title: "BIHARI AI — India's Trusted AI Employee Company",
+    title: "OWNARA — India's Trusted AI Employee Company",
     description:
       "Hire AI Employees you can actually trust. Every critical action is human-approved.",
-    siteName: "BIHARI AI",
+    siteName: "OWNARA",
     type: "website",
   },
 };

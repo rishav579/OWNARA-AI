@@ -86,7 +86,12 @@ export function validateEnv(): EnvValidation {
   // Hard fail on errors in production — but only at runtime, not during build
   // (Next.js runs with NODE_ENV=production during build, but env vars aren't
   // available yet. The build doesn't need DB/JWT — only runtime does.)
-  if (errors.length > 0 && isProduction && !process.env.NEXT_BUILD_PHASE) {
+  const isBuildPhase =
+    process.env.NEXT_PHASE === "phase-production-build" ||
+    process.env.npm_lifecycle_event === "build" ||
+    Boolean(process.env.NEXT_BUILD_PHASE);
+
+  if (errors.length > 0 && isProduction && !isBuildPhase) {
     console.error("[Env] CRITICAL ERRORS — application cannot start safely in production:");
     errors.forEach((e) => console.error(`  ❌ ${e}`));
     throw new Error(`Environment validation failed: ${errors.join("; ")}`);

@@ -1023,7 +1023,7 @@ function CEOReportModule() {
       {/* Report header */}
       <div className="flex items-start justify-between border-b border-zinc-800 pb-6">
         <div>
-          <div className="text-[0.6rem] font-semibold uppercase tracking-wider text-emerald-400">BIHARI AI — CEO Report</div>
+          <div className="text-[0.6rem] font-semibold uppercase tracking-wider text-emerald-400">OWNARA — CEO Report</div>
           <h1 className="mt-1 text-2xl font-bold text-zinc-50">Enterprise Operations Report</h1>
           <p className="mt-1 text-sm text-zinc-500">Generated {today}</p>
         </div>
@@ -1118,7 +1118,7 @@ function CEOReportModule() {
 
       {/* Footer */}
       <div className="mt-6 border-t border-zinc-800 pt-4 text-center text-[0.6rem] text-zinc-600">
-        BIHARI AI — Enterprise Operations Report · Generated {today} · Confidential
+        OWNARA — Enterprise Operations Report · Generated {today} · Confidential
       </div>
     </div>
   );
@@ -1180,7 +1180,7 @@ function CustomerTrustReportModule() {
           {/* Header */}
           <div className="flex items-start justify-between border-b border-zinc-800 pb-6">
             <div>
-              <div className="text-[0.6rem] font-semibold uppercase tracking-wider text-emerald-400">BIHARI AI — Customer Trust Report</div>
+              <div className="text-[0.6rem] font-semibold uppercase tracking-wider text-emerald-400">OWNARA — Customer Trust Report</div>
               <h1 className="mt-1 text-2xl font-bold text-zinc-50">{customer.name}</h1>
               <p className="mt-1 text-sm text-zinc-500">Generated {today}</p>
             </div>
@@ -1255,7 +1255,7 @@ function CustomerTrustReportModule() {
           </ReportSection>
 
           <div className="mt-6 border-t border-zinc-800 pt-4 text-center text-[0.6rem] text-zinc-600">
-            BIHARI AI — Customer Trust Report · {customer.name} · Generated {today} · Confidential
+            OWNARA — Customer Trust Report · {customer.name} · Generated {today} · Confidential
           </div>
         </div>
       )}

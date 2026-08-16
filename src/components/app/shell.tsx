@@ -103,10 +103,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Workspace header */}
       <div className="flex items-center gap-2.5 px-4 py-4">
         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 font-bold text-white shadow-lg shadow-emerald-500/20">
-          B
+          O
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-bold tracking-tight text-zinc-50">BIHARI AI</div>
+          <div className="text-sm font-bold tracking-tight text-zinc-50">OWNARA</div>
           <div className="truncate text-[0.65rem] text-zinc-500">{user?.workspaceName}</div>
         </div>
       </div>

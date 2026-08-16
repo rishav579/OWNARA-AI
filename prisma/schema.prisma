@@ -3,10 +3,6 @@ generator client {
 }
 
 datasource db {
-  // Provider-portable: set to "postgresql" for production multi-worker
-  // deployments. The concurrency layer (src/lib/concurrency.ts) auto-detects
-  // the provider from DATABASE_URL and uses the appropriate primitives.
-  // SQLite is the default for zero-ops local/dev/demo environments.
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }

@@ -26,9 +26,9 @@ export function LandingPage() {
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 font-bold text-white">
-              B
+              O
             </div>
-            <span className="text-sm font-bold tracking-tight">BIHARI AI</span>
+            <span className="text-sm font-bold tracking-tight">OWNARA</span>
           </div>
           <div className="hidden items-center gap-8 md:flex">
             <a href="#how-it-works" className="text-sm text-zinc-400 transition-colors hover:text-zinc-100">How it works</a>
@@ -240,7 +240,7 @@ export function LandingPage() {
               Not a chatbot. An employee.
             </h2>
             <p className="mx-auto mt-3 max-w-xl text-zinc-400">
-              Generic AI tools produce plausible-but-untrustworthy output. BIHARI AI gives you
+              Generic AI tools produce plausible-but-untrustworthy output. OWNARA gives you
               an employee you can hold accountable.
             </p>
           </div>
@@ -290,9 +290,9 @@ export function LandingPage() {
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 sm:flex-row sm:px-6">
           <div className="flex items-center gap-2 text-sm text-zinc-500">
             <div className="flex h-6 w-6 items-center justify-center rounded-md bg-gradient-to-br from-emerald-500 to-teal-600 text-xs font-bold text-white">
-              B
+              O
             </div>
-            BIHARI AI — The AI Employee Platform
+            OWNARA — The AI Employee Platform
           </div>
           <div className="flex items-center gap-4 text-xs text-zinc-600">
             <span>Privacy</span>

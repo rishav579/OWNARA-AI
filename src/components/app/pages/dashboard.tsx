@@ -142,7 +142,7 @@ export function DashboardPage() {
   if (dash.needsOnboarding) {
     return (
       <div>
-        <PageHeader title="Welcome to BIHARI AI" description="Hire your first AI Employee to get started" />
+        <PageHeader title="Welcome to OWNARA" description="Hire your first AI Employee to get started" />
         <EmptyState
           icon={Bot}
           title="No AI Employees yet"

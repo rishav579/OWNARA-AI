@@ -293,9 +293,9 @@ export function OnboardingPage() {
         <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-4 sm:px-6">
           <button onClick={() => navigate("")} className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 font-bold text-white">
-              B
+              O
             </div>
-            <span className="text-sm font-bold tracking-tight">BIHARI AI</span>
+            <span className="text-sm font-bold tracking-tight">OWNARA</span>
           </button>
           <div className="text-xs text-zinc-500">
             Welcome, <span className="text-zinc-300">{user?.name}</span>

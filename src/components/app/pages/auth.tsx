@@ -8,7 +8,12 @@ import { ShieldCheck, Mail, Lock, ArrowRight, CheckCircle2, Play, Loader2 } from
 export function AuthPage() {
   const { navigate } = useRouter();
   const { login, signup } = useAuth();
-  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [mode, setMode] = useState<"login" | "signup">(() => {
+    if (typeof window !== "undefined" && window.location.hash.includes("signup=1")) {
+      return "signup";
+    }
+    return "login";
+  });
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -17,12 +22,15 @@ export function AuthPage() {
   const [demoLoading, setDemoLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // Deep-link: if the URL has ?signup=1, default to signup mode
+  // Deep-link: listen for hashchange to switch to signup mode
   useEffect(() => {
-    const hash = window.location.hash;
-    if (hash.includes("signup=1")) {
-      setMode("signup");
-    }
+    const handleHashChange = () => {
+      if (window.location.hash.includes("signup=1")) {
+        setMode("signup");
+      }
+    };
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -53,9 +61,9 @@ export function AuthPage() {
           {/* Logo */}
           <button onClick={() => navigate("")} className="mb-10 flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 font-bold text-white shadow-lg shadow-emerald-500/20">
-              B
+              O
             </div>
-            <span className="text-sm font-bold tracking-tight">BIHARI AI</span>
+            <span className="text-sm font-bold tracking-tight">OWNARA</span>
           </button>
 
           <h1 className="text-2xl font-bold tracking-tight text-zinc-50">
@@ -184,7 +192,7 @@ export function AuthPage() {
         <div className="relative max-w-md px-12">
           <div className="flex items-center gap-2 text-emerald-400">
             <ShieldCheck className="h-5 w-5" />
-            <span className="text-xs font-semibold uppercase tracking-wider">Why BIHARI AI</span>
+            <span className="text-xs font-semibold uppercase tracking-wider">Why OWNARA</span>
           </div>
           <h2 className="mt-3 text-2xl font-bold tracking-tight text-zinc-50">
             Trust is not a feature.
