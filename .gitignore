@@ -61,3 +61,4 @@ server.log
 # Database file (SQLite — never commit)
 db/custom.db
 *.db
+*.deb

@@ -376,7 +376,7 @@ export async function executeFinanceTool(
         output: {
           reminderId: reminder.id,
           status: reminderStatus,
-          mock: emailMock,
+          mock: String(emailMock),
           sentTo: customer?.email || "",
           subject: reminder.subject,
           messageId: emailMessageId || "",

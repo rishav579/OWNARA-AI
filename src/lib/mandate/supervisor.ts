@@ -182,7 +182,7 @@ async function spawnEpisode(
     const task = await tx.task.create({
       data: {
         workspaceId: mandate.workspaceId,
-        employeeId: mandate.tenantId,
+        employeeId: mandate.tenantId!,
         assignedBy: fullMandate.grantorId,
         title: strategy.episodeTitle,
         description: strategy.episodeDescription,

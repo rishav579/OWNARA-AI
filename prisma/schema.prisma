@@ -7,7 +7,7 @@ datasource db {
   // deployments. The concurrency layer (src/lib/concurrency.ts) auto-detects
   // the provider from DATABASE_URL and uses the appropriate primitives.
   // SQLite is the default for zero-ops local/dev/demo environments.
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 

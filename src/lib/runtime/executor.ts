@@ -555,7 +555,7 @@ async function executeToolStep(task: any, step: any, employee: any): Promise<Exe
             decision: decision.mode,
             mandateMode: decision.mandateMode,
             reason: decision.reason,
-            mandateId: task.mandateId,
+            mandateId: task.mandateId!,
           },
         });
       });
@@ -722,7 +722,7 @@ async function executeApprovalGateStep(task: any, step: any, employee: any): Pro
             decision: decision.mode,
             mandateMode: decision.mandateMode,
             reason: decision.reason,
-            mandateId: task.mandateId,
+            mandateId: task.mandateId!,
           },
         });
       });
@@ -1152,7 +1152,7 @@ export async function resumeAfterApproval(
             decision: decision.mode,
             mandateMode: decision.mandateMode,
             reason: decision.reason,
-            mandateId: task.mandateId,
+            mandateId: task.mandateId!,
           },
         });
       });
