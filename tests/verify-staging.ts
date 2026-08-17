@@ -38,7 +38,7 @@ async function main() {
           { role: "system", content: "You are Kavya, an AI finance assistant." },
           { role: "user", content: "Briefly confirm your readiness in one short sentence." }
         ],
-        model: "gemini-2.0-flash",
+        model: "gemini-3.6-flash",
       });
       console.log(`  ✅ Real Gemini Response received in ${response.latencyMs}ms: "${response.content.trim()}"`);
     } catch (err: any) {

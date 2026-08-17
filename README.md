@@ -36,7 +36,7 @@ OWNARA operates via a continuous 5-stage governed execution loop:
 - **Decision Center:** Human-in-the-loop review interface with contract inspection, diffs, and 1-click approvals/rejections.
 - **Tamper-Evident Audit Ledger:** Monotonic sequence numbers with SHA-256 hash chaining and PostgreSQL advisory transaction locks.
 - **Deterministic Evaluation Engine:** Post-task scorecards, skill leveling, and career timeline tracking.
-- **Multi-Provider LLM Gateway:** Server-side routing for Google Gemini (`gemini-2.0-flash` default), OpenAI, and Anthropic with deterministic fallbacks.
+- **Multi-Provider LLM Gateway:** Server-side routing for Google Gemini (`gemini-3.6-flash` default), OpenAI, and Anthropic with deterministic fallbacks.
 - **CSV Data Importer:** Support for customer and invoice CSV file ingestion with GSTIN and payment term validation.
 
 ### Explicitly Not Implemented / Out of Current Scope
@@ -85,7 +85,7 @@ Set the required variables in `.env`:
 DATABASE_URL="postgresql://user:password@localhost:5432/ownara?schema=public"
 JWT_SECRET="replace-with-a-random-secret-at-least-32-chars-long"
 LLM_PROVIDER="gemini"
-LLM_MODEL="gemini-2.0-flash"
+LLM_MODEL="gemini-3.6-flash"
 GEMINI_API_KEY="your-gemini-api-key"
 NODE_ENV="development"
 ```
@@ -143,7 +143,7 @@ npm run worker
 | `DATABASE_URL` | **Yes** | `postgresql://...` | Connection URL for PostgreSQL database |
 | `JWT_SECRET` | **Yes** | String (≥ 32 chars) | Secret key used for signing JWT access & refresh tokens |
 | `LLM_PROVIDER` | **Yes** | `gemini` | Primary LLM provider adapter |
-| `LLM_MODEL` | No | `gemini-2.0-flash` | Gemini model selection |
+| `LLM_MODEL` | No | `gemini-3.6-flash` | Gemini model selection |
 | `GEMINI_API_KEY` | **Yes** | String | Google AI Studio server-side API key |
 | `SMTP_HOST` | No | Hostname | Outbound email relay host (e.g. `smtp.sendgrid.net`) |
 | `SMTP_PORT` | No | `587` | Outbound email relay port |

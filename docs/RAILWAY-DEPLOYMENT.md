@@ -41,7 +41,7 @@ This guide details how to deploy OWNARA to Railway with 3 decoupled services:
    - `DATABASE_URL`: `${{Postgres.DATABASE_URL}}` *(Railway Reference Variable)*
    - `JWT_SECRET`: Generate a random 64-char string (e.g. `openssl rand -base64 48`)
    - `LLM_PROVIDER`: `gemini`
-   - `LLM_MODEL`: `gemini-2.0-flash`
+   - `LLM_MODEL`: `gemini-3.6-flash`
    - `GEMINI_API_KEY`: `<your-gemini-api-key>`
    - `SMTP_HOST`: `smtp.sendgrid.net` (or your SMTP host)
    - `SMTP_PORT`: `587`
@@ -70,7 +70,7 @@ npx tsx scripts/seed.ts
    - `DATABASE_URL`: `${{Postgres.DATABASE_URL}}`
    - `JWT_SECRET`: `${{bihari-web.JWT_SECRET}}`
    - `LLM_PROVIDER`: `gemini`
-   - `LLM_MODEL`: `gemini-2.0-flash`
+   - `LLM_MODEL`: `gemini-3.6-flash`
    - `GEMINI_API_KEY`: `${{bihari-web.GEMINI_API_KEY}}`
    - `SMTP_HOST`: `${{bihari-web.SMTP_HOST}}`
    - `SMTP_PORT`: `${{bihari-web.SMTP_PORT}}`
@@ -93,12 +93,12 @@ npx tsx scripts/seed.ts
 | `JWT_SECRET` | YES | 32+ char random string | Signs auth access/refresh tokens |
 | `LLM_PROVIDER` | YES | `gemini` | Primary AI reasoning provider |
 | `GEMINI_API_KEY` | YES | Google AI Studio Key | Server-side Gemini completions |
-| `LLM_MODEL` | NO | `gemini-2.0-flash` | Gemini model name |
+| `LLM_MODEL` | NO | `gemini-3.6-flash` | Gemini model name |
 | `SMTP_HOST` | RECOMMENDED | e.g. `smtp.sendgrid.net` | Email relay hostname |
 | `SMTP_PORT` | NO | `587` | SMTP port |
 | `SMTP_USER` | RECOMMENDED | e.g. `apikey` | SMTP username |
 | `SMTP_PASS` | RECOMMENDED | SMTP password/key | SMTP authentication password |
-| `SMTP_FROM` | NO | `noreply@bihari.ai` | Sender email address |
+| `SMTP_FROM` | NO | `noreply@ownara.com` | Sender email address |
 | `CORS_ALLOWED_ORIGINS` | NO | `https://your-domain.up.railway.app` | CORS allowed origins |
 | `NODE_ENV` | YES | `production` | Production mode flag |
 

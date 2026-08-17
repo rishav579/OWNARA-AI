@@ -52,49 +52,49 @@ const DEFAULT_ROUTES: Record<TaskType, ModelRoute> = {
   planning: {
     taskType: "planning",
     provider: "gemini",
-    model: "gemini-2.0-flash",
+    model: "gemini-3.6-flash",
     temperature: 0.3,
     maxTokens: 2000,
   },
   reasoning: {
     taskType: "reasoning",
     provider: "gemini",
-    model: "gemini-2.0-flash",
+    model: "gemini-3.6-flash",
     temperature: 0.5,
     maxTokens: 1500,
   },
   tool_execution: {
     taskType: "tool_execution",
     provider: "gemini",
-    model: "gemini-2.0-flash",
+    model: "gemini-3.6-flash",
     temperature: 0.2,
     maxTokens: 1000,
   },
   finance_reasoning: {
     taskType: "finance_reasoning",
     provider: "gemini",
-    model: "gemini-2.5-flash",
+    model: "gemini-3.6-flash",
     temperature: 0.3,
     maxTokens: 2000,
   },
   summarization: {
     taskType: "summarization",
     provider: "gemini",
-    model: "gemini-2.0-flash",
+    model: "gemini-3.6-flash",
     temperature: 0.3,
     maxTokens: 1000,
   },
   drafting: {
     taskType: "drafting",
     provider: "gemini",
-    model: "gemini-2.5-flash",
+    model: "gemini-3.6-flash",
     temperature: 0.7,
     maxTokens: 2000,
   },
   general: {
     taskType: "general",
     provider: "gemini",
-    model: "gemini-2.0-flash",
+    model: "gemini-3.6-flash",
     temperature: 0.5,
     maxTokens: 1500,
   },
@@ -145,13 +145,13 @@ const FALLBACK_MODELS: Record<string, Record<TaskType, string>> = {
     general: "mock-1.0",
   },
   gemini: {
-    planning: "gemini-2.0-flash",
-    reasoning: "gemini-2.0-flash",
-    tool_execution: "gemini-2.0-flash",
-    finance_reasoning: "gemini-2.5-flash",
-    summarization: "gemini-2.0-flash",
-    drafting: "gemini-2.5-flash",
-    general: "gemini-2.0-flash",
+    planning: "gemini-3.6-flash",
+    reasoning: "gemini-3.6-flash",
+    tool_execution: "gemini-3.6-flash",
+    finance_reasoning: "gemini-3.6-flash",
+    summarization: "gemini-3.6-flash",
+    drafting: "gemini-3.6-flash",
+    general: "gemini-3.6-flash",
   },
 };
 
@@ -306,7 +306,7 @@ export class ModelRouter {
       return models[taskType];
     }
     // Fall back to the forced model or a generic default
-    return this.forcedModel || "gemini-2.0-flash";
+    return this.forcedModel || "gemini-3.6-flash";
   }
 
   /**

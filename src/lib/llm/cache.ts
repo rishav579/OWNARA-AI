@@ -28,7 +28,7 @@ export class ResponseCache {
   /**
    * Generates a cache key from the request parameters.
    * Includes model + temperature so different providers/models don't collide.
-   * The provider is implied by the model name (e.g., "gemini-2.0-flash" ≠ "gpt-4o-mini").
+   * The provider is implied by the model name (e.g., "gemini-3.6-flash" ≠ "gpt-4o-mini").
    */
   key(messages: { role: string; content: string }[], model: string, temperature: number, promptId?: string, promptVersion?: number): string {
     const content = messages.map((m) => `${m.role}:${m.content}`).join("|");

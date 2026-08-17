@@ -164,7 +164,7 @@ export class LLMGateway {
     const primaryRoute = failoverChain[0]?.route;
     const primaryProvider = failoverChain[0]?.provider.name || "unknown";
 
-    const model = request.model || primaryRoute?.model || "gemini-1.5-flash";
+    const model = request.model || primaryRoute?.model || "gemini-3.6-flash";
     const temperature = request.temperature ?? primaryRoute?.temperature ?? 0.5;
     const maxTokens = request.maxTokens ?? primaryRoute?.maxTokens ?? 2000;
 

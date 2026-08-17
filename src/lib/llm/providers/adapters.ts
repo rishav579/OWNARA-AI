@@ -32,6 +32,7 @@ const COST_TABLES: Record<string, Record<string, { input: number; output: number
     "claude-3-haiku-20240307": { input: 25, output: 125 },
   },
   gemini: {
+    "gemini-3.6-flash": { input: 10, output: 40 },
     "gemini-2.0-flash": { input: 10, output: 40 },
     "gemini-2.5-flash": { input: 15, output: 60 },
     "gemini-1.5-pro": { input: 125, output: 500 },
@@ -350,7 +351,7 @@ export class GeminiProvider implements LLMProvider {
 
     const start = Date.now();
     const executionId = request.executionId || generateExecutionId();
-    const model = request.model || "gemini-2.0-flash";
+    const model = request.model || "gemini-3.6-flash";
 
     // Gemini uses a different API format
     const systemMessage = request.messages.find((m) => m.role === "system");
@@ -369,7 +370,6 @@ export class GeminiProvider implements LLMProvider {
             parts: [{ text: m.content }],
           })),
           generationConfig: {
-            temperature: request.temperature ?? 0.7,
             maxOutputTokens: request.maxTokens ?? 2000,
             responseMimeType: request.jsonMode ? "application/json" : undefined,
           },
