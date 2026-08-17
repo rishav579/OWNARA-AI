@@ -19,7 +19,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV NEXT_BUILD_PHASE=true
 ENV NODE_ENV=production
 RUN npx prisma generate
-RUN npx next build
+RUN npm run build
+RUN ls -la /app/dist && test -f /app/dist/worker.js
 
 # Stage 3: Production Runner (Web Service)
 FROM node:22-alpine AS runner
