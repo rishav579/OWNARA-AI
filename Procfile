@@ -1,2 +1,2 @@
 web: node server.js
-worker: npx tsx scripts/worker.ts
+worker: node dist/worker.js

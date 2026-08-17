@@ -29,13 +29,15 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
+ENV PATH="/app/node_modules/.bin:$PATH"
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-# Copy source tree and dependencies for both web and background worker
+# Copy compiled worker, source tree and dependencies for both web and background worker
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
+COPY --from=builder --chown=nextjs:nodejs /app/dist ./dist
 COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
 RUN ls -la /app/scripts && test -f /app/scripts/worker.ts
 COPY --from=builder --chown=nextjs:nodejs /app/src ./src

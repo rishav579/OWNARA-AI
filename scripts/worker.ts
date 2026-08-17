@@ -1,6 +1,6 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 /**
- * BIHARI AI — Worker Process
+ * OWNARA — Worker Process
  *
  * Runs the AI Employee Runtime worker as a separate process.
  *

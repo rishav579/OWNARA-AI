@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
-    "worker": "npx tsx scripts/worker.ts",
-    "build": "next build",
+    "worker": "node dist/worker.js",
+    "build": "next build && esbuild scripts/worker.ts --bundle --platform=node --target=node22 --packages=external --alias:@=./src --outfile=dist/worker.js",
     "start": "node .next/standalone/server.js",
     "lint": "eslint .",
     "db:push": "prisma db push --accept-data-loss",
