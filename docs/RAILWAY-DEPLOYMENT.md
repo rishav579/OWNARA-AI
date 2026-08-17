@@ -1,9 +1,9 @@
-# BIHARI AI — Railway Staging Deployment Guide
+# OWNARA — Railway Staging Deployment Guide
 
-This guide details how to deploy BIHARI AI to Railway with 3 decoupled services:
+This guide details how to deploy OWNARA to Railway with 3 decoupled services:
 1. **PostgreSQL Database**
-2. **BIHARI Web Service** (Next.js Application)
-3. **BIHARI Worker Service** (Background Runtime Engine)
+2. **OWNARA Web Service** (Next.js Application)
+3. **OWNARA Worker Service** (Background Runtime Engine)
 
 ---
 
@@ -14,13 +14,13 @@ This guide details how to deploy BIHARI AI to Railway with 3 decoupled services:
 │                    Railway Project                          │
 │                                                             │
 │  ┌────────────────────┐          ┌───────────────────────┐  │
-│  │   PostgreSQL DB    │◄─────────┤   BIHARI Web Service  │  │
+│  │   PostgreSQL DB    │◄─────────┤   OWNARA Web Service  │  │
 │  │   (Railway Plugin) │          │   (Next.js Port 3000) │  │
 │  └─────────▲──────────┘          │   Public HTTPS URL    │  │
 │            │                     └───────────────────────┘  │
 │            │                                                │
 │            │                     ┌───────────────────────┐  │
-│            └─────────────────────┤ BIHARI Worker Service │  │
+│            └─────────────────────┤ OWNARA Worker Service │  │
 │                                  │ (scripts/worker.ts)   │  │
 │                                  └───────────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
@@ -35,8 +35,8 @@ This guide details how to deploy BIHARI AI to Railway with 3 decoupled services:
 2. Railway will automatically provision PostgreSQL and expose `DATABASE_URL`.
 
 ### Step 2: Deploy Web Service
-1. In the same project, click **New** → **GitHub Repo** → select `BIHARI_AI`.
-2. Name the service: `bihari-web`.
+1. In the same project, click **New** → **GitHub Repo** → select `OWNARA-AI`.
+2. Name the service: `ownara-web`.
 3. Configure **Variables**:
    - `DATABASE_URL`: `${{Postgres.DATABASE_URL}}` *(Railway Reference Variable)*
    - `JWT_SECRET`: Generate a random 64-char string (e.g. `openssl rand -base64 48`)
@@ -47,13 +47,12 @@ This guide details how to deploy BIHARI AI to Railway with 3 decoupled services:
    - `SMTP_PORT`: `587`
    - `SMTP_USER`: `apikey` (or your SMTP username)
    - `SMTP_PASS`: `<your-smtp-api-key>`
-   - `SMTP_FROM`: `noreply@bihari.ai`
-   - `SMTP_FROM_NAME`: `BIHARI AI`
+   - `SMTP_FROM`: `noreply@ownara.com`
+   - `SMTP_FROM_NAME`: `OWNARA`
    - `CORS_ALLOWED_ORIGINS`: `https://${{RAILWAY_PUBLIC_DOMAIN}}`
    - `NODE_ENV`: `production`
 4. Under **Settings**:
-   - **Build Command**: `npx prisma generate && npm run build`
-   - **Start Command**: `node .next/standalone/server.js`
+   - **Start Command**: `node server.js`
    - **Healthcheck Path**: `/api/health`
    - **Public Networking**: Enable Public Domain (generates HTTPS endpoint)
 
