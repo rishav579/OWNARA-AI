@@ -319,6 +319,31 @@ export async function executeFinanceTool(
     }
 
     case "send_reminder": {
+      // 1. Check if reminder was already sent for this invoice (idempotency guard)
+      const existingSent = await db.reminder.findFirst({
+        where: {
+          invoiceId: toolInput.invoiceId,
+          status: { in: ["sent", "sent_mock"] },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      if (existingSent && existingSent.sentAt) {
+        return {
+          output: {
+            reminderId: existingSent.id,
+            status: existingSent.status,
+            mock: String(existingSent.status === "sent_mock"),
+            sentTo: toolInput.customerEmail || "",
+            subject: existingSent.subject,
+            messageId: existingSent.responseNotes?.startsWith("messageId:") ? existingSent.responseNotes.replace("messageId: ", "") : "",
+            idempotentReplay: "true",
+          },
+          tokens: 50,
+          durationMs: Date.now() - start,
+        };
+      }
+
       const reminder = await db.reminder.findFirst({
         where: {
           invoiceId: toolInput.invoiceId,

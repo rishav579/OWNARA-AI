@@ -85,7 +85,7 @@ async function main() {
       });
 
       const info = await etherealTransporter.sendMail({
-        from: '"BIHARI AI Staging" <noreply@bihari.ai>',
+        from: '"OWNARA Staging" <noreply@ownara.com>',
         to: "pilot-test-customer@example.in",
         subject: "Staging Test Invoice Reminder: INV-2025-001",
         text: "This is a controlled verification email for BIHARI AI staging.",

@@ -51,7 +51,7 @@ export interface SendEmailParams {
 
 export async function sendEmail(params: SendEmailParams): Promise<{ sent: boolean; mock: boolean; messageId?: string; error?: string }> {
   const t = getTransporter();
-  const fromEmail = process.env.SMTP_FROM || "noreply@bihari.ai";
+  const fromEmail = process.env.SMTP_FROM || "noreply@ownara.com";
   const fromName = process.env.SMTP_FROM_NAME || "OWNARA";
 
   if (!t) {

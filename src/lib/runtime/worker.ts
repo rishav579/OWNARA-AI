@@ -83,6 +83,65 @@ async function pollOnce(): Promise<void> {
     data: { status: "pending" },
   });
 
+  // ─── Interrupted Decided Approval Recovery ──────────────────────────────
+  // Recover tasks that are in "waiting_approval" but whose approval has already been decided
+  // (e.g. worker crashed during resumeAfterApproval).
+  try {
+    const interruptedApprovedTasks = await db.task.findMany({
+      where: {
+        status: "waiting_approval",
+        approvals: {
+          some: { status: "approved" },
+        },
+      },
+      include: {
+        approvals: {
+          where: { status: "approved" },
+          orderBy: { decidedAt: "desc" },
+          take: 1,
+        },
+      },
+      take: 5,
+    });
+
+    for (const it of interruptedApprovedTasks) {
+      const app = it.approvals[0];
+      if (app) {
+        console.log(`[Worker] Recovering interrupted approved task ${it.id} (approval ${app.id})`);
+        const { resumeAfterApproval } = await import("./executor");
+        await resumeAfterApproval(it.id, app.id, app.decidedBy || "system", "Approver");
+      }
+    }
+
+    const interruptedRejectedTasks = await db.task.findMany({
+      where: {
+        status: "waiting_approval",
+        approvals: {
+          some: { status: "rejected" },
+        },
+      },
+      include: {
+        approvals: {
+          where: { status: "rejected" },
+          orderBy: { decidedAt: "desc" },
+          take: 1,
+        },
+      },
+      take: 5,
+    });
+
+    for (const it of interruptedRejectedTasks) {
+      const app = it.approvals[0];
+      if (app) {
+        console.log(`[Worker] Recovering interrupted rejected task ${it.id} (approval ${app.id})`);
+        const { failAfterApprovalRejection } = await import("./executor");
+        await failAfterApprovalRejection(it.id, app.id, app.decidedBy || "system", "Approver", app.reason || undefined);
+      }
+    }
+  } catch (recErr) {
+    console.error("[Worker] Interrupted approval recovery error:", recErr);
+  }
+
   // ─── Approval expiration ──────────────────────────────────────────────
   // Fail tasks with expired pending approvals (timeoutAt < now)
   const expiredApprovals = await db.approval.findMany({

@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev -p 3000",
     "worker": "npx tsx scripts/worker.ts",
-    "build": "next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
+    "build": "next build",
     "start": "node .next/standalone/server.js",
     "lint": "eslint .",
     "db:push": "prisma db push --accept-data-loss",
@@ -15,7 +15,11 @@
     "test": "npx tsx tests/mvp-acceptance.ts",
     "test:evaluation": "npx tsx tests/evaluation-suite.ts",
     "test:customer": "npx tsx tests/new-customer-flow.ts",
-    "test:all": "npx tsx tests/mvp-acceptance.ts && npx tsx tests/evaluation-suite.ts && npx tsx tests/new-customer-flow.ts",
+    "test:client": "npx tsx tests/api-client-safety.ts",
+    "test:rbac": "npx tsx tests/approval-rbac.ts",
+    "test:csv": "npx tsx tests/csv-date-parsing.ts",
+    "test:worker": "npx tsx tests/worker-idempotency.ts",
+    "test:all": "npx tsx tests/api-client-safety.ts && npx tsx tests/approval-rbac.ts && npx tsx tests/csv-date-parsing.ts && npx tsx tests/worker-idempotency.ts && npx tsx tests/evaluation-suite.ts && npx tsx tests/authority-consistency.ts",
     "test:pilot": "npx tsx tests/design-partner-readiness.ts",
     "test:authority": "npx tsx tests/authority-consistency.ts",
     "test:staging": "npx tsx tests/verify-staging.ts"

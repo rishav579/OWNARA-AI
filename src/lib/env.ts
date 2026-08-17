@@ -52,7 +52,7 @@ export function validateEnv(): EnvValidation {
     }
 
     if (!process.env.SMTP_FROM) {
-      warnings.push("SMTP_FROM is not set. Will default to noreply@bihari.ai");
+      warnings.push("SMTP_FROM is not set. Will default to noreply@ownara.com");
     }
   }
 
