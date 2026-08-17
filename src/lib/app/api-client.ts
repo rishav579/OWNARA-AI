@@ -61,21 +61,55 @@ export async function apiFetch<T = any>(
     }
   }
 
-  const json = await res.json();
+  // Safely read response text first to handle empty responses, HTML error pages, or non-JSON payloads
+  const text = await res.text();
+  let json: any = null;
 
-  if (!res.ok || !json.success) {
+  if (text && text.trim().length > 0) {
+    try {
+      json = JSON.parse(text);
+    } catch {
+      // Non-JSON response (e.g., HTML from reverse proxy or plain text error)
+      if (!res.ok) {
+        if (res.status === 401 && onAuthFailure) {
+          onAuthFailure();
+        }
+        const errorMsg =
+          res.status === 502
+            ? "Bad Gateway: Upstream service temporarily unavailable"
+            : res.status === 503
+            ? "Service Unavailable: The server is temporarily overloaded or restarting"
+            : res.status === 504
+            ? "Gateway Timeout: Upstream server timed out"
+            : `Server returned HTTP ${res.status}: ${res.statusText || "Request failed"}`;
+        throw new ApiError(`HTTP_${res.status}`, errorMsg, res.status, { rawText: text.substring(0, 500) });
+      }
+      throw new ApiError("INVALID_JSON", "Server returned a non-JSON response.", res.status, { rawText: text.substring(0, 500) });
+    }
+  } else {
+    // Empty body (e.g., HTTP 204 No Content)
+    if (res.ok) {
+      return {} as T;
+    }
+    if (res.status === 401 && onAuthFailure) {
+      onAuthFailure();
+    }
+    throw new ApiError(`HTTP_${res.status}`, `Server returned empty error response with status ${res.status}`, res.status);
+  }
+
+  if (!res.ok || (json && json.success === false)) {
     if (res.status === 401 && onAuthFailure) {
       onAuthFailure();
     }
     throw new ApiError(
-      json.error?.code || "UNKNOWN",
-      json.error?.message || "Request failed",
+      json?.error?.code || `HTTP_${res.status}`,
+      json?.error?.message || `Request failed with status ${res.status}`,
       res.status,
-      json.error?.details
+      json?.error?.details
     );
   }
 
-  return json.data as T;
+  return (json?.data ?? json) as T;
 }
 
 // Refresh token storage (stored in memory, set at login)
@@ -311,6 +345,10 @@ export const api = {
       return apiFetch<any[]>(`/audit${qs ? `?${qs}` : ""}`);
     },
     get: (id: string) => apiFetch<any>(`/audit/${id}`),
+    verify: () =>
+      apiFetch<{ valid: boolean; brokenAt: number | null; totalEntries: number; verifiedAt: string }>("/audit/verify", {
+        method: "POST",
+      }),
   },
 
   // Notifications

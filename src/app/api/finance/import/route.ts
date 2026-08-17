@@ -61,6 +61,40 @@ interface ImportResult {
   errorRows: Array<{ row: number; error: string }>;
 }
 
+/**
+ * Robust date parser supporting ISO (YYYY-MM-DD), Indian/UK (DD/MM/YYYY, DD-MM-YYYY),
+ * and standard timestamp formats.
+ */
+export function parseFlexibleDate(raw: string): Date {
+  if (!raw || typeof raw !== "string") {
+    throw new Error("Date must be a non-empty string");
+  }
+  const trimmed = raw.trim();
+
+  // Match DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
+  const dmyMatch = trimmed.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+  if (dmyMatch) {
+    const day = parseInt(dmyMatch[1], 10);
+    const month = parseInt(dmyMatch[2], 10);
+    const year = parseInt(dmyMatch[3], 10);
+    if (month < 1 || month > 12 || day < 1 || day > 31) {
+      throw new Error(`Invalid date values in "${raw}" (day: ${day}, month: ${month})`);
+    }
+    const d = new Date(Date.UTC(year, month - 1, day));
+    if (isNaN(d.getTime())) {
+      throw new Error(`Invalid date values in "${raw}"`);
+    }
+    return d;
+  }
+
+  // Standard ISO / Timestamp
+  const d = new Date(trimmed);
+  if (isNaN(d.getTime())) {
+    throw new Error(`Invalid date format: "${raw}". Expected YYYY-MM-DD, DD/MM/YYYY, or ISO timestamp.`);
+  }
+  return d;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { user, workspaceId } = await requireWorkspace(request);
@@ -167,10 +201,8 @@ async function importInvoices(workspaceId: string, userId: string, rows: Invoice
 
       // ─── Create invoice ──────────────────────────────────────────────────
       const total = Math.round(row.subtotal + row.tax);
-      const issueDate = new Date(row.issueDate);
-      const dueDate = new Date(row.dueDate);
-      if (isNaN(issueDate.getTime())) throw new Error("Invalid issueDate");
-      if (isNaN(dueDate.getTime())) throw new Error("Invalid dueDate");
+      const issueDate = parseFlexibleDate(row.issueDate);
+      const dueDate = parseFlexibleDate(row.dueDate);
 
       const now = new Date();
       const isOverdue = dueDate < now;
@@ -274,8 +306,7 @@ async function importPayments(workspaceId: string, userId: string, rows: Payment
         throw new Error(`Invoice ${row.invoiceNumber} not found`);
       }
 
-      const paymentDate = new Date(row.paymentDate);
-      if (isNaN(paymentDate.getTime())) throw new Error("Invalid paymentDate");
+      const paymentDate = parseFlexibleDate(row.paymentDate);
 
       const customer = await db.invoice.findUnique({ where: { id: invoice.id }, select: { customerId: true } });
 
