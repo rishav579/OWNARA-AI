@@ -1,12 +1,12 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
-import { requireWorkspace } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { success, error, handleApiError, parseBody } from "@/lib/api-response";
 import { failAfterApprovalRejection } from "@/lib/runtime/executor";
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { user, workspaceId } = await requireWorkspace(request);
+    const { user, workspaceId } = await requirePermission(request, "approvals.decide");
     const { id } = await params;
     const body = await parseBody<{ reason?: string }>(request);
 
