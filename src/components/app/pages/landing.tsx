@@ -32,8 +32,8 @@ export function LandingPage() {
           </div>
           <div className="hidden items-center gap-8 md:flex">
             <a href="#how-it-works" className="text-sm text-zinc-400 transition-colors hover:text-zinc-100">How it works</a>
-            <a href="#employees" className="text-sm text-zinc-400 transition-colors hover:text-zinc-100">AI Employees</a>
-            <a href="#trust" className="text-sm text-zinc-400 transition-colors hover:text-zinc-100">Trust</a>
+            <a href="#mandates" className="text-sm text-zinc-400 transition-colors hover:text-zinc-100">Responsibilities</a>
+            <a href="#trust" className="text-sm text-zinc-400 transition-colors hover:text-zinc-100">Trust & Governance</a>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -60,18 +60,18 @@ export function LandingPage() {
         <div className="relative mx-auto max-w-4xl px-4 py-24 text-center sm:px-6 sm:py-32">
           <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/50 px-3 py-1 text-xs text-zinc-400">
             <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            AI Employees for real business work
+            Governed AI for persistent business responsibilities
           </div>
           <h1 className="text-4xl font-bold tracking-tight text-zinc-50 sm:text-6xl">
             Meet Kavya, your
             <br />
             <span className="bg-gradient-to-r from-emerald-400 to-teal-300 bg-clip-text text-transparent">
-              AI Finance Employee
+              AI Receivables Operator
             </span>
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-zinc-400">
-            She works to keep your receivables healthy — within the authority you give her,
-            with human approval when required, and with every consequential action recorded.
+            OWNARA is an AI system that owns persistent business responsibilities under bounded authority.
+            Kavya works to keep your receivables healthy — with human approval when required and every consequential action recorded.
           </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <button
@@ -124,19 +124,19 @@ export function LandingPage() {
             Meet Kavya
           </h2>
           <p className="mx-auto mt-4 max-w-xl text-lg text-zinc-400">
-            Kavya is an AI Finance Employee. You delegate a responsibility — not a task —
-            and she pursues it continuously, within your authority.
+            Kavya is an AI Accounts Receivable Operator. You delegate a continuous business responsibility — not just a one-off prompt —
+            and she pursues it within explicit authority boundaries.
           </p>
           <div className="mt-8 rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 text-left">
             <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-emerald-400">
-              The Responsibility
+              The Responsibility Mandate
             </div>
             <div className="mt-2 text-xl font-semibold text-zinc-100">
               Maintain Healthy Receivables
             </div>
             <p className="mt-2 text-sm text-zinc-400">
               Kavya continuously observes your receivables, evaluates whether they're healthy,
-              and takes action to keep them healthy — drafting reminders, prioritizing accounts,
+              and takes governed action to keep them healthy — drafting reminders, prioritizing accounts,
               and escalating unresponsive customers.
             </p>
           </div>
@@ -144,14 +144,14 @@ export function LandingPage() {
       </section>
 
       {/* Available Today + Coming Soon */}
-      <section id="employees" className="border-t border-zinc-900 py-20">
+      <section id="mandates" className="border-t border-zinc-900 py-20">
         <div className="mx-auto max-w-5xl px-4 sm:px-6">
           <div className="mb-12 text-center">
             <h2 className="text-3xl font-bold tracking-tight text-zinc-50 sm:text-4xl">
-              One platform. Many employees.
+              Persistent responsibilities. Bounded authority.
             </h2>
             <p className="mx-auto mt-3 max-w-xl text-zinc-400">
-              Start with Finance. Expand as we ship more AI Employees.
+              Start with Accounts Receivable. Governed execution under strict human oversight.
             </p>
           </div>
 
@@ -165,7 +165,7 @@ export function LandingPage() {
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-400">
                 <IndianRupee className="h-5 w-5" />
               </div>
-              <h3 className="mt-3 text-sm font-semibold text-zinc-100">Finance Employee</h3>
+              <h3 className="mt-3 text-sm font-semibold text-zinc-100">Accounts Receivable Operator</h3>
               <p className="mt-1 text-xs leading-relaxed text-zinc-400">
                 Chases overdue invoices, drafts collection reminders, manages accounts receivable — all under your approval.
               </p>
@@ -178,13 +178,13 @@ export function LandingPage() {
           {/* Coming Soon */}
           <div className="mb-4 flex items-center gap-2">
             <Clock className="h-3.5 w-3.5 text-zinc-500" />
-            <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Coming Soon</span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Future Responsibility Mandates</span>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {[
-              { icon: Briefcase, title: "Sales Employee", desc: "Researches prospects, drafts outreach, follows up on leads." },
-              { icon: Users, title: "HR Employee", desc: "Onboards new hires, manages leave requests, answers policy questions." },
-              { icon: Bot, title: "Operations Employee", desc: "Monitors workflows, flags bottlenecks, automates routine operations." },
+              { icon: Briefcase, title: "Sales Pipeline Hygiene", desc: "Monitors deal stages, flags stale opportunities, drafts follow-up cadences." },
+              { icon: Users, title: "Vendor Compliance", desc: "Tracks contract renewals, collects compliance certificates, verifies tax filings." },
+              { icon: Bot, title: "Operations Auditing", desc: "Monitors operational workflows, flags policy deviations, tracks resolution." },
             ].map((emp) => (
               <div key={emp.title} className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-5 opacity-70">
                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-800 text-zinc-500">
@@ -204,20 +204,20 @@ export function LandingPage() {
           <div className="rounded-2xl border border-zinc-800 bg-gradient-to-br from-emerald-500/5 to-transparent p-8 sm:p-12">
             <div className="flex items-center gap-2 text-emerald-400">
               <ShieldCheck className="h-5 w-5" />
-              <span className="text-xs font-semibold uppercase tracking-wider">The Trust Loop</span>
+              <span className="text-xs font-semibold uppercase tracking-wider">The Governance Loop</span>
             </div>
             <h2 className="mt-3 text-3xl font-bold tracking-tight text-zinc-50">
-              Delegate → Review → Approve → Audit
+              Delegate → Observe → Approve → Audit
             </h2>
             <p className="mt-3 text-zinc-400">
-              Every action your Finance Employee takes follows the same loop. You delegate a responsibility,
-              the employee continuously observes and reasons, critical actions wait for your approval, and
+              Every action follows the same governance loop. You delegate a responsibility,
+              the operator continuously observes and reasons, critical actions wait for your approval, and
               everything is recorded in an immutable audit trail.
             </p>
             <div className="mt-8 grid gap-3 sm:grid-cols-4">
               {[
-                { step: "01", label: "Delegate", desc: "Entrust a responsibility to your Finance Employee" },
-                { step: "02", label: "Observe", desc: "Employee continuously observes and reasons" },
+                { step: "01", label: "Delegate", desc: "Entrust a responsibility mandate under bounded authority" },
+                { step: "02", label: "Observe", desc: "System continuously observes receivables and evaluates strategy" },
                 { step: "03", label: "Approve", desc: "You approve, reject, or modify critical actions" },
                 { step: "04", label: "Audit", desc: "Every action is hash-chained and verifiable" },
               ].map((s) => (
@@ -233,25 +233,25 @@ export function LandingPage() {
       </section>
 
       {/* Features */}
-      <section className="border-t border-zinc-900 py-20">
+      <section id="trust" className="border-t border-zinc-900 py-20">
         <div className="mx-auto max-w-5xl px-4 sm:px-6">
           <div className="mb-12 text-center">
             <h2 className="text-3xl font-bold tracking-tight text-zinc-50 sm:text-4xl">
-              Not a chatbot. An employee.
+              Not a chatbot. Governed execution.
             </h2>
             <p className="mx-auto mt-3 max-w-xl text-zinc-400">
-              Generic AI tools produce plausible-but-untrustworthy output. OWNARA gives you
-              an employee you can hold accountable.
+              Generic AI tools produce unverified output. OWNARA provides
+              continuous ownership of business outcomes under verifiable authority boundaries.
             </p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {[
               { icon: ShieldCheck, title: "Human Approval Gate", desc: "Critical actions — like sending a customer email — never execute without your approval. Approve, reject, or modify. You decide." },
               { icon: ScrollText, title: "Immutable Audit Trail", desc: "Every action, decision, and intervention is hash-chained and tamper-evident. Trust is verifiable, not assumed." },
-              { icon: Eye, title: "Explainability", desc: "See why your employee took each action, grounded in evidence, policies, and customer history." },
-              { icon: Lock, title: "Tool Restrictions", desc: "Strict whitelist. Your employee can only use the tools you grant. No shell, no code execution." },
-              { icon: Workflow, title: "Always in Control", desc: "Pause, resume, or stop your employee instantly. Retire when done. The human is always in charge." },
-              { icon: Bot, title: "Built for Trust", desc: "Every employee has a job description, operating boundaries, and a trust score that evolves with performance." },
+              { icon: Eye, title: "Explainability", desc: "See why the system took each action, grounded in evidence, policies, and customer history." },
+              { icon: Lock, title: "Tool Restrictions", desc: "Strict whitelist. Operators can only use explicit tools you grant. No arbitrary execution." },
+              { icon: Workflow, title: "Always in Control", desc: "Pause, resume, or revoke authority instantly. The human operator is always in charge." },
+              { icon: Bot, title: "Built for Trust", desc: "Bounded authority contracts, clear operating boundaries, and audit logs that record every step." },
             ].map((f) => (
               <div key={f.title} className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5 transition-colors hover:border-zinc-700">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400">
@@ -269,11 +269,11 @@ export function LandingPage() {
       <section className="border-t border-zinc-900 py-20">
         <div className="mx-auto max-w-2xl px-4 text-center sm:px-6">
           <h2 className="text-3xl font-bold tracking-tight text-zinc-50">
-            Hire your Finance Employee today
+            Delegate your Receivables mandate today
           </h2>
           <p className="mt-3 text-zinc-400">
-            Sign up, upload your invoices, and watch your AI Employee start
-            recovering overdue payments — all under your approval.
+            Sign up, upload your invoices, and watch OWNARA start
+            recovering overdue payments — all under your explicit approval.
           </p>
           <button
             onClick={() => navigate("login?signup=1")}
@@ -292,7 +292,7 @@ export function LandingPage() {
             <div className="flex h-6 w-6 items-center justify-center rounded-md bg-gradient-to-br from-emerald-500 to-teal-600 text-xs font-bold text-white">
               O
             </div>
-            OWNARA — The AI Employee Platform
+            OWNARA — Governed AI Execution System
           </div>
           <div className="flex items-center gap-4 text-xs text-zinc-600">
             <span>Privacy</span>

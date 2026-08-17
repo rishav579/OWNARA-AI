@@ -14,25 +14,26 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "OWNARA — India's Trusted AI Employee Company",
+  title: "OWNARA — Governed AI for Business Responsibilities",
   description:
-    "Hire AI Employees you can actually trust. Delegate real work to role-based AI Employees that are reliable, transparent, auditable, and always under human control.",
+    "OWNARA is an AI system that owns persistent business responsibilities under bounded authority. Transparent, auditable, and always under human control.",
   keywords: [
     "OWNARA",
-    "AI Employee",
-    "AI Workforce",
-    "Business Automation",
+    "Governed AI",
+    "Delegated Responsibilities",
+    "Bounded Authority",
     "Audit-First AI",
-    "India AI",
+    "Accounts Receivable",
+    "Finance Operator",
   ],
   authors: [{ name: "OWNARA" }],
   icons: {
     icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
   },
   openGraph: {
-    title: "OWNARA — India's Trusted AI Employee Company",
+    title: "OWNARA — Governed AI for Business Responsibilities",
     description:
-      "Hire AI Employees you can actually trust. Every critical action is human-approved.",
+      "OWNARA is an AI system that owns persistent business responsibilities under bounded authority. Every critical action is human-approved.",
     siteName: "OWNARA",
     type: "website",
   },

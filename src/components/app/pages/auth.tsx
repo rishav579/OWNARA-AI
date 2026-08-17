@@ -205,7 +205,7 @@ export function AuthPage() {
               "Immutable, hash-chained audit trail",
               "Explainable decisions — see the reasoning",
               "Strict tool whitelists — no shell, no code execution",
-              "Pause or stop any employee instantly",
+              "Pause or revoke authority instantly",
             ].map((item) => (
               <li key={item} className="flex items-start gap-2.5 text-sm text-zinc-300">
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
