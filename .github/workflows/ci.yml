@@ -33,34 +33,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v1
+      - uses: actions/setup-node@v4
         with:
-          bun-version: latest
+          node-version: 22
+          cache: "npm"
 
       - name: Install dependencies
-        run: bun install
-
-      - name: Switch Prisma to PostgreSQL
-        run: |
-          sed -i 's/provider = "sqlite"/provider = "postgresql"/' prisma/schema.prisma
+        run: npm ci --legacy-peer-deps
 
       - name: Generate Prisma client
-        run: bun run db:generate
+        run: npx prisma generate
 
       - name: Push schema to PostgreSQL
-        run: bun run db:push
+        run: npx prisma db push --accept-data-loss
 
       - name: Lint
-        run: bun run lint
+        run: npm run lint
 
       - name: Typecheck
-        run: npx tsc --noEmit || true  # Non-blocking for now — examples/skills have unrelated errors
+        run: npx tsc --noEmit
 
       - name: Run tests
-        run: |
-          bun run scripts/seed.ts 2>&1 | tail -5
-          bun run tests/mvp-acceptance.ts 2>&1 | tail -5
-          bun run tests/evaluation-suite.ts 2>&1 | tail -5
+        run: npm run test:all
 
       - name: Production build
-        run: bun run build
+        run: npm run build
