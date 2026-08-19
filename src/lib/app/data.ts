@@ -1,4 +1,4 @@
-// BIHARI AI — Application sample data + types
+// OWNARA — Application sample data + types
 // Realistic data for an Indian B2B AI Employee SaaS platform.
 
 // ─── Types ───────────────────────────────────────────────────────────────────

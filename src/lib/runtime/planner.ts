@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — LLM Planner
+ * OWNARA — LLM Planner
  *
  * Generates execution plans (lists of steps) for tasks based on the task
  * description and the employee's role and configured tools.

@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Mandate Detail Page
+ * OWNARA — Mandate Detail Page
  *
  * Answers every question a grantor would ask of a Mandate they entrusted:
  *   WHAT did I entrust?   → Declaration

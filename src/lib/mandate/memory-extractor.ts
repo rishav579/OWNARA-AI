@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Mandate Memory Extractor
+ * OWNARA — Mandate Memory Extractor
  *
  * The mechanism whereby completed episodes produce durable Mandate-level
  * learning. This is NOT "store every event." It is a deterministic,

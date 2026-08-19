@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Execution Contract Engine
+ * OWNARA — Execution Contract Engine
  *
  * Generates immutable Execution Contracts before ANY irreversible tool
  * execution. A contract is the formal agreement between the AI Employee

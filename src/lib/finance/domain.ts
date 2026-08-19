@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Finance Domain Service
+ * OWNARA — Finance Domain Service
  *
  * The reasoning layer that the Finance Employee uses. This is NOT a mock —
  * these are real finance calculations (aging, priority, risk) that a

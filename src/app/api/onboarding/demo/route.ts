@@ -10,7 +10,7 @@ import { initProfile } from "@/lib/profile/engine";
  * MVP-001 — Demo Mode API
  *
  * Creates a complete demo company in one shot:
- *   - Demo user (demo+timestamp@bihari.ai)
+ *   - Demo user (demo+timestamp@ownara.com)
  *   - Demo workspace ("Demo Company Pvt Ltd")
  *   - Finance Employee (Kavya)
  *   - 5 sample customers + 8 sample invoices (various aging)
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
 
     // Generate unique demo credentials (or use provided ones)
     const timestamp = Date.now().toString().slice(-6);
-    const email = body.email || `demo${timestamp}@bihari.ai`;
+    const email = body.email || `demo${timestamp}@ownara.com`;
     const password = body.password || "demo-password";
     const workspaceName = body.workspaceName || "Demo Company Pvt Ltd";
 

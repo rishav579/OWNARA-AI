@@ -194,7 +194,7 @@ export async function POST(request: NextRequest) {
     // ─── Step 5: Grant the "Maintain Healthy Receivables" Mandate ──────────
     // The Mandate is the persistent organizational responsibility. Unlike the
     // first task (which is a temporary episode), the Mandate persists and
-    // continuously pursues the desired state. This is what makes BIHARI AI
+    // continuously pursues the desired state. This is what makes OWNARA
     // different from a task-management tool.
     const { grantMandate, evaluateMandateHealth } = await import("@/lib/mandate/engine");
     const { id: mandateId } = await grantMandate({

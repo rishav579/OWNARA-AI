@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Delegate Work
+ * OWNARA — Delegate Work
  *
  * The core value proposition: a CEO assigns business work to their Finance Employee.
  * Layout:

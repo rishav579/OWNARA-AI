@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — LLM Response Cache
+ * OWNARA — LLM Response Cache
  *
  * Caches LLM responses for identical prompt + context combinations.
  * This avoids redundant API calls when the same prompt is sent multiple

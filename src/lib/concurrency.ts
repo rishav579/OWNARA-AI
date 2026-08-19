@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Database Concurrency Abstraction Layer
+ * OWNARA — Database Concurrency Abstraction Layer
  *
  * Makes the runtime database-portable: the same codebase runs on
  *   • SQLite  — for local development, demos, and single-tenant design-partner

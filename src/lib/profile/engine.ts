@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Employee Profile Engine (EMP-001)
+ * OWNARA — Employee Profile Engine (EMP-001)
  *
  * Every AI Employee has one persistent profile representing its professional career.
  * Think: LinkedIn profile + performance review + resume + trust history.

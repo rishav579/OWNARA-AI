@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Mandate Strategy Selector
+ * OWNARA — Mandate Strategy Selector
  *
  * This is the PROOF that the Mandate is NOT a fixed workflow.
  *

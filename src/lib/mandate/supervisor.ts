@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Mandate Supervisor
+ * OWNARA — Mandate Supervisor
  *
  * The continuous-execution loop that makes a Mandate ALIVE. Without this, a
  * Mandate is just a declaration. With it, a Mandate continuously:

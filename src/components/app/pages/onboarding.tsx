@@ -259,7 +259,7 @@ export function OnboardingPage() {
     try {
       const result = await api.onboarding.demo();
       setAccessToken(result.accessToken);
-      window.sessionStorage.setItem("bihari_token", result.accessToken);
+      window.sessionStorage.setItem("ownara_token", result.accessToken);
       const fullUser = {
         ...result.user,
         workspaceId: result.workspace.id,

@@ -1,5 +1,5 @@
-// BIHARI AI — Database seed script (clean V1)
-// Run with: bun run scripts/seed.ts
+// OWNARA — Database seed script (clean V1)
+// Run with: npm run seed (or npx tsx scripts/seed.ts)
 //
 // Seeds ONLY infrastructure: user, workspace, templates, tools, employees,
 // knowledge documents. No tasks, steps, approvals, audit logs, or notifications.
@@ -10,7 +10,7 @@ import bcrypt from "bcryptjs";
 const db = new PrismaClient();
 
 async function main() {
-  console.log("🌱 Seeding BIHARI AI database (clean V1 — no fake execution data)...");
+  console.log("🌱 Seeding OWNARA database (clean V1 — no fake execution data)...");
 
   // Clean slate — wipe everything (order matters for FK constraints)
   // Delete child tables first, then parent tables
@@ -80,12 +80,12 @@ async function main() {
   });
 
   // ─── Demo Account (permanent demo login for design partners) ───────────────
-  // demo@bihari.ai / BihariDemo@2026!
+  // demo@ownara.com / OwnaraDemo@2026!
   // Same workspace as Rishav — the demo viewer sees the same company.
-  const demoHash = await bcrypt.hash("BihariDemo@2026!", 10);
+  const demoHash = await bcrypt.hash("OwnaraDemo@2026!", 10);
   const demoUser = await db.user.create({
     data: {
-      email: "demo@bihari.ai",
+      email: "demo@ownara.com",
       passwordHash: demoHash,
       name: "Demo Viewer",
       emailVerifiedAt: new Date(),
@@ -125,7 +125,7 @@ async function main() {
     },
   });
   console.log("  ✓ Created workspace: Acme Trading");
-  console.log("  ✓ Demo account: demo@bihari.ai / BihariDemo@2026!");
+  console.log("  ✓ Demo account: demo@ownara.com / OwnaraDemo@2026!");
 
   // ─── Templates ────────────────────────────────────────────────────────────
   // V1 ships only the Finance Employee template. Future employee templates
@@ -503,7 +503,7 @@ async function main() {
   console.log("  ✓ Computed Mandate health score from live receivables data");
 
   console.log("\n✅ V1 seed complete!");
-  console.log("   Login (demo):   demo@bihari.ai / BihariDemo@2026!");
+  console.log("   Login (demo):   demo@ownara.com / OwnaraDemo@2026!");
   console.log("   Login (owner):  rishav@acmetrading.in / demo-password");
   console.log("   Workspace: acme-trading");
   console.log("   1 Finance Employee (Kavya), 1 active Mandate, 5 customers, 8 invoices.");

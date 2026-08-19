@@ -1,8 +1,8 @@
 /**
- * BIHARI AI — Capability Engine
+ * OWNARA — Capability Engine
  *
  * Enterprise-grade least-privilege authorization. Every tool execution
- * in BIHARI AI must pass through capability verification before execution.
+ * in OWNARA must pass through capability verification before execution.
  *
  * Architecture:
  * - Capabilities are system-defined (e.g., "invoice.read", "reminder.send")

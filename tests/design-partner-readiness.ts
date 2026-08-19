@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Design Partner Pilot Readiness Test
+ * OWNARA — Design Partner Pilot Readiness Test
  *
  * THE FINAL ACCEPTANCE GATE.
  *
@@ -36,11 +36,11 @@ async function api(path: string, method: string, body?: any, token?: string) {
 
 async function main() {
   console.log("╔══════════════════════════════════════════════════════════╗");
-  console.log("║  BIHARI AI — Design Partner Pilot Readiness Test        ║");
+  console.log("║  OWNARA — Design Partner Pilot Readiness Test        ║");
   console.log("║  25 Verification Points                                 ║");
   console.log("╚══════════════════════════════════════════════════════════╝\n");
 
-  const testEmail = `pilot-test-${Date.now()}@bihari.ai`;
+  const testEmail = `pilot-test-${Date.now()}@ownara.com`;
   console.log(`Test email: ${testEmail}\n`);
 
   try {
@@ -54,7 +54,7 @@ async function main() {
     const workspaceId = signupRes.data.data?.workspace?.id;
 
     // ─── 2. Workspace starts isolated ────────────────────────────────────
-    const demoLogin = await api("/api/auth/login", "POST", { email: "demo@bihari.ai", password: "BihariDemo@2026!" });
+    const demoLogin = await api("/api/auth/login", "POST", { email: "demo@ownara.com", password: "OwnaraDemo@2026!" });
     const demoToken = demoLogin.data.data?.accessToken;
     const demoMandates = await api("/api/mandates", "GET", undefined, demoToken);
     const pilotMandateInDemo = (demoMandates.data.data || []).find((m: any) => m.workspaceId === workspaceId);

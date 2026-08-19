@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — API Rate Limiter
+ * OWNARA — API Rate Limiter
  *
  * Simple in-memory rate limiter for API routes.
  * Tracks requests per IP address within a sliding window.

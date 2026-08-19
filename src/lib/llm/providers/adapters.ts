@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — LLM Provider Adapters
+ * OWNARA — LLM Provider Adapters
  *
  * Each adapter implements the LLMProvider interface. The gateway uses whichever
  * adapter is configured via environment variables.

@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Email Service
+ * OWNARA — Email Service
  *
  * Sends transactional emails via SMTP (SendGrid, AWS SES, or any SMTP relay).
  *
@@ -8,8 +8,8 @@
  *   SMTP_PORT      — relay port (e.g. 587)
  *   SMTP_USER      — relay username (e.g. apikey for SendGrid)
  *   SMTP_PASS      — relay password (e.g. SendGrid API key)
- *   SMTP_FROM      — from email address (e.g. noreply@bihari.ai)
- *   SMTP_FROM_NAME — from display name (e.g. "BIHARI AI")
+ *   SMTP_FROM      — from email address (e.g. noreply@ownara.com)
+ *   SMTP_FROM_NAME — from display name (e.g. "OWNARA")
  *
  * If SMTP_HOST is not set, the service operates in "log mode" — emails are
  * logged to the console instead of sent. This allows development without

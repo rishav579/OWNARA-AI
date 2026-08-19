@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * BIHARI AI — Security Middleware
+ * OWNARA — Security Middleware
  *
  * Adds production security headers and basic CORS handling.
  * Does NOT implement business logic — only HTTP-level safety.

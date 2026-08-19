@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — LLM Gateway (Provider-Agnostic with Automatic Failover)
+ * OWNARA — LLM Gateway (Provider-Agnostic with Automatic Failover)
  *
  * The single entry point for all LLM calls in the system. Combines:
  * - Model routing (selects provider + model based on task type)

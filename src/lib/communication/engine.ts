@@ -1,7 +1,7 @@
 /**
- * BIHARI AI — AI Employee Communication Engine (COMM-001)
+ * OWNARA — AI Employee Communication Engine (COMM-001)
  *
- * The universal messaging layer for every AI Employee in BIHARI AI.
+ * The universal messaging layer for every AI Employee in OWNARA.
  * Allows AI Employees to communicate with humans, other AI Employees,
  * and future external systems using structured business communication.
  *

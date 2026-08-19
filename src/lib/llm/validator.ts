@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — JSON Response Validator
+ * OWNARA — JSON Response Validator
  *
  * Validates LLM responses against expected JSON schemas and attempts
  * automatic repair when validation fails.

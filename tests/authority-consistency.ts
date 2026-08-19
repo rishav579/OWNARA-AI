@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Authority Consistency Test Suite
+ * OWNARA — Authority Consistency Test Suite
  *
  * Tests that the Mandate's authority is the authoritative business-policy
  * boundary, and that employee capabilities/approvalRules cannot override it.
@@ -29,7 +29,7 @@ function record(test: string, ok: boolean, detail: string) {
 
 async function main() {
   console.log("╔══════════════════════════════════════════════════════════╗");
-  console.log("║  BIHARI AI — Authority Consistency Test Suite           ║");
+  console.log("║  OWNARA — Authority Consistency Test Suite           ║");
   console.log("╚══════════════════════════════════════════════════════════╝\n");
 
   const { resolveEffectiveAuthority, checkAuthority } = await import("../src/lib/mandate/engine");
@@ -93,7 +93,7 @@ async function main() {
   // ─── Test E: Employee replacement cannot change Mandate authority ───────
   console.log("\n── E. Employee replacement cannot change Mandate authority ──");
   try {
-    const demoUser = await db.user.findUnique({ where: { email: "demo@bihari.ai" } });
+    const demoUser = await db.user.findUnique({ where: { email: "demo@ownara.com" } });
     const wsMember = demoUser ? await db.workspaceMember.findFirst({ where: { userId: demoUser.id } }) : null;
     const workspace = wsMember ? await db.workspace.findUnique({ where: { id: wsMember.workspaceId } }) : null;
 
@@ -137,7 +137,7 @@ async function main() {
   // ─── Test F: Mandate pause → no consequential execution ─────────────────
   console.log("\n── F. Mandate pause → no consequential execution ──");
   try {
-    const demoUser = await db.user.findUnique({ where: { email: "demo@bihari.ai" } });
+    const demoUser = await db.user.findUnique({ where: { email: "demo@ownara.com" } });
     const wsMember = demoUser ? await db.workspaceMember.findFirst({ where: { userId: demoUser.id } }) : null;
     const workspace = wsMember ? await db.workspace.findUnique({ where: { id: wsMember.workspaceId } }) : null;
 

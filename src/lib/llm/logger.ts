@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — LLM Request/Response Logger
+ * OWNARA — LLM Request/Response Logger
  *
  * Logs every LLM call to the database (LlmUsage table) and to the console.
  * Records: provider, model, task type, prompt ID, token usage, estimated

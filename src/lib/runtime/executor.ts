@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Task Executor
+ * OWNARA — Task Executor
  *
  * Processes a single step of a task. The worker calls this function once per
  * poll tick. This is the heart of the trust loop:

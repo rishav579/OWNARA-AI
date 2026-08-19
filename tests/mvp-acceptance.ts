@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — MVP 1 Acceptance Test Suite
+ * OWNARA — MVP 1 Acceptance Test Suite
  *
  * Tests the critical paths that prove the Mandate is a genuine new unit of
  * organizational work — not a renamed task.
@@ -42,15 +42,15 @@ async function test(label: string, fn: () => Promise<void>) {
 
 async function main() {
   console.log("╔══════════════════════════════════════════════════════════╗");
-  console.log("║  BIHARI AI — MVP 1 Acceptance Test Suite                ║");
+  console.log("║  OWNARA — MVP 1 Acceptance Test Suite                ║");
   console.log("╚══════════════════════════════════════════════════════════╝");
 
   // ─── Setup: find the demo workspace + mandate ────────────────────────────
-  const demoUser = await db.user.findUnique({ where: { email: "demo@bihari.ai" } });
+  const demoUser = await db.user.findUnique({ where: { email: "demo@ownara.com" } });
   const workspaceMember = demoUser ? await db.workspaceMember.findFirst({ where: { userId: demoUser.id } }) : null;
   const workspace = workspaceMember ? await db.workspace.findUnique({ where: { id: workspaceMember.workspaceId } }) : null;
 
-  assert(!!demoUser, "Demo account (demo@bihari.ai) exists");
+  assert(!!demoUser, "Demo account (demo@ownara.com) exists");
   assert(!!workspace, "Demo workspace exists");
 
   if (!workspace) {
@@ -210,7 +210,7 @@ async function main() {
     // Create a second workspace + user
     const secondUser = await db.user.create({
       data: {
-        email: "isolation-test@bihari.ai",
+        email: "isolation-test@ownara.com",
         passwordHash: "test",
         name: "Isolation Test",
         status: "active",

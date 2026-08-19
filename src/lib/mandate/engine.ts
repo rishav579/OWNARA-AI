@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Mandate Engine
+ * OWNARA — Mandate Engine
  *
  * The core logic for the Mandate primitive: a persistent, self-executing,
  * authority-bearing, outcome-bound, accountable unit of organizational intent.

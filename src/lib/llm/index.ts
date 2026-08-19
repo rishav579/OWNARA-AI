@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — LLM Gateway Barrel Export
+ * OWNARA — LLM Gateway Barrel Export
  *
  * Single import point for all LLM gateway functionality.
  *

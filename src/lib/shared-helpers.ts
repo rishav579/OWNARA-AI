@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Shared API Helpers
+ * OWNARA — Shared API Helpers
  *
  * Single source of truth for constants and helpers used across API routes.
  * Eliminates the duplicate AVATAR_COLORS, ROLE_LABELS, and translateBusiness

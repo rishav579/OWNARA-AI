@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Grant Mandate Page
+ * OWNARA — Grant Mandate Page
  *
  * The act of ENTRUSTING. Instead of "Create Task" (imperative, one-shot),
  * the grantor declares a DESIRED STATE and confers AUTHORITY to an AI tenant

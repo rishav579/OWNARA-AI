@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Finance-Aware Planner (Finance Brain Integration)
+ * OWNARA — Finance-Aware Planner (Finance Brain Integration)
  *
  * This planner now uses the Finance Brain's structured recommendations
  * instead of raw invoice data. Every step's reasoning comes from the

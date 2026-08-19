@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — LLM Gateway Types
+ * OWNARA — LLM Gateway Types
  *
  * Provider-agnostic types that all providers, the router, the gateway facade,
  * and the executor use. No provider-specific types leak here.

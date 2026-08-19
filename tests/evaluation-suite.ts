@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Mandate Evaluation Suite
+ * OWNARA — Mandate Evaluation Suite
  *
  * 10 deterministic business scenarios that prove the strategy selector
  * responds correctly to different observed states — including memory-influenced
@@ -28,7 +28,7 @@ function record(scenario: string, ok: boolean, detail: string) {
 
 async function main() {
   console.log("╔══════════════════════════════════════════════════════════╗");
-  console.log("║  BIHARI AI — Mandate Evaluation Suite (10 Scenarios)    ║");
+  console.log("║  OWNARA — Mandate Evaluation Suite (10 Scenarios)    ║");
   console.log("╚══════════════════════════════════════════════════════════╝\n");
 
   const { selectStrategy } = await import("../src/lib/mandate/strategy-selector");

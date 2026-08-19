@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Employee Memory Service
+ * OWNARA — Employee Memory Service
  *
  * Generic persistent memory for ALL AI Employees. Not finance-specific.
  *

@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Autonomous Learning & Skill Evolution Engine (EMP-002)
+ * OWNARA — Autonomous Learning & Skill Evolution Engine (EMP-002)
  *
  * Transforms the Employee Profile from a static record into a continuously
  * learning workforce. Every completed task generates a deterministic Outcome

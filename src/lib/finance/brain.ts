@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Finance Brain
+ * OWNARA — Finance Brain
  *
  * The reasoning layer that transforms the Finance Employee from a workflow
  * engine into an intelligent Accounts Receivable Manager.

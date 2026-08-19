@@ -36,7 +36,7 @@ This guide details how to deploy OWNARA to Railway with 3 decoupled services:
 
 ### Step 2: Deploy Web Service
 1. In the same project, click **New** → **GitHub Repo** → select `OWNARA-AI`.
-2. Name the service: `ownara-web`.
+2. Name the service: `web`.
 3. Configure **Variables**:
    - `DATABASE_URL`: `${{Postgres.DATABASE_URL}}` *(Railway Reference Variable)*
    - `JWT_SECRET`: Generate a random 64-char string (e.g. `openssl rand -base64 48`)
@@ -57,30 +57,29 @@ This guide details how to deploy OWNARA to Railway with 3 decoupled services:
    - **Public Networking**: Enable Public Domain (generates HTTPS endpoint)
 
 ### Step 3: Initialize Database Schema & Seed Data
-In Railway CLI or via one-off Railway deployment command on `bihari-web`:
+In Railway CLI or via one-off command pointing to the Railway database:
 ```bash
 npx prisma db push --accept-data-loss
 npx tsx scripts/seed.ts
 ```
 
 ### Step 4: Deploy Worker Service
-1. Click **New** → **GitHub Repo** → select `BIHARI_AI` (same repository).
-2. Name the service: `bihari-worker`.
+1. Click **New** → **GitHub Repo** → select `OWNARA-AI` (same repository).
+2. Name the service: `worker`.
 3. Configure **Variables** (Shared with Web service):
    - `DATABASE_URL`: `${{Postgres.DATABASE_URL}}`
-   - `JWT_SECRET`: `${{bihari-web.JWT_SECRET}}`
+   - `JWT_SECRET`: `${{web.JWT_SECRET}}`
    - `LLM_PROVIDER`: `gemini`
    - `LLM_MODEL`: `gemini-3.6-flash`
-   - `GEMINI_API_KEY`: `${{bihari-web.GEMINI_API_KEY}}`
-   - `SMTP_HOST`: `${{bihari-web.SMTP_HOST}}`
-   - `SMTP_PORT`: `${{bihari-web.SMTP_PORT}}`
-   - `SMTP_USER`: `${{bihari-web.SMTP_USER}}`
-   - `SMTP_PASS`: `${{bihari-web.SMTP_PASS}}`
-   - `SMTP_FROM`: `${{bihari-web.SMTP_FROM}}`
+   - `GEMINI_API_KEY`: `${{web.GEMINI_API_KEY}}`
+   - `SMTP_HOST`: `${{web.SMTP_HOST}}`
+   - `SMTP_PORT`: `${{web.SMTP_PORT}}`
+   - `SMTP_USER`: `${{web.SMTP_USER}}`
+   - `SMTP_PASS`: `${{web.SMTP_PASS}}`
+   - `SMTP_FROM`: `${{web.SMTP_FROM}}`
    - `NODE_ENV`: `production`
 4. Under **Settings**:
-   - **Build Command**: `npx prisma generate && npm run build`
-   - **Start Command**: `npx tsx scripts/worker.ts`
+   - **Start Command**: `node dist/worker.js`
    - **Public Networking**: Disabled (internal background worker)
 
 ---

@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Prompt Registry
+ * OWNARA — Prompt Registry
  *
  * A versioned prompt management system that:
  * - Stores prompt templates with versioning

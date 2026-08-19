@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Failure Taxonomy Engine
+ * OWNARA — Failure Taxonomy Engine
  *
  * Classifies task failures into a structured taxonomy so that:
  *   • Failures are queryable and aggregatable (not just free-text)

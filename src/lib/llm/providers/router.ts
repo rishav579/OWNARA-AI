@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Model Router (Provider-Agnostic, Gemini-First)
+ * OWNARA — Model Router (Provider-Agnostic, Gemini-First)
  *
  * Selects the best provider + model for a given task type.
  *

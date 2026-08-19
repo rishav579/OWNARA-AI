@@ -65,7 +65,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   // On mount, try to restore session from memory (token set at login)
   useEffect(() => {
     // Check if we have a token from a previous login this session
-    const token = typeof window !== "undefined" ? window.sessionStorage.getItem("bihari_token") : null;
+    const token = typeof window !== "undefined" ? window.sessionStorage.getItem("ownara_token") : null;
     if (token) {
       let cancelled = false;
       setAccessToken(token);
@@ -84,7 +84,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
         setLoading(false);
       }).catch(() => {
         if (cancelled) return;
-        window.sessionStorage.removeItem("bihari_token");
+        window.sessionStorage.removeItem("ownara_token");
         setAccessToken(null);
         setLoading(false);
       });
@@ -103,7 +103,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
     const res = await api.auth.login(email, password);
     setAccessToken(res.accessToken);
     setRefreshToken(res.refreshToken || null);
-    window.sessionStorage.setItem("bihari_token", res.accessToken);
+    window.sessionStorage.setItem("ownara_token", res.accessToken);
     const ws = res.workspaces[0];
     const fullUser = {
       ...res.user,
@@ -120,7 +120,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
     const res = await api.auth.signup(data);
     setAccessToken(res.accessToken);
     setRefreshToken(res.refreshToken || null);
-    window.sessionStorage.setItem("bihari_token", res.accessToken);
+    window.sessionStorage.setItem("ownara_token", res.accessToken);
     const fullUser = {
       ...res.user,
       workspaceId: res.workspace.id,
@@ -142,7 +142,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
     setRefreshToken(null);
     setCurrentUser(null);
     setUser(null);
-    window.sessionStorage.removeItem("bihari_token");
+    window.sessionStorage.removeItem("ownara_token");
     window.location.hash = "#/login";
   }, []);
 

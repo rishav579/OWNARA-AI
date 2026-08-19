@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Environment Validation
+ * OWNARA — Environment Validation
  *
  * Validates critical environment variables at startup.
  * In production, missing required variables cause a hard failure.

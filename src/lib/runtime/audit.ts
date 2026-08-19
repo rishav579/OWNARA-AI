@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Audit Writer
+ * OWNARA — Audit Writer
  *
  * Writes hash-chained audit entries within the same transaction as state changes.
  * This is the trust foundation: every action the runtime takes is recorded here,

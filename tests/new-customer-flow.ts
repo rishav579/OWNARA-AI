@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Gate S: New Customer Flow Test
+ * OWNARA — Gate S: New Customer Flow Test
  *
  * THE MOST IMPORTANT TEST.
  *
@@ -50,13 +50,13 @@ async function api(path: string, method: string, body?: any, token?: string) {
 
 async function main() {
   console.log("╔══════════════════════════════════════════════════════════╗");
-  console.log("║  BIHARI AI — Gate S: New Customer Flow Test             ║");
+  console.log("║  OWNARA — Gate S: New Customer Flow Test             ║");
   console.log("╚══════════════════════════════════════════════════════════╝");
   console.log("\nThis test proves a fresh customer can go from signup to active");
   console.log("Mandate without developer intervention.\n");
 
   // ─── Clean up any previous test data ─────────────────────────────────────
-  const testEmail = `newcustomer-test-${Date.now()}@bihari.ai`;
+  const testEmail = `newcustomer-test-${Date.now()}@ownara.com`;
   console.log(`Test email: ${testEmail}`);
 
   try {
@@ -213,8 +213,8 @@ async function main() {
     console.log("\n── 13. WORKSPACE ISOLATION ──");
     // The demo workspace should NOT see this test workspace's data
     const demoLoginRes = await api("/api/auth/login", "POST", {
-      email: "demo@bihari.ai",
-      password: "BihariDemo@2026!",
+      email: "demo@ownara.com",
+      password: "OwnaraDemo@2026!",
     });
     const demoToken = demoLoginRes.data.data?.accessToken;
     if (demoToken) {

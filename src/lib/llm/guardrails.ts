@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — LLM Guardrails
+ * OWNARA — LLM Guardrails
  *
  * Input and output safety checks that run BEFORE and AFTER every LLM call.
  *

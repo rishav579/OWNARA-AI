@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Worker Poll Loop
+ * OWNARA — Worker Poll Loop
  *
  * Continuously polls for runnable tasks and processes them one step at a time.
  *

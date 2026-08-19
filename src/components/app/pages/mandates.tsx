@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Mandates List Page
+ * OWNARA — Mandates List Page
  *
  * The fundamental primitive, visible. This is NOT a task list. Each card is a
  * PERSISTENT ORGANIZATIONAL RESPONSIBILITY entrusted to an AI tenant — a

@@ -1,5 +1,5 @@
 /**
- * BIHARI AI — Staging Services Verification Script
+ * OWNARA — Staging Services Verification Script
  *
  * Verifies:
  * 1. Gemini LLM Gateway server-side completion & mock fallback
@@ -15,7 +15,7 @@ import { validateEnv } from "../src/lib/env";
 
 async function main() {
   console.log("╔══════════════════════════════════════════════════════════╗");
-  console.log("║  BIHARI AI — Staging Services Verification              ║");
+  console.log("║  OWNARA — Staging Services Verification              ║");
   console.log("╚══════════════════════════════════════════════════════════╝\n");
 
   // ─── 1. Environment & Concurrency Check ─────────────────────────────────
@@ -88,7 +88,7 @@ async function main() {
         from: '"OWNARA Staging" <noreply@ownara.com>',
         to: "pilot-test-customer@example.in",
         subject: "Staging Test Invoice Reminder: INV-2025-001",
-        text: "This is a controlled verification email for BIHARI AI staging.",
+        text: "This is a controlled verification email for OWNARA staging.",
       });
 
       console.log(`  ✅ Controlled SMTP Delivery SUCCESS!`);
