@@ -2,85 +2,352 @@
 
 **Governed AI Execution for Delegated Business Responsibilities**
 
-OWNARA is a governed AI execution system where businesses delegate persistent operational responsibilities—called **Mandates**—to specialized AI operators with strict authority boundaries, mandatory human approval gates, and cryptographic auditability.
+OWNARA is an AI-powered business operations system designed around a simple idea:
 
-The current production implementation features **Kavya**, an AI accounts receivable and invoice collections operator for B2B businesses.
+> **Instead of asking AI to perform isolated tasks, give an AI operator a persistent business responsibility — with clear authority boundaries, human approval, and an auditable execution trail.**
+
+The system represents responsibilities as **Mandates**. Each Mandate defines what an AI operator is responsible for, what actions it is allowed to take, when human approval is required, and how every decision is recorded.
+
+The current implementation focuses on **Kavya**, an AI Accounts Receivable operator for B2B businesses.
 
 ---
 
-## How It Works
+## What OWNARA Does
 
-OWNARA operates via a continuous 5-stage governed execution loop:
+Kavya is responsible for maintaining healthy receivables.
 
+The system continuously evaluates receivables data, identifies collection risks, proposes actions, waits for human approval when an action is consequential, executes the approved action, and records the complete execution history.
+
+### The governed execution loop
+
+```text
+┌──────────────┐
+│   OBSERVE    │
+│ Receivables  │
+│ State & Risk │
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐
+│    REASON    │
+│ Strategy &   │
+│ Reminders    │
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐
+│   APPROVE    │
+│ Human Review │
+│    Gate      │
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐
+│   EXECUTE    │
+│ Approved     │
+│ Actions      │
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐
+│    AUDIT     │
+│ Hash-Chained │
+│ Ledger       │
+└──────────────┘
 ```
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│   OBSERVE    │ ──► │    REASON    │ ──► │   APPROVE    │ ──► │   EXECUTE    │ ──► │    AUDIT     │
-│ Receivables  │     │ Strategy &   │     │ Human Review │     │ SMTP Email   │     │ SHA-256 Hash │
-│ State & Risk │     │ Reminders    │     │ Gate Locked  │     │ Delivery     │     │ Ledger & XP  │
-└──────────────┘     └──────────────┘     └──────────────┘     └──────────────┘     └──────────────┘
+
+### 1. Observe
+
+The operator evaluates:
+
+* Accounts receivable state
+* Invoice aging buckets
+* Customer credit profiles
+* Previous payment-response history
+* Outstanding and overdue invoices
+
+### 2. Reason
+
+The system determines an appropriate recovery strategy, such as:
+
+* Prioritizing high-value overdue accounts
+* Investigating disputed invoices
+* Escalating unresponsive customers
+* Drafting targeted payment reminders
+
+### 3. Approve
+
+Consequential actions do not execute immediately.
+
+OWNARA generates a canonical **Execution Contract** containing the proposed action and its authority context.
+
+The contract is cryptographically hashed and presented to a human reviewer before execution.
+
+### 4. Execute
+
+Once approved, the action is executed through the configured communication layer.
+
+The current implementation uses **transactional SMTP email**.
+
+### 5. Audit
+
+Every important decision and execution event is recorded in a tamper-evident audit ledger using:
+
+* Monotonic sequence numbers
+* SHA-256 hash chaining
+* PostgreSQL transaction controls
+* Execution contracts
+* Operator performance metrics
+
+---
+
+# Current Implementation
+
+## Kavya — AI Accounts Receivable Operator
+
+Kavya is the first specialized AI operator implemented inside OWNARA.
+
+Her current Mandate is:
+
+> **Maintain Healthy Receivables**
+
+The system evaluates the persistent objective:
+
+```text
+overdueRate <= 0.15
 ```
 
-1. **Observe:** Inspects accounts receivable data, invoice aging buckets (1–30d, 31–60d, 61–90d, 90+d), customer credit profiles, and previous response history.
-2. **Reason:** Formulates targeted recovery strategies (e.g. prioritize high-value, investigate disputed invoices, escalate unresponsive debtors) and drafts tailored payment reminders.
-3. **Approve:** Pauses consequential actions before sending. Generates a canonical 17-field cryptographic Execution Contract (`EC-xxxx`) with a SHA-256 hash that locks upon human review.
-4. **Execute:** Delivers approved communication via verified SMTP email relay.
-5. **Audit:** Records every decision, approval, and outcome to a monotonic, hash-chained ledger and updates operator performance metrics.
+and selects appropriate strategies based on the current receivables state.
 
 ---
 
-## Current Scope & Limitations
+## Core Capabilities
 
-### Implemented Today
-- **Kavya (AI Finance Operator):** Specialized in B2B Accounts Receivable collections and overdue invoice follow-up.
-- **Mandate Engine & Supervisor:** Autonomous evaluation of persistent objectives (`overdueRate <= 0.15`) with dynamic strategy selection.
-- **Decision Center:** Human-in-the-loop review interface with contract inspection, diffs, and 1-click approvals/rejections.
-- **Tamper-Evident Audit Ledger:** Monotonic sequence numbers with SHA-256 hash chaining and PostgreSQL advisory transaction locks.
-- **Deterministic Evaluation Engine:** Post-task scorecards, skill leveling, and career timeline tracking.
-- **Multi-Provider LLM Gateway:** Server-side routing for Google Gemini (`gemini-3.6-flash` default), OpenAI, and Anthropic with deterministic fallbacks.
-- **CSV Data Importer:** Support for customer and invoice CSV file ingestion with GSTIN and payment term validation.
+### Mandate Engine
 
-### Explicitly Not Implemented / Out of Current Scope
-- **No Live Accounting Sync:** Automated two-way sync with Tally, Zoho Books, QuickBooks, or Stripe is not yet active (invoice data is imported via CSV).
-- **No Document RAG / Vector Search:** Document uploads record metadata only; embeddings and vector database retrieval are not active.
-- **No WhatsApp or Voice Collections:** Communication is delivered strictly via transactional email over SMTP.
-- **No Multi-Employee Suite:** Kavya (Accounts Receivable) is the single active operator; general Sales, HR, or Operations agents are not implemented.
+Persistent business objectives are represented as Mandates rather than isolated prompts.
+
+The Mandate Supervisor continuously evaluates whether the objective is being satisfied and determines when another execution cycle is required.
+
+### Human-in-the-Loop Decision Center
+
+Before consequential actions are executed, the proposed action can be reviewed by a human.
+
+The interface provides:
+
+* Proposed action
+* Authority context
+* Execution Contract
+* Action diff
+* Approval
+* Rejection
+
+### Tamper-Evident Audit Ledger
+
+OWNARA records the execution history using a hash-chained ledger.
+
+Each event contains deterministic sequencing and cryptographic linkage to previous events, making unauthorized modification easier to detect.
+
+### Multi-Provider LLM Gateway
+
+The backend supports provider adapters for:
+
+* Google Gemini
+* OpenAI
+* Anthropic
+
+The default configuration uses Google Gemini.
+
+### Deterministic Evaluation
+
+The project includes automated evaluation capabilities for measuring operator behavior across predefined Mandate scenarios.
+
+Evaluation includes:
+
+* Task outcomes
+* Authority compliance
+* Decision quality
+* Execution behavior
+* Operator skill progression
+
+### CSV Data Import
+
+Customer and invoice information can be imported through CSV files with validation for fields such as:
+
+* GSTIN
+* Payment terms
+* Customer information
+* Invoice information
 
 ---
 
-## Architecture & Deployment Topology
+# Architecture
 
-OWNARA runs as two concurrent services connected to PostgreSQL:
+OWNARA currently runs as a two-service application backed by PostgreSQL.
 
-1. **Web Service (Next.js 16 + React 19):** Serves the single-page application and REST API routes on port 3000.
-2. **Worker Service (Node.js / tsx):** Runs the background runtime engine, mandate supervisor, task executor, and audit writer.
+```text
+                    ┌─────────────────────────┐
+                    │       Web Service       │
+                    │                         │
+                    │ Next.js 16 + React 19   │
+                    │ UI + API Routes         │
+                    └────────────┬────────────┘
+                                 │
+                                 ▼
+                    ┌─────────────────────────┐
+                    │      Mandate Engine      │
+                    │                           │
+                    │ Supervisor / Authority   │
+                    │ Decision / Execution     │
+                    └────────────┬────────────┘
+                                 │
+                                 ▼
+                    ┌─────────────────────────┐
+                    │      Worker Service      │
+                    │                           │
+                    │ Background Runtime       │
+                    │ Task Execution            │
+                    │ Audit Processing          │
+                    └────────────┬────────────┘
+                                 │
+                    ┌────────────┴────────────┐
+                    ▼                         ▼
+             ┌──────────────┐         ┌──────────────┐
+             │ PostgreSQL   │         │ LLM Gateway  │
+             │              │         │ Gemini /     │
+             │ State / Audit│         │ OpenAI /     │
+             │ / Mandates   │         │ Anthropic    │
+             └──────────────┘         └──────────────┘
+```
 
-For cloud deployment instructions, see [Railway Staging Deployment Guide](./docs/RAILWAY-DEPLOYMENT.md).
+### Technology Stack
+
+| Layer              | Technology                              |
+| ------------------ | --------------------------------------- |
+| Frontend           | Next.js 16, React 19                    |
+| Backend            | Next.js API Routes / Node.js            |
+| Database           | PostgreSQL                              |
+| ORM                | Prisma                                  |
+| AI                 | Gemini / OpenAI / Anthropic adapters    |
+| Background Runtime | Node.js / TypeScript                    |
+| Email              | SMTP                                    |
+| Authentication     | JWT                                     |
+| Evaluation         | Deterministic scenario-based evaluation |
+| Deployment         | Railway / Docker                        |
 
 ---
 
-## Prerequisites
+# Governance Model
 
-- **Node.js 20+** and **npm**
-- **PostgreSQL 16+** (local or managed — Railway, Supabase, RDS, Neon)
-- **Google Gemini API Key** (Server-side `GEMINI_API_KEY`)
+OWNARA is intentionally designed around **authority**, not just intelligence.
+
+An AI operator should not automatically have unlimited permission to act.
+
+The execution model therefore separates:
+
+```text
+Intent
+  ↓
+Authority
+  ↓
+Decision
+  ↓
+Approval
+  ↓
+Execution
+  ↓
+Audit
+```
+
+This creates a boundary between:
+
+* What the business wants
+* What the AI recommends
+* What the AI is authorized to do
+* What requires human approval
+* What was actually executed
+* What happened afterward
+
+This governance layer is the core architectural idea behind OWNARA.
 
 ---
 
-## Local Development Setup
+# Current Scope & Limitations
 
-### 1. Install Dependencies
+OWNARA is currently a **portfolio and engineering prototype**, not a production accounting or collections platform.
+
+The repository intentionally does not claim real enterprise customers, real financial outcomes, or production-scale performance.
+
+## Implemented
+
+* Kavya AI Accounts Receivable operator
+* Mandate engine
+* Mandate supervisor
+* Human approval workflow
+* Execution Contracts
+* Hash-chained audit ledger
+* PostgreSQL persistence
+* Deterministic evaluation engine
+* Multi-provider LLM gateway
+* CSV customer/invoice ingestion
+* Transactional email execution
+* JWT authentication
+* Background worker runtime
+
+## Not Yet Implemented
+
+### Live accounting integrations
+
+There is currently no active two-way integration with:
+
+* Tally
+* Zoho Books
+* QuickBooks
+* Stripe
+
+Invoice and customer data is currently imported through CSV.
+
+### Document RAG
+
+Document upload metadata exists, but the project does not currently implement a production vector-search/RAG pipeline.
+
+### WhatsApp / Voice Collections
+
+Communication currently uses transactional email.
+
+WhatsApp and voice-based collections are outside the current implementation.
+
+### Multiple AI Employees
+
+Kavya is currently the primary active operator.
+
+General Sales, HR, Operations, and other AI employees are not yet implemented as separate production operators.
+
+---
+
+# Local Development
+
+## Requirements
+
+* Node.js 20+
+* npm
+* PostgreSQL 16+
+* Gemini API key
+
+## Install
 
 ```bash
 npm install --legacy-peer-deps
 ```
 
-### 2. Configure Environment
+## Configure environment
 
 ```bash
 cp .env.example .env
 ```
 
-Set the required variables in `.env`:
+Example:
+
 ```env
 DATABASE_URL="postgresql://user:password@localhost:5432/ownara?schema=public"
 JWT_SECRET="replace-with-a-random-secret-at-least-32-chars-long"
@@ -90,72 +357,143 @@ GEMINI_API_KEY="your-gemini-api-key"
 NODE_ENV="development"
 ```
 
-### 3. Initialize Database Schema
+## Initialize database
 
 ```bash
 npx prisma db push --accept-data-loss
 ```
 
-### 4. Seed Database (Optional)
+## Seed demo data
 
 ```bash
 npx tsx scripts/seed.ts
 ```
 
-### 5. Start Web Server
+## Start the web application
 
 ```bash
 npm run dev
 ```
-The application will be accessible at **http://localhost:3000**.
 
-### 6. Start Background Worker
+Open:
 
-In a separate terminal window:
+```text
+http://localhost:3000
+```
+
+## Start the background worker
+
+In a second terminal:
+
 ```bash
 npm run worker
 ```
 
 ---
 
-## Available Scripts
+# Available Scripts
 
-| Command | Description |
-|---|---|
-| `npm run dev` | Start Next.js development server on port 3000 |
-| `npm run worker` | Start background runtime execution worker (`scripts/worker.ts`) |
-| `npm run build` | Build standalone production bundle (`.next/standalone/`) |
-| `npm run start` | Start standalone production server (`node .next/standalone/server.js`) |
-| `npm run lint` | Run ESLint static analysis |
-| `npm run test:authority` | Run authority and permission boundary test suite |
-| `npm run test` | Run core MVP acceptance test suite |
-| `npm run test:evaluation` | Run 20-scenario mandate evaluation test suite |
-| `npm run test:staging` | Run controlled staging service verification (Gemini, SMTP, DB) |
-| `npm run db:push` | Push Prisma schema directly to PostgreSQL |
-| `npm run db:generate` | Regenerate Prisma client |
-
----
-
-## Environment Variables Reference
-
-| Variable | Required | Default / Format | Description |
-|---|---|---|---|
-| `DATABASE_URL` | **Yes** | `postgresql://...` | Connection URL for PostgreSQL database |
-| `JWT_SECRET` | **Yes** | String (≥ 32 chars) | Secret key used for signing JWT access & refresh tokens |
-| `LLM_PROVIDER` | **Yes** | `gemini` | Primary LLM provider adapter |
-| `LLM_MODEL` | No | `gemini-3.6-flash` | Gemini model selection |
-| `GEMINI_API_KEY` | **Yes** | String | Google AI Studio server-side API key |
-| `SMTP_HOST` | No | Hostname | Outbound email relay host (e.g. `smtp.sendgrid.net`) |
-| `SMTP_PORT` | No | `587` | Outbound email relay port |
-| `SMTP_USER` | No | String | SMTP authentication username |
-| `SMTP_PASS` | No | String | SMTP authentication password / API key |
-| `SMTP_FROM` | No | `noreply@ownara.com` | Outbound email sender address |
-| `SMTP_FROM_NAME` | No | `OWNARA` | Outbound email sender display name |
-| `CORS_ALLOWED_ORIGINS` | No | URL | Allowed origins for CORS validation |
-| `NODE_ENV` | **Yes** | `production` / `development` | Node environment flag |
+| Command                   | Purpose                                     |
+| ------------------------- | ------------------------------------------- |
+| `npm run dev`             | Start Next.js development server            |
+| `npm run worker`          | Start background execution worker           |
+| `npm run build`           | Build the production application            |
+| `npm run start`           | Start the standalone production server      |
+| `npm run lint`            | Run ESLint                                  |
+| `npm run test:authority`  | Run authority and permission boundary tests |
+| `npm run test`            | Run core MVP acceptance tests               |
+| `npm run test:evaluation` | Run Mandate evaluation scenarios            |
+| `npm run test:staging`    | Run controlled staging verification         |
+| `npm run db:push`         | Apply Prisma schema                         |
+| `npm run db:generate`     | Regenerate Prisma Client                    |
 
 ---
 
-## License
+# Environment Variables
 
-Proprietary and Confidential. Copyright (c) 2026 OWNARA. All rights reserved.
+| Variable               | Required | Description                    |
+| ---------------------- | -------: | ------------------------------ |
+| `DATABASE_URL`         |      Yes | PostgreSQL connection string   |
+| `JWT_SECRET`           |      Yes | JWT signing secret             |
+| `LLM_PROVIDER`         |      Yes | Primary LLM provider           |
+| `LLM_MODEL`            |       No | Selected model                 |
+| `GEMINI_API_KEY`       |     Yes* | Gemini server-side API key     |
+| `SMTP_HOST`            |       No | SMTP relay host                |
+| `SMTP_PORT`            |       No | SMTP relay port                |
+| `SMTP_USER`            |       No | SMTP authentication username   |
+| `SMTP_PASS`            |       No | SMTP authentication credential |
+| `SMTP_FROM`            |       No | Outbound sender address        |
+| `SMTP_FROM_NAME`       |       No | Sender display name            |
+| `CORS_ALLOWED_ORIGINS` |       No | Allowed application origins    |
+| `NODE_ENV`             |      Yes | Runtime environment            |
+
+* Required when Gemini is configured as the active provider.
+
+---
+
+# Deployment
+
+OWNARA is containerized and can be deployed as separate web and worker services.
+
+The repository includes Railway deployment documentation:
+
+[`docs/RAILWAY-DEPLOYMENT.md`](./docs/RAILWAY-DEPLOYMENT.md)
+
+The production topology consists of:
+
+```text
+Web Service
+     │
+     ├── Next.js application
+     ├── API routes
+     └── Decision Center
+     
+Worker Service
+     │
+     ├── Mandate Supervisor
+     ├── Task execution
+     └── Background processing
+
+        │
+        ▼
+
+   PostgreSQL
+```
+
+---
+
+# Why OWNARA?
+
+Most AI applications focus on:
+
+> **"Can the model perform the task?"**
+
+OWNARA focuses on a different question:
+
+> **"Can an AI system be trusted with a persistent business responsibility?"**
+
+That requires more than a capable model.
+
+It requires:
+
+**Authority → Governance → Approval → Execution → Audit**
+
+OWNARA explores that architecture through a concrete business workflow: **accounts receivable operations**.
+
+---
+
+# Project Status
+
+**Status: Active Portfolio Prototype**
+
+The current implementation demonstrates the architecture and engineering patterns required for governed AI execution.
+
+The project is intentionally evolving toward a broader AI Employee / Business Operations platform while keeping authority boundaries and auditability as first-class system primitives.
+
+---
+
+# License
+
+Proprietary and Confidential.
+
+Copyright © 2026 OWNARA. All rights reserved.
